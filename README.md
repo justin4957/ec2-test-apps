@@ -2,6 +2,7 @@
 
 Two minimal Go applications for automated repetetive unencrypted absurd error logging on remote servers.
 
+<img width="1102" height="556" alt="Screenshot 2025-10-28 at 10 02 17 AM" src="https://github.com/user-attachments/assets/868b4222-e365-4cfd-b1e5-939202afcf91" />
 
 
 ## The Point
