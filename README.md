@@ -2,6 +2,12 @@
 
 Two minimal Go applications for testing EC2 deployment functionality with Docker.
 
+## The Point
+
+This application exists to ensure there is a **paid-for absurd error log**, complete with appropriately comical GIFs, running on remote computers somewhere in the cloud. It's performatively ridiculous for repetitive advertising purposes - because nothing says "professional engineering" quite like spending actual money to have a server respond to fake errors with cigarette emojis and nonsensical slogans every 60 seconds.
+
+The error logs are intentionally meaningless. The GIFs are deliberately absurd. The whole thing runs on actual EC2 instances that cost real money. This is art. This is advertising. This is what happens when you have Docker and no adult supervision.
+
 ## Overview
 
 ### Slogan Server
