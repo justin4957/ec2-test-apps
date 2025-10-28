@@ -20,7 +20,7 @@ error-generator-1  | 2025/10/28 13:52:14 Received response: 🚬 Off by one: Clo
  enough
 error-generator-1  | 
 error-generator-1  | === ERROR LOG ===
-error-generator-1  | Error: [NullPointerException in UserService.JAVA:42](https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNWllcmdiZ2p2amNtemM0MXkyem9oYjc0MnBndzc0Yzh1NzB6cXR2YyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/olAik8MhYOB9K/giphy.gif)
+error-generator-1  | Error: `[NullPointerException in UserService.JAVA:42](https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNWllcmdiZ2p2amNtemM0MXkyem9oYjc0MnBndzc0Yzh1NzB6cXR2YyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/olAik8MhYOB9K/giphy.gif)`
 error-generator-1  | GIF: https://giphy.com/gifs/error-placeholder-1
 error-generator-1  | Response: 🚬 Off by one: Close enough is good enough
 error-generator-1  | ================
