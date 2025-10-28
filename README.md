@@ -5,6 +5,28 @@ Two minimal Go applications for automated repetetive unencrypted absurd error lo
 <img width="1102" height="556" alt="Screenshot 2025-10-28 at 10 02 17 AM" src="https://github.com/user-attachments/assets/868b4222-e365-4cfd-b1e5-939202afcf91" />
 
 
+example
+```http://slogan-server:8080
+error-generator-1  | 2025/10/28 13:52:14 Sending errors every 60 seconds
+error-generator-1  | 2025/10/28 13:52:14 GIPHY_API_KEY not set, using placeholder GIFs
+error-generator-1  | 2025/10/28 13:52:14 Sending error: NullPointerException in 
+UserService.java:42
+error-generator-1  | 2025/10/28 13:52:14 With GIF: https://giphy.com/gifs/error-placeholder-1
+slogan-server-1    | 2025/10/28 13:52:14 Received error log: NullPointerException in 
+UserService.java:42 (GIF: https://giphy.com/gifs/error-placeholder-1)
+slogan-server-1    | 2025/10/28 13:52:14 Responded with slogan: Off by one: Close enough is 
+good enough
+error-generator-1  | 2025/10/28 13:52:14 Received response: 🚬 Off by one: Close enough is good
+ enough
+error-generator-1  | 
+error-generator-1  | === ERROR LOG ===
+error-generator-1  | Error: NullPointerException in UserService.java:42
+error-generator-1  | GIF: https://giphy.com/gifs/error-placeholder-1
+error-generator-1  | Response: 🚬 Off by one: Close enough is good enough
+error-generator-1  | ================
+error-generator-1  |
+```
+
 ## The Point
 
 This application exists to ensure there is a **paid-for absurd error log**, complete with appropriately comical GIFs, running on remote computers somewhere in the cloud. It's performatively ridiculous for repetitive advertising purposes - because nothing says "professional engineering" quite like spending actual money to have a server respond to fake errors with cigarette emojis and nonsensical slogans every 60 seconds.
