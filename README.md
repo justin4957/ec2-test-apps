@@ -1,6 +1,8 @@
 # EC2 Test Applications
 
-Two minimal Go applications for testing EC2 deployment functionality with Docker.
+Two minimal Go applications for automated repetetive unencrypted absurd error logging on remote servers.
+
+
 
 ## The Point
 
