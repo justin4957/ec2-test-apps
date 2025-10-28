@@ -1,4 +1,4 @@
-# EC2 Test Applications
+# Automated Nonsense Error Application (remote server)
 
 Two minimal Go applications for automated repetetive unencrypted absurd error logging on remote servers.
 
