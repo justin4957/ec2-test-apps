@@ -53,19 +53,40 @@ Client application that:
 - Sends the error message unencrypted to the slogan server
 - Displays the response
 
+### Location Tracker
+Personal security / educational tool that:
+- Tracks location of **YOUR OWN** devices (phone, laptop, etc.)
+- Password-protected web interface
+- Real-time location sharing with trusted people
+- Auto-refreshing location display (10s intervals)
+- Direct Google Maps integration
+- Locations auto-expire after 24 hours
+- **ONLY for devices you own with explicit consent**
+
 ## Architecture
 
 ```
 ┌─────────────────┐         HTTP POST          ┌─────────────────┐
 │ Error Generator │ ──────────────────────────> │  Slogan Server  │
 │                 │                              │                 │
-│ - Giphy cache   │   {"message": "...",        │ - 114 slogans   │
-│ - Timer (60s)   │    "gif_url": "..."}        │ - Random picker │
+│ - Giphy cache   │   {"message": "...",        │ - 115 slogans   │
+│ - Timer (60s)   │    "gif_url": "...",        │ - OpenAI GPT-4  │
+│ - Location      │    "location": {...}}       │ - Random picker │
 │                 │                              │                 │
 │                 │ <────────────────────────── │                 │
 │                 │   {"emoji": "🚬",           │                 │
 │                 │    "slogan": "..."}         │                 │
 └─────────────────┘                              └─────────────────┘
+
+                      ┌──────────────────┐
+                      │ Location Tracker │
+                      │                  │
+                      │ - Password auth  │
+                      │ - Real-time map  │
+                      │ - 24h retention  │
+                      │ - Auto-refresh   │
+                      └──────────────────┘
+                         Browser/Device
 ```
 
 ## Features
@@ -95,6 +116,17 @@ Client application that:
 - Logs indicate slogan source: `(openai)` or `(fallback)`
 - Real-time error/slogan streaming
 - Container health checks
+
+### 📍 Location Tracking (Educational / Personal Security)
+- **Password-protected** web interface for viewing device locations
+- Real-time GPS location sharing from any device
+- Auto-refresh every 10 seconds
+- Direct links to Google Maps
+- Shows location accuracy (±20m) and timestamp
+- In-memory storage (no database needed)
+- Auto-cleanup after 24 hours
+- **IMPORTANT**: ONLY for tracking YOUR OWN devices with explicit consent
+- See [location-tracker/README.md](location-tracker/README.md) for full details
 
 ## Local Testing
 
