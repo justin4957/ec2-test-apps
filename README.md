@@ -130,6 +130,9 @@ Personal security / educational tool that:
 - **IMPORTANT**: ONLY for tracking YOUR OWN devices with explicit consent
 - See [location-tracker/README.md](location-tracker/README.md) for full details
 
+  Error: 
+<img width="481" height="187" alt="Screenshot 2025-10-29 at 12 05 48 PM" src="https://github.com/user-attachments/assets/701e2516-41cb-4370-8f96-efda2758d448" />
+
 ## Local Testing
 
 ### Prerequisites
