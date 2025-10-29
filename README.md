@@ -63,6 +63,8 @@ Personal security / educational tool that:
 - Locations auto-expire after 24 hours
 - **ONLY for devices you own with explicit consent**
 
+  ![](https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExa2oyZTQ4aTg1dzF3Ymc1aDhwaHBhZmttdXh0NTkzbW92bTBwYnp0biZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/ECwTCTrHPVqKI/giphy.gif)
+
 ## Architecture
 
 ```
