@@ -1,0 +1,515 @@
+package main
+
+import (
+	"encoding/json"
+	"html/template"
+	"log"
+	"net/http"
+	"os"
+	"sync"
+	"time"
+)
+
+// Location represents a device location with timestamp
+type Location struct {
+	Latitude  float64   `json:"latitude"`
+	Longitude float64   `json:"longitude"`
+	Accuracy  float64   `json:"accuracy"`
+	Timestamp time.Time `json:"timestamp"`
+	DeviceID  string    `json:"device_id"`
+	UserAgent string    `json:"user_agent"`
+}
+
+var (
+	// In-memory storage (locations expire after 24 hours)
+	locations     = make(map[string]Location)
+	locationMutex sync.RWMutex
+
+	// Global password from environment
+	globalPassword = os.Getenv("TRACKER_PASSWORD")
+)
+
+func main() {
+	// Require password to be set
+	if globalPassword == "" {
+		log.Fatal("❌ TRACKER_PASSWORD environment variable must be set!")
+	}
+
+	log.Printf("✅ Location tracker starting...")
+	log.Printf("🔒 Password authentication enabled")
+
+	// Routes
+	http.HandleFunc("/", serveHTML)
+	http.HandleFunc("/api/login", handleLogin)
+	http.HandleFunc("/api/location", handleLocation)
+	http.HandleFunc("/api/health", handleHealth)
+
+	// Start cleanup goroutine (remove locations older than 24h)
+	go cleanupOldLocations()
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	log.Printf("🌍 Server running on :%s", port)
+	log.Fatal(http.ListenAndServe(":"+port, nil))
+}
+
+func handleHealth(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+func handleLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Password string `json:"password"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	// Constant-time comparison would be better for production
+	if req.Password == globalPassword {
+		// Set authentication cookie
+		http.SetCookie(w, &http.Cookie{
+			Name:     "auth",
+			Value:    "authenticated",
+			HttpOnly: true,
+			Secure:   false, // Set to true when using HTTPS
+			SameSite: http.SameSiteStrictMode,
+			MaxAge:   86400, // 24 hours
+			Path:     "/",
+		})
+
+		log.Printf("✅ Successful login from %s", r.RemoteAddr)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]bool{"success": true})
+	} else {
+		// Add delay to prevent brute force
+		time.Sleep(2 * time.Second)
+		log.Printf("⚠️  Failed login attempt from %s", r.RemoteAddr)
+		http.Error(w, "Invalid password", http.StatusUnauthorized)
+	}
+}
+
+func handleLocation(w http.ResponseWriter, r *http.Request) {
+	// Check authentication
+	if !isAuthenticated(r) {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	switch r.Method {
+	case "POST":
+		// Store new location
+		var loc Location
+		if err := json.NewDecoder(r.Body).Decode(&loc); err != nil {
+			http.Error(w, "Invalid location data", http.StatusBadRequest)
+			return
+		}
+
+		loc.Timestamp = time.Now()
+		loc.UserAgent = r.UserAgent()
+
+		locationMutex.Lock()
+		locations[loc.DeviceID] = loc
+		locationMutex.Unlock()
+
+		log.Printf("📍 Location updated: %s at (%.6f, %.6f) ±%.0fm",
+			loc.DeviceID, loc.Latitude, loc.Longitude, loc.Accuracy)
+
+		json.NewEncoder(w).Encode(map[string]bool{"success": true})
+
+	case "GET":
+		// Return all recent locations
+		locationMutex.RLock()
+		defer locationMutex.RUnlock()
+
+		json.NewEncoder(w).Encode(locations)
+
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func isAuthenticated(r *http.Request) bool {
+	cookie, err := r.Cookie("auth")
+	if err != nil {
+		return false
+	}
+	return cookie.Value == "authenticated"
+}
+
+func cleanupOldLocations() {
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		locationMutex.Lock()
+		now := time.Now()
+		for id, loc := range locations {
+			if now.Sub(loc.Timestamp) > 24*time.Hour {
+				delete(locations, id)
+				log.Printf("🗑️  Removed old location: %s", id)
+			}
+		}
+		locationMutex.Unlock()
+	}
+}
+
+func serveHTML(w http.ResponseWriter, r *http.Request) {
+	tmpl := template.Must(template.New("index").Parse(indexHTML))
+	tmpl.Execute(w, nil)
+}
+
+const indexHTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📍 Location Tracker</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 600px;
+            width: 100%;
+            overflow: hidden;
+        }
+        .header {
+            background: #667eea;
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 { font-size: 24px; margin-bottom: 5px; }
+        .header p { opacity: 0.9; font-size: 14px; }
+        .content { padding: 30px; }
+
+        /* Login Form */
+        #login input {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            margin-bottom: 15px;
+            transition: border-color 0.3s;
+        }
+        #login input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        button {
+            width: 100%;
+            padding: 15px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        button:hover { background: #5568d3; }
+        button:active { transform: scale(0.98); }
+        .error {
+            background: #fee;
+            color: #c33;
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 15px;
+            display: none;
+        }
+
+        /* Tracker View */
+        #tracker { display: none; }
+        .actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .btn-share { background: #10b981; }
+        .btn-share:hover { background: #059669; }
+        .btn-refresh { background: #6366f1; }
+        .btn-refresh:hover { background: #4f46e5; }
+
+        .location-card {
+            background: #f9fafb;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 15px;
+        }
+        .location-card h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+        .location-detail {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .location-detail:last-child { border-bottom: none; }
+        .label { color: #6b7280; font-weight: 500; }
+        .value { color: #1f2937; font-family: monospace; }
+        .map-link {
+            display: inline-block;
+            margin-top: 15px;
+            padding: 10px 20px;
+            background: #667eea;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+        .map-link:hover { background: #5568d3; }
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #6b7280;
+        }
+        .empty-state svg {
+            width: 80px;
+            height: 80px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            background: #d1fae5;
+            color: #065f46;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📍 Location Tracker</h1>
+            <p>Educational Personal Security Project</p>
+        </div>
+
+        <div class="content">
+            <!-- Login View -->
+            <div id="login">
+                <input type="password" id="password" placeholder="Enter password" autofocus>
+                <button onclick="login()">🔓 Login</button>
+                <div class="error" id="error">Invalid password. Please try again.</div>
+            </div>
+
+            <!-- Tracker View -->
+            <div id="tracker">
+                <div class="actions">
+                    <button class="btn-share" onclick="shareLocation()">📍 Share Location</button>
+                    <button class="btn-refresh" onclick="refreshLocations()">🔄 Refresh</button>
+                </div>
+                <div id="locations"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let deviceID = localStorage.getItem('deviceID');
+        if (!deviceID) {
+            deviceID = 'device_' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('deviceID', deviceID);
+        }
+
+        // Login
+        async function login() {
+            const password = document.getElementById('password').value;
+            const errorEl = document.getElementById('error');
+
+            try {
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({password})
+                });
+
+                if (res.ok) {
+                    document.getElementById('login').style.display = 'none';
+                    document.getElementById('tracker').style.display = 'block';
+                    refreshLocations();
+                    // Auto-refresh every 10 seconds
+                    setInterval(refreshLocations, 10000);
+                } else {
+                    errorEl.style.display = 'block';
+                    setTimeout(() => errorEl.style.display = 'none', 3000);
+                }
+            } catch (e) {
+                alert('Connection error: ' + e.message);
+            }
+        }
+
+        // Handle Enter key on password field
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('password').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') login();
+            });
+        });
+
+        // Share current location
+        async function shareLocation() {
+            if (!navigator.geolocation) {
+                alert('❌ Geolocation not supported by this browser');
+                return;
+            }
+
+            const btn = event.target;
+            btn.textContent = '📡 Getting location...';
+            btn.disabled = true;
+
+            navigator.geolocation.getCurrentPosition(async (pos) => {
+                const location = {
+                    latitude: pos.coords.latitude,
+                    longitude: pos.coords.longitude,
+                    accuracy: pos.coords.accuracy,
+                    device_id: deviceID
+                };
+
+                try {
+                    await fetch('/api/location', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(location)
+                    });
+
+                    btn.textContent = '✅ Location shared!';
+                    setTimeout(() => {
+                        btn.textContent = '📍 Share Location';
+                        btn.disabled = false;
+                    }, 2000);
+
+                    refreshLocations();
+                } catch (e) {
+                    alert('Error sharing location: ' + e.message);
+                    btn.textContent = '📍 Share Location';
+                    btn.disabled = false;
+                }
+            }, (err) => {
+                alert('❌ Location access denied: ' + err.message);
+                btn.textContent = '📍 Share Location';
+                btn.disabled = false;
+            }, {
+                enableHighAccuracy: true,
+                timeout: 10000,
+                maximumAge: 0
+            });
+        }
+
+        // Refresh locations
+        async function refreshLocations() {
+            try {
+                const res = await fetch('/api/location');
+                if (!res.ok) {
+                    // Session expired, reload to login
+                    location.reload();
+                    return;
+                }
+
+                const locations = await res.json();
+                displayLocations(locations);
+            } catch (e) {
+                console.error('Error fetching locations:', e);
+            }
+        }
+
+        // Display locations
+        function displayLocations(locations) {
+            const container = document.getElementById('locations');
+
+            if (Object.keys(locations).length === 0) {
+                container.innerHTML = ` + "`" + `
+                    <div class="empty-state">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+                        </svg>
+                        <p>No locations shared yet</p>
+                        <p style="font-size: 14px; margin-top: 10px;">Click "Share Location" to start</p>
+                    </div>
+                ` + "`" + `;
+                return;
+            }
+
+            container.innerHTML = '';
+
+            for (const [id, loc] of Object.entries(locations)) {
+                const age = getLocationAge(loc.timestamp);
+                const isCurrentDevice = id === deviceID;
+
+                const div = document.createElement('div');
+                div.className = 'location-card';
+                div.innerHTML = ` + "`" + `
+                    <h3>
+                        ${isCurrentDevice ? '📱 Your Device' : '📍 ' + id}
+                        <span class="status">${age}</span>
+                    </h3>
+                    <div class="location-detail">
+                        <span class="label">Latitude:</span>
+                        <span class="value">${loc.latitude.toFixed(6)}°</span>
+                    </div>
+                    <div class="location-detail">
+                        <span class="label">Longitude:</span>
+                        <span class="value">${loc.longitude.toFixed(6)}°</span>
+                    </div>
+                    <div class="location-detail">
+                        <span class="label">Accuracy:</span>
+                        <span class="value">±${Math.round(loc.accuracy)}m</span>
+                    </div>
+                    <div class="location-detail">
+                        <span class="label">Updated:</span>
+                        <span class="value">${new Date(loc.timestamp).toLocaleString()}</span>
+                    </div>
+                    <a href="https://www.google.com/maps?q=${loc.latitude},${loc.longitude}"
+                       target="_blank" class="map-link">
+                        🗺️ View on Google Maps
+                    </a>
+                ` + "`" + `;
+                container.appendChild(div);
+            }
+        }
+
+        function getLocationAge(timestamp) {
+            const seconds = Math.floor((new Date() - new Date(timestamp)) / 1000);
+            if (seconds < 60) return 'Just now';
+            if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
+            if (seconds < 86400) return Math.floor(seconds / 3600) + 'h ago';
+            return Math.floor(seconds / 86400) + 'd ago';
+        }
+    </script>
+</body>
+</html>`
