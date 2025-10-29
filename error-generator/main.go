@@ -158,6 +158,31 @@ func sendErrorLogToSloganServer(sloganServerURL string, errorLogRequest ErrorLog
 	return &sloganResponse, nil
 }
 
+func sendErrorLogToTracker(trackerURL string, message string, gifURL string, slogan string) error {
+	errorLog := map[string]string{
+		"message": message,
+		"gif_url": gifURL,
+		"slogan":  slogan,
+	}
+
+	requestBody, err := json.Marshal(errorLog)
+	if err != nil {
+		return fmt.Errorf("failed to marshal error log: %w", err)
+	}
+
+	httpResponse, err := http.Post(trackerURL+"/api/errorlogs", "application/json", bytes.NewBuffer(requestBody))
+	if err != nil {
+		return fmt.Errorf("failed to send to tracker: %w", err)
+	}
+	defer httpResponse.Body.Close()
+
+	if httpResponse.StatusCode != http.StatusOK {
+		return fmt.Errorf("tracker returned status: %d", httpResponse.StatusCode)
+	}
+
+	return nil
+}
+
 func main() {
 	rand.Seed(time.Now().UnixNano())
 
@@ -167,6 +192,9 @@ func main() {
 		sloganServerURL = "http://localhost:8080"
 	}
 
+	// Location tracker URL (optional)
+	locationTrackerURL := os.Getenv("LOCATION_TRACKER_URL")
+
 	intervalSeconds := 60
 	if envInterval := os.Getenv("ERROR_INTERVAL_SECONDS"); envInterval != "" {
 		fmt.Sscanf(envInterval, "%d", &intervalSeconds)
@@ -174,6 +202,9 @@ func main() {
 
 	log.Printf("Error Generator starting...")
 	log.Printf("Slogan server URL: %s", sloganServerURL)
+	if locationTrackerURL != "" {
+		log.Printf("Location tracker URL: %s", locationTrackerURL)
+	}
 	log.Printf("Sending errors every %d seconds", intervalSeconds)
 
 	gifCache := newGifCache(giphyAPIKey)
@@ -205,6 +236,15 @@ func main() {
 		fmt.Printf("GIF: %s\n", gifURL)
 		fmt.Printf("Response: %s %s\n", sloganResponse.Emoji, sloganResponse.Slogan)
 		fmt.Printf("================\n\n")
+
+		// Send to location tracker if configured
+		if locationTrackerURL != "" {
+			if err := sendErrorLogToTracker(locationTrackerURL, randomErrorMessage, gifURL, sloganResponse.Slogan); err != nil {
+				log.Printf("Warning: Failed to send to location tracker: %v", err)
+			} else {
+				log.Printf("📍 Sent error log to location tracker")
+			}
+		}
 	}
 
 	generateAndSendError()

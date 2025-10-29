@@ -20,10 +20,22 @@ type Location struct {
 	UserAgent string    `json:"user_agent"`
 }
 
+// ErrorLog represents an error message with timestamp
+type ErrorLog struct {
+	Message   string    `json:"message"`
+	GifURL    string    `json:"gif_url"`
+	Slogan    string    `json:"slogan"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
 var (
 	// In-memory storage (locations expire after 24 hours)
 	locations     = make(map[string]Location)
 	locationMutex sync.RWMutex
+
+	// Error log storage (keep last 50 errors)
+	errorLogs     = make([]ErrorLog, 0, 50)
+	errorLogMutex sync.RWMutex
 
 	// Global password from environment
 	globalPassword = os.Getenv("TRACKER_PASSWORD")
@@ -42,6 +54,7 @@ func main() {
 	http.HandleFunc("/", serveHTML)
 	http.HandleFunc("/api/login", handleLogin)
 	http.HandleFunc("/api/location", handleLocation)
+	http.HandleFunc("/api/errorlogs", handleErrorLogs)
 	http.HandleFunc("/api/health", handleHealth)
 
 	// Start cleanup goroutine (remove locations older than 24h)
@@ -136,6 +149,50 @@ func handleLocation(w http.ResponseWriter, r *http.Request) {
 		defer locationMutex.RUnlock()
 
 		json.NewEncoder(w).Encode(locations)
+
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func handleErrorLogs(w http.ResponseWriter, r *http.Request) {
+	// Check authentication
+	if !isAuthenticated(r) {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	switch r.Method {
+	case "POST":
+		// Store new error log
+		var errorLog ErrorLog
+		if err := json.NewDecoder(r.Body).Decode(&errorLog); err != nil {
+			http.Error(w, "Invalid error log data", http.StatusBadRequest)
+			return
+		}
+
+		errorLog.Timestamp = time.Now()
+
+		errorLogMutex.Lock()
+		errorLogs = append(errorLogs, errorLog)
+		// Keep only last 50 errors
+		if len(errorLogs) > 50 {
+			errorLogs = errorLogs[len(errorLogs)-50:]
+		}
+		errorLogMutex.Unlock()
+
+		log.Printf("📝 Error logged: %s", errorLog.Message)
+
+		json.NewEncoder(w).Encode(map[string]bool{"success": true})
+
+	case "GET":
+		// Return recent error logs
+		errorLogMutex.RLock()
+		defer errorLogMutex.RUnlock()
+
+		json.NewEncoder(w).Encode(errorLogs)
 
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -333,7 +390,10 @@ const indexHTML = `<!DOCTYPE html>
                     <button class="btn-share" onclick="shareLocation()">📍 Share Location</button>
                     <button class="btn-refresh" onclick="refreshLocations()">🔄 Refresh</button>
                 </div>
+                <h3 style="margin-top: 20px; color: #667eea;">📍 Device Locations</h3>
                 <div id="locations"></div>
+                <h3 style="margin-top: 30px; color: #667eea;">📝 Recent Error Logs</h3>
+                <div id="errorlogs"></div>
             </div>
         </div>
     </div>
@@ -361,8 +421,12 @@ const indexHTML = `<!DOCTYPE html>
                     document.getElementById('login').style.display = 'none';
                     document.getElementById('tracker').style.display = 'block';
                     refreshLocations();
+                    refreshErrorLogs();
                     // Auto-refresh every 10 seconds
-                    setInterval(refreshLocations, 10000);
+                    setInterval(() => {
+                        refreshLocations();
+                        refreshErrorLogs();
+                    }, 10000);
                 } else {
                     errorEl.style.display = 'block';
                     setTimeout(() => errorEl.style.display = 'none', 3000);
@@ -509,6 +573,72 @@ const indexHTML = `<!DOCTYPE html>
             if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
             if (seconds < 86400) return Math.floor(seconds / 3600) + 'h ago';
             return Math.floor(seconds / 86400) + 'd ago';
+        }
+
+        // Refresh error logs
+        async function refreshErrorLogs() {
+            try {
+                const res = await fetch('/api/errorlogs');
+                if (!res.ok) {
+                    location.reload();
+                    return;
+                }
+
+                const errorLogs = await res.json();
+                displayErrorLogs(errorLogs);
+            } catch (e) {
+                console.error('Error fetching error logs:', e);
+            }
+        }
+
+        // Display error logs
+        function displayErrorLogs(errorLogs) {
+            const container = document.getElementById('errorlogs');
+
+            if (!errorLogs || errorLogs.length === 0) {
+                container.innerHTML = ` + "`" + `
+                    <div class="empty-state" style="padding: 40px 20px;">
+                        <p style="color: #6b7280;">No error logs yet</p>
+                        <p style="font-size: 14px; margin-top: 10px; color: #9ca3af;">
+                            Error logs from error-generator will appear here
+                        </p>
+                    </div>
+                ` + "`" + `;
+                return;
+            }
+
+            container.innerHTML = '';
+
+            // Show most recent errors first
+            const recentErrors = errorLogs.slice(-10).reverse();
+
+            for (const errorLog of recentErrors) {
+                const age = getLocationAge(errorLog.timestamp);
+
+                const div = document.createElement('div');
+                div.className = 'location-card';
+                div.style.borderLeft = '4px solid #ef4444';
+                div.innerHTML = ` + "`" + `
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <h3 style="margin: 0; color: #ef4444; font-size: 14px;">🚬 Error Log</h3>
+                        <span class="status" style="background: #fee2e2; color: #991b1b;">${age}</span>
+                    </div>
+                    <div class="location-detail">
+                        <span class="label">Message:</span>
+                        <span class="value" style="font-family: inherit;">${errorLog.message}</span>
+                    </div>
+                    <div class="location-detail">
+                        <span class="label">Slogan:</span>
+                        <span class="value" style="font-family: inherit; color: #667eea;">${errorLog.slogan}</span>
+                    </div>
+                    ${errorLog.gif_url ? ` + "`" + `
+                        <a href="${errorLog.gif_url}" target="_blank" class="map-link" style="background: #ef4444;">
+                            🎬 View GIF
+                        </a>
+                    ` + "`" + ` : ''}
+                ` + "`" + `;
+                container.appendChild(div);
+            }
         }
     </script>
 </body>
