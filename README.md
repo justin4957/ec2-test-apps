@@ -41,7 +41,9 @@ The error logs are intentionally meaningless. The GIFs are deliberately absurd. 
 ### Slogan Server
 HTTP server that receives error log messages and responds with:
 - A cigarette emoji (🚬)
-- A random slogan from 114 nonsensical advertising slogans
+- An **AI-generated sardonic slogan** using OpenAI GPT-4o-mini
+- Extracts context from error messages and GIF URLs
+- Falls back to 115 pre-generated slogans if OpenAI is unavailable
 
 ### Error Generator
 Client application that:
@@ -66,12 +68,41 @@ Client application that:
 └─────────────────┘                              └─────────────────┘
 ```
 
+## Features
+
+### 🤖 AI-Powered Slogan Generation
+- **OpenAI GPT-4o-mini** generates unique, sardonic slogans for each error
+- Analyzes error messages and GIF context for contextual humor
+- Temperature: 0.9 for maximum creativity
+- Example: `DeadlockDetected: Embrace the bliss of perpetual stagnation!`
+
+### 🎨 Real GIFs from Giphy
+- Batch loads 25 GIFs per request to avoid rate limiting
+- Random search terms: "error", "fail", "glitch", "broken", "oops"
+- Extracts GIF context from URLs for better AI prompts
+
+### 🛡️ Intelligent Fallback
+- 115 pre-generated sardonic slogans as backup
+- Automatic fallback if OpenAI API fails
+- No interruption to service
+
+### 🔐 Secure Configuration
+- API keys stored in `.env.ec2` (git-ignored)
+- Environment variable-based configuration
+- No hardcoded secrets
+
+### 📊 Observable
+- Logs indicate slogan source: `(openai)` or `(fallback)`
+- Real-time error/slogan streaming
+- Container health checks
+
 ## Local Testing
 
 ### Prerequisites
 - Docker
 - Docker Compose
 - (Optional) Giphy API key for real GIF URLs
+- (Optional) OpenAI API key for AI-generated slogans
 
 ### Quick Start
 
@@ -80,11 +111,25 @@ Client application that:
 cd ec2-test-apps
 ```
 
-2. (Optional) Set up Giphy API key:
+2. **(Recommended)** Set up API keys for full experience:
+
+**For local testing:**
 ```bash
 cp .env.example .env
-# Edit .env and add your GIPHY_API_KEY
+# Edit .env and add your API keys:
+# - GIPHY_API_KEY (for real GIFs)
+# - OPENAI_API_KEY (for AI-generated slogans)
 ```
+
+**For EC2 deployment:**
+```bash
+cp .env.ec2.example .env.ec2
+# Edit .env.ec2 and add your API keys:
+# - GIPHY_API_KEY (for real GIFs)
+# - OPENAI_API_KEY (for AI-generated slogans)
+```
+
+See [GIPHY_API_SETUP.md](GIPHY_API_SETUP.md) for detailed configuration instructions.
 
 3. Build and run with Docker Compose:
 ```bash
@@ -95,6 +140,12 @@ docker-compose up --build
 
 ### Configuration
 
+Environment variables for `slogan-server`:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `OPENAI_API_KEY` | OpenAI API key for AI-generated slogans (optional) | Falls back to pre-generated slogans if not set |
+
 Environment variables for `error-generator`:
 
 | Variable | Description | Default |
@@ -103,13 +154,21 @@ Environment variables for `error-generator`:
 | `ERROR_INTERVAL_SECONDS` | Seconds between error logs | `60` |
 | `GIPHY_API_KEY` | Giphy API key (optional) | Placeholder URLs if not set |
 
+**Getting API Keys:**
+- **Giphy**: Get a free API key at [https://developers.giphy.com/](https://developers.giphy.com/)
+- **OpenAI**: Get an API key at [https://platform.openai.com/api-keys](https://platform.openai.com/api-keys)
+
+See [GIPHY_API_SETUP.md](GIPHY_API_SETUP.md) for detailed configuration instructions.
+
 ### Testing Individual Services
 
 Build and run slogan-server:
 ```bash
 cd slogan-server
 docker build -t slogan-server .
-docker run -p 8080:8080 slogan-server
+docker run -p 8080:8080 -e OPENAI_API_KEY=your_key_here slogan-server
+# Or without OpenAI (uses fallback slogans):
+# docker run -p 8080:8080 slogan-server
 ```
 
 Build and run error-generator:
