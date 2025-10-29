@@ -1,5 +1,6 @@
 # Environment variables
 .env
+.env.ec2
 
 # Go build artifacts
 *.exe
