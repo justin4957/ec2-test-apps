@@ -1,47 +1,55 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"html/template"
 	"log"
 	"math/big"
 	"net"
 	"net/http"
 	"os"
+	"sort"
 	"sync"
 	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 )
 
 // Location represents a device location with timestamp
 type Location struct {
-	Latitude  float64   `json:"latitude"`
-	Longitude float64   `json:"longitude"`
-	Accuracy  float64   `json:"accuracy"`
-	Timestamp time.Time `json:"timestamp"`
-	DeviceID  string    `json:"device_id"`
-	UserAgent string    `json:"user_agent"`
+	Latitude  float64   `json:"latitude" dynamodbav:"latitude"`
+	Longitude float64   `json:"longitude" dynamodbav:"longitude"`
+	Accuracy  float64   `json:"accuracy" dynamodbav:"accuracy"`
+	Timestamp time.Time `json:"timestamp" dynamodbav:"timestamp"`
+	DeviceID  string    `json:"device_id" dynamodbav:"device_id"`
+	UserAgent string    `json:"user_agent" dynamodbav:"user_agent"`
 }
 
 // ErrorLog represents an error message with timestamp
 type ErrorLog struct {
-	Message   string    `json:"message"`
-	GifURL    string    `json:"gif_url"`
-	Slogan    string    `json:"slogan"`
-	Timestamp time.Time `json:"timestamp"`
+	ID        string    `json:"id" dynamodbav:"id"`
+	Message   string    `json:"message" dynamodbav:"message"`
+	GifURL    string    `json:"gif_url" dynamodbav:"gif_url"`
+	Slogan    string    `json:"slogan" dynamodbav:"slogan"`
+	Timestamp time.Time `json:"timestamp" dynamodbav:"timestamp"`
 }
 
 var (
-	// In-memory storage (locations expire after 24 hours)
+	// In-memory cache (locations expire after 24 hours)
 	locations     = make(map[string]Location)
 	locationMutex sync.RWMutex
 
-	// Error log storage (keep last 50 errors)
+	// Error log cache (keep last 50 errors)
 	errorLogs     = make([]ErrorLog, 0, 50)
 	errorLogMutex sync.RWMutex
 
@@ -50,6 +58,14 @@ var (
 
 	// HTTPS mode flag
 	useHTTPS = false
+
+	// DynamoDB client
+	dynamoClient *dynamodb.Client
+	useDynamoDB  = false
+
+	// DynamoDB table names
+	errorLogsTableName = "location-tracker-error-logs"
+	locationsTableName = "location-tracker-locations"
 )
 
 func main() {
@@ -63,10 +79,20 @@ func main() {
 		useHTTPS = true
 	}
 
+	// Initialize DynamoDB
+	initializeDynamoDB()
+
 	log.Printf("✅ Location tracker starting...")
 	log.Printf("🔒 Password authentication enabled")
 	if useHTTPS {
 		log.Printf("🔐 HTTPS mode enabled")
+	}
+	if useDynamoDB {
+		log.Printf("💾 DynamoDB persistence enabled")
+		log.Printf("📊 Error logs table: %s", errorLogsTableName)
+		log.Printf("📍 Locations table: %s", locationsTableName)
+	} else {
+		log.Printf("⚠️  DynamoDB unavailable, using in-memory storage only")
 	}
 
 	// Routes
@@ -79,16 +105,19 @@ func main() {
 	// Start cleanup goroutine (remove locations older than 24h)
 	go cleanupOldLocations()
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		if useHTTPS {
-			port = "8443"
-		} else {
-			port = "8080"
-		}
+	// Load existing data from DynamoDB on startup
+	if useDynamoDB {
+		go loadExistingData()
 	}
 
 	if useHTTPS {
+		// Run both HTTP (for internal Docker network) and HTTPS (for external access)
+		httpPort := "8080"
+		httpsPort := os.Getenv("PORT")
+		if httpsPort == "" {
+			httpsPort = "8443"
+		}
+
 		// Check for certificate files or generate self-signed ones
 		certFile := os.Getenv("CERT_FILE")
 		keyFile := os.Getenv("KEY_FILE")
@@ -104,9 +133,22 @@ func main() {
 			log.Printf("✅ Self-signed certificate generated")
 		}
 
-		log.Printf("🌍 Server running on https://:%s", port)
-		log.Fatal(http.ListenAndServeTLS(":"+port, certFile, keyFile, nil))
+		// Start HTTP server in background for internal Docker communication
+		go func() {
+			log.Printf("🌐 Internal HTTP server running on http://:%s (for Docker network)", httpPort)
+			if err := http.ListenAndServe(":"+httpPort, nil); err != nil {
+				log.Printf("❌ HTTP server error: %v", err)
+			}
+		}()
+
+		// Start HTTPS server on main thread
+		log.Printf("🌍 External HTTPS server running on https://:%s", httpsPort)
+		log.Fatal(http.ListenAndServeTLS(":"+httpsPort, certFile, keyFile, nil))
 	} else {
+		port := os.Getenv("PORT")
+		if port == "" {
+			port = "8080"
+		}
 		log.Printf("⚠️  Running in HTTP mode - geolocation may not work in browsers!")
 		log.Printf("💡 Set USE_HTTPS=true to enable HTTPS")
 		log.Printf("🌍 Server running on http://:%s", port)
@@ -179,9 +221,15 @@ func handleLocation(w http.ResponseWriter, r *http.Request) {
 		loc.Timestamp = time.Now()
 		loc.UserAgent = r.UserAgent()
 
+		// Store in memory cache
 		locationMutex.Lock()
 		locations[loc.DeviceID] = loc
 		locationMutex.Unlock()
+
+		// Store in DynamoDB
+		if useDynamoDB {
+			go saveLocationToDynamoDB(loc)
+		}
 
 		log.Printf("📍 Location updated: %s at (%.6f, %.6f) ±%.0fm",
 			loc.DeviceID, loc.Latitude, loc.Longitude, loc.Accuracy)
@@ -214,14 +262,21 @@ func handleErrorLogs(w http.ResponseWriter, r *http.Request) {
 		}
 
 		errorLog.Timestamp = time.Now()
+		errorLog.ID = fmt.Sprintf("%d", errorLog.Timestamp.UnixNano())
 
+		// Store in memory cache
 		errorLogMutex.Lock()
 		errorLogs = append(errorLogs, errorLog)
-		// Keep only last 50 errors
+		// Keep only last 50 errors in memory
 		if len(errorLogs) > 50 {
 			errorLogs = errorLogs[len(errorLogs)-50:]
 		}
 		errorLogMutex.Unlock()
+
+		// Store in DynamoDB
+		if useDynamoDB {
+			go saveErrorLogToDynamoDB(errorLog)
+		}
 
 		log.Printf("📝 Error logged: %s", errorLog.Message)
 
@@ -753,3 +808,146 @@ const indexHTML = `<!DOCTYPE html>
     </script>
 </body>
 </html>`
+
+// DynamoDB Helper Functions
+
+func initializeDynamoDB() {
+	ctx := context.Background()
+
+	// Load AWS configuration
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
+	if err != nil {
+		log.Printf("⚠️  Failed to load AWS config: %v", err)
+		return
+	}
+
+	// Create DynamoDB client
+	dynamoClient = dynamodb.NewFromConfig(cfg)
+
+	// Test connection by describing one of the tables
+	_, err = dynamoClient.DescribeTable(ctx, &dynamodb.DescribeTableInput{
+		TableName: aws.String(errorLogsTableName),
+	})
+	if err != nil {
+		log.Printf("⚠️  DynamoDB table not accessible: %v", err)
+		return
+	}
+
+	useDynamoDB = true
+}
+
+func saveErrorLogToDynamoDB(errorLog ErrorLog) {
+	ctx := context.Background()
+
+	// Marshal the error log to DynamoDB attribute values
+	item, err := attributevalue.MarshalMap(errorLog)
+	if err != nil {
+		log.Printf("❌ Failed to marshal error log: %v", err)
+		return
+	}
+
+	// Put item into DynamoDB
+	_, err = dynamoClient.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: aws.String(errorLogsTableName),
+		Item:      item,
+	})
+	if err != nil {
+		log.Printf("❌ Failed to save error log to DynamoDB: %v", err)
+		return
+	}
+
+	log.Printf("💾 Error log saved to DynamoDB: %s", errorLog.ID)
+}
+
+func saveLocationToDynamoDB(location Location) {
+	ctx := context.Background()
+
+	// Marshal the location to DynamoDB attribute values
+	item, err := attributevalue.MarshalMap(location)
+	if err != nil {
+		log.Printf("❌ Failed to marshal location: %v", err)
+		return
+	}
+
+	// Put item into DynamoDB
+	_, err = dynamoClient.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: aws.String(locationsTableName),
+		Item:      item,
+	})
+	if err != nil {
+		log.Printf("❌ Failed to save location to DynamoDB: %v", err)
+		return
+	}
+
+	log.Printf("💾 Location saved to DynamoDB: %s", location.DeviceID)
+}
+
+func loadExistingData() {
+	ctx := context.Background()
+
+	// Load error logs
+	log.Printf("📥 Loading error logs from DynamoDB...")
+	errorLogsResult, err := dynamoClient.Scan(ctx, &dynamodb.ScanInput{
+		TableName: aws.String(errorLogsTableName),
+		Limit:     aws.Int32(50), // Load last 50 errors
+	})
+	if err != nil {
+		log.Printf("⚠️  Failed to load error logs: %v", err)
+	} else {
+		var loadedErrorLogs []ErrorLog
+		err = attributevalue.UnmarshalListOfMaps(errorLogsResult.Items, &loadedErrorLogs)
+		if err != nil {
+			log.Printf("⚠️  Failed to unmarshal error logs: %v", err)
+		} else {
+			// Sort by timestamp descending
+			sort.Slice(loadedErrorLogs, func(i, j int) bool {
+				return loadedErrorLogs[i].Timestamp.After(loadedErrorLogs[j].Timestamp)
+			})
+
+			// Keep only last 50
+			if len(loadedErrorLogs) > 50 {
+				loadedErrorLogs = loadedErrorLogs[:50]
+			}
+
+			errorLogMutex.Lock()
+			errorLogs = loadedErrorLogs
+			errorLogMutex.Unlock()
+
+			log.Printf("✅ Loaded %d error logs from DynamoDB", len(loadedErrorLogs))
+		}
+	}
+
+	// Load locations from last 24 hours
+	log.Printf("📥 Loading recent locations from DynamoDB...")
+	locationsResult, err := dynamoClient.Scan(ctx, &dynamodb.ScanInput{
+		TableName: aws.String(locationsTableName),
+	})
+	if err != nil {
+		log.Printf("⚠️  Failed to load locations: %v", err)
+	} else {
+		var loadedLocations []Location
+		err = attributevalue.UnmarshalListOfMaps(locationsResult.Items, &loadedLocations)
+		if err != nil {
+			log.Printf("⚠️  Failed to unmarshal locations: %v", err)
+		} else {
+			// Filter to last 24 hours and get most recent per device
+			now := time.Now()
+			recentLocations := make(map[string]Location)
+
+			for _, loc := range loadedLocations {
+				if now.Sub(loc.Timestamp) <= 24*time.Hour {
+					// Keep the most recent location for each device
+					if existing, ok := recentLocations[loc.DeviceID]; !ok || loc.Timestamp.After(existing.Timestamp) {
+						recentLocations[loc.DeviceID] = loc
+					}
+				}
+			}
+
+			locationMutex.Lock()
+			locations = recentLocations
+			locationMutex.Unlock()
+
+			log.Printf("✅ Loaded %d locations from DynamoDB", len(recentLocations))
+		}
+	}
+}
