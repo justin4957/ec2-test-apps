@@ -1,6 +1,13 @@
 # Environment variables
 .env
-.env.ec2
+.env.*
+!.env.example
+!.env.*.example
+*.env
+
+# Deployment scripts with hardcoded secrets (use .env files instead)
+**/deploy-fix-*.sh
+**/deploy-*-secrets.sh
 
 # Go build artifacts
 *.exe

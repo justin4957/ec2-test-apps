@@ -195,9 +195,9 @@ func main() {
 	// Location tracker URL (optional)
 	locationTrackerURL := os.Getenv("LOCATION_TRACKER_URL")
 
-	intervalSeconds := 60
+	intervalSeconds := 60.0
 	if envInterval := os.Getenv("ERROR_INTERVAL_SECONDS"); envInterval != "" {
-		fmt.Sscanf(envInterval, "%d", &intervalSeconds)
+		fmt.Sscanf(envInterval, "%f", &intervalSeconds)
 	}
 
 	log.Printf("Error Generator starting...")
@@ -205,11 +205,13 @@ func main() {
 	if locationTrackerURL != "" {
 		log.Printf("Location tracker URL: %s", locationTrackerURL)
 	}
-	log.Printf("Sending errors every %d seconds", intervalSeconds)
+	log.Printf("Sending errors every %.2f seconds", intervalSeconds)
 
 	gifCache := newGifCache(giphyAPIKey)
 
-	ticker := time.NewTicker(time.Duration(intervalSeconds) * time.Second)
+	// Convert interval to duration (handle decimal seconds)
+	intervalDuration := time.Duration(intervalSeconds * float64(time.Second))
+	ticker := time.NewTicker(intervalDuration)
 	defer ticker.Stop()
 
 	generateAndSendError := func() {
