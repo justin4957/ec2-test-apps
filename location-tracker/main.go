@@ -1,9 +1,17 @@
 package main
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
 	"html/template"
 	"log"
+	"math/big"
+	"net"
 	"net/http"
 	"os"
 	"sync"
@@ -39,6 +47,9 @@ var (
 
 	// Global password from environment
 	globalPassword = os.Getenv("TRACKER_PASSWORD")
+
+	// HTTPS mode flag
+	useHTTPS = false
 )
 
 func main() {
@@ -47,8 +58,16 @@ func main() {
 		log.Fatal("❌ TRACKER_PASSWORD environment variable must be set!")
 	}
 
+	// Check if HTTPS should be enabled
+	if os.Getenv("USE_HTTPS") == "true" {
+		useHTTPS = true
+	}
+
 	log.Printf("✅ Location tracker starting...")
 	log.Printf("🔒 Password authentication enabled")
+	if useHTTPS {
+		log.Printf("🔐 HTTPS mode enabled")
+	}
 
 	// Routes
 	http.HandleFunc("/", serveHTML)
@@ -62,11 +81,37 @@ func main() {
 
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8080"
+		if useHTTPS {
+			port = "8443"
+		} else {
+			port = "8080"
+		}
 	}
 
-	log.Printf("🌍 Server running on :%s", port)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	if useHTTPS {
+		// Check for certificate files or generate self-signed ones
+		certFile := os.Getenv("CERT_FILE")
+		keyFile := os.Getenv("KEY_FILE")
+
+		if certFile == "" || keyFile == "" {
+			log.Printf("📜 No certificates provided, generating self-signed certificate...")
+			certFile = "server.crt"
+			keyFile = "server.key"
+
+			if err := generateSelfSignedCert(certFile, keyFile); err != nil {
+				log.Fatalf("❌ Failed to generate certificate: %v", err)
+			}
+			log.Printf("✅ Self-signed certificate generated")
+		}
+
+		log.Printf("🌍 Server running on https://:%s", port)
+		log.Fatal(http.ListenAndServeTLS(":"+port, certFile, keyFile, nil))
+	} else {
+		log.Printf("⚠️  Running in HTTP mode - geolocation may not work in browsers!")
+		log.Printf("💡 Set USE_HTTPS=true to enable HTTPS")
+		log.Printf("🌍 Server running on http://:%s", port)
+		log.Fatal(http.ListenAndServe(":"+port, nil))
+	}
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -96,7 +141,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 			Name:     "auth",
 			Value:    "authenticated",
 			HttpOnly: true,
-			Secure:   false, // Set to true when using HTTPS
+			Secure:   useHTTPS, // Secure flag enabled when using HTTPS
 			SameSite: http.SameSiteStrictMode,
 			MaxAge:   86400, // 24 hours
 			Path:     "/",
@@ -156,16 +201,11 @@ func handleLocation(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleErrorLogs(w http.ResponseWriter, r *http.Request) {
-	// Check authentication
-	if !isAuthenticated(r) {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
 	w.Header().Set("Content-Type", "application/json")
 
 	switch r.Method {
 	case "POST":
+		// POST doesn't require auth (for error-generator to send logs)
 		// Store new error log
 		var errorLog ErrorLog
 		if err := json.NewDecoder(r.Body).Decode(&errorLog); err != nil {
@@ -188,6 +228,12 @@ func handleErrorLogs(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]bool{"success": true})
 
 	case "GET":
+		// GET requires auth (viewing logs in UI)
+		if !isAuthenticated(r) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
 		// Return recent error logs
 		errorLogMutex.RLock()
 		defer errorLogMutex.RUnlock()
@@ -227,6 +273,70 @@ func cleanupOldLocations() {
 func serveHTML(w http.ResponseWriter, r *http.Request) {
 	tmpl := template.Must(template.New("index").Parse(indexHTML))
 	tmpl.Execute(w, nil)
+}
+
+// generateSelfSignedCert creates a self-signed certificate for local testing
+func generateSelfSignedCert(certFile, keyFile string) error {
+	// Generate private key
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return err
+	}
+
+	// Create certificate template
+	notBefore := time.Now()
+	notAfter := notBefore.Add(365 * 24 * time.Hour) // Valid for 1 year
+
+	serialNumber, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		return err
+	}
+
+	template := x509.Certificate{
+		SerialNumber: serialNumber,
+		Subject: pkix.Name{
+			Organization: []string{"Location Tracker"},
+			CommonName:   "localhost",
+		},
+		NotBefore:             notBefore,
+		NotAfter:              notAfter,
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		DNSNames:              []string{"localhost"},
+		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")},
+	}
+
+	// Create certificate
+	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &privateKey.PublicKey, privateKey)
+	if err != nil {
+		return err
+	}
+
+	// Write certificate to file
+	certOut, err := os.Create(certFile)
+	if err != nil {
+		return err
+	}
+	defer certOut.Close()
+
+	if err := pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: certDER}); err != nil {
+		return err
+	}
+
+	// Write private key to file
+	keyOut, err := os.Create(keyFile)
+	if err != nil {
+		return err
+	}
+	defer keyOut.Close()
+
+	privBytes := x509.MarshalPKCS1PrivateKey(privateKey)
+	if err := pem.Encode(keyOut, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: privBytes}); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 const indexHTML = `<!DOCTYPE html>

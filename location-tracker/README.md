@@ -35,6 +35,7 @@ Educational personal security project to track your own devices and share locati
 ## Features
 
 - 🔒 Password-protected access
+- 🔐 HTTPS support with automatic self-signed certificates
 - 📱 Works on any device (phone, tablet, laptop)
 - 🗺️ Direct links to Google Maps
 - ⏱️ Real-time updates (auto-refresh every 10s)
@@ -44,6 +45,7 @@ Educational personal security project to track your own devices and share locati
 
 ## Local Testing
 
+### HTTP Mode (Default)
 ```bash
 # Set password
 export TRACKER_PASSWORD=your_secure_password_here
@@ -55,8 +57,37 @@ go run main.go
 open http://localhost:8080
 ```
 
+**Note:** Geolocation may not work in HTTP mode on some browsers. Use HTTPS mode below for full functionality.
+
+### HTTPS Mode (Recommended)
+```bash
+# Set password and enable HTTPS
+export TRACKER_PASSWORD=your_secure_password_here
+export USE_HTTPS=true
+
+# Run (will auto-generate self-signed certificate)
+go run main.go
+
+# Open browser (accept certificate warning)
+open https://localhost:8443
+```
+
+**Browser Certificate Warning:** Self-signed certificates will trigger a security warning. This is expected for local testing. Click "Advanced" and proceed to the site.
+
+### HTTPS with Custom Certificates
+```bash
+# Use your own certificates
+export TRACKER_PASSWORD=your_secure_password_here
+export USE_HTTPS=true
+export CERT_FILE=/path/to/server.crt
+export KEY_FILE=/path/to/server.key
+
+go run main.go
+```
+
 ## Docker Deployment
 
+### HTTP Mode
 ```bash
 # Build
 docker build -t location-tracker .
@@ -66,6 +97,33 @@ docker run -d \
   --name location-tracker \
   -p 8082:8080 \
   -e TRACKER_PASSWORD=your_secure_password_here \
+  --restart unless-stopped \
+  location-tracker
+```
+
+### HTTPS Mode
+```bash
+# Build
+docker build -t location-tracker .
+
+# Run with HTTPS (auto-generates self-signed certificate)
+docker run -d \
+  --name location-tracker \
+  -p 8443:8443 \
+  -e TRACKER_PASSWORD=your_secure_password_here \
+  -e USE_HTTPS=true \
+  --restart unless-stopped \
+  location-tracker
+
+# OR with custom certificates
+docker run -d \
+  --name location-tracker \
+  -p 8443:8443 \
+  -e TRACKER_PASSWORD=your_secure_password_here \
+  -e USE_HTTPS=true \
+  -e CERT_FILE=/certs/server.crt \
+  -e KEY_FILE=/certs/server.key \
+  -v /path/to/certs:/certs:ro \
   --restart unless-stopped \
   location-tracker
 ```
@@ -120,39 +178,62 @@ aws ec2 authorize-security-group-ingress \
 
 Access at: `http://your-ec2-instance.amazonaws.com:8082`
 
-## Browser Permissions
+## Browser Permissions & HTTPS
 
-Modern browsers require HTTPS for geolocation (except localhost). For production:
+Modern browsers **require HTTPS** for geolocation APIs to work (except on localhost). The application now supports HTTPS natively with automatic self-signed certificate generation.
 
-**Option 1: Use Cloudflare Tunnel (Free HTTPS)**
+### HTTPS Configuration Options
+
+**Option 1: Built-in Self-Signed Certificates (Easiest)**
+- Set `USE_HTTPS=true` environment variable
+- Application auto-generates certificates on first run
+- Perfect for local testing and development
+- You'll need to accept the browser's security warning
+
+**Option 2: Custom Certificates (Production)**
+- Set `USE_HTTPS=true`
+- Provide `CERT_FILE` and `KEY_FILE` paths
+- Use certificates from Let's Encrypt, your CA, or cloud provider
+
+**Option 3: Reverse Proxy (Advanced)**
+- Keep application in HTTP mode
+- Use nginx/Apache/Caddy with SSL termination
+- Proxy HTTPS requests to HTTP backend
+
+### Production HTTPS Options
+
+**Let's Encrypt (Free)**
+```bash
+# Get certificate with certbot
+certbot certonly --standalone -d yourdomain.com
+
+# Run with certificates
+export TRACKER_PASSWORD=your_password
+export USE_HTTPS=true
+export CERT_FILE=/etc/letsencrypt/live/yourdomain.com/fullchain.pem
+export KEY_FILE=/etc/letsencrypt/live/yourdomain.com/privkey.pem
+go run main.go
+```
+
+**Cloudflare Tunnel (Free, No Certificates Needed)**
 ```bash
 # Install cloudflared
-# Point tunnel to localhost:8080
-# Get free HTTPS URL
+# Run app in HTTP mode
+# Create tunnel: cloudflared tunnel --url http://localhost:8080
+# Get free HTTPS URL with automatic certificates
 ```
-
-**Option 2: Use Let's Encrypt**
-```bash
-# Install certbot
-# Get SSL certificate
-# Configure reverse proxy (nginx)
-```
-
-**Option 3: Local Testing Only**
-- Use `localhost` or `127.0.0.1` (works without HTTPS)
-- Or temporarily allow insecure localhost in Chrome: `chrome://flags/#unsafely-treat-insecure-origin-as-secure`
 
 ## Security Considerations
 
-### Current Implementation (Minimal)
+### Current Implementation
 - ✅ Password authentication
-- ✅ HTTP-only cookies
+- ✅ HTTPS support with auto-generated certificates
+- ✅ HTTP-only cookies with Secure flag (when using HTTPS)
 - ✅ 2-second delay on failed login (brute force prevention)
 - ✅ Auto-expiring locations (24h)
 - ✅ In-memory storage (no persistent data)
 
 ### Production Enhancements (Optional)
-- 🔒 Add HTTPS/TLS
 - 🔑 Use bcrypt for password hashing
 - 📝 Add session management with tokens
 - 🚦 Rate limiting on login endpoint
@@ -226,7 +307,7 @@ Health check (no auth required)
 
 - No persistent storage (restarts clear data)
 - Single global password (everyone sees all locations)
-- No HTTPS by default (use reverse proxy in production)
+- Self-signed certificates require browser security exception
 - No mobile app (web-based only)
 - Browser must allow geolocation
 
