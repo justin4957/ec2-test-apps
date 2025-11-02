@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/json"
@@ -30,10 +29,13 @@ type Location struct {
 
 // ErrorLog represents an error message with timestamp
 type ErrorLog struct {
-	Message   string    `json:"message"`
-	GifURL    string    `json:"gif_url"`
-	Slogan    string    `json:"slogan"`
-	Timestamp time.Time `json:"timestamp"`
+	Message    string    `json:"message"`
+	GifURL     string    `json:"gif_url"`
+	Slogan     string    `json:"slogan"`
+	SongTitle  string    `json:"song_title"`
+	SongArtist string    `json:"song_artist"`
+	SongURL    string    `json:"song_url"`
+	Timestamp  time.Time `json:"timestamp"`
 }
 
 var (
@@ -741,9 +743,20 @@ const indexHTML = `<!DOCTYPE html>
                         <span class="label">Slogan:</span>
                         <span class="value" style="font-family: inherit; color: #667eea;">${errorLog.slogan}</span>
                     </div>
+                    ${errorLog.song_title ? ` + "`" + `
+                        <div class="location-detail">
+                            <span class="label">Song:</span>
+                            <span class="value" style="font-family: inherit; color: #1db954;">🎵 ${errorLog.song_title} by ${errorLog.song_artist}</span>
+                        </div>
+                    ` + "`" + ` : ''}
                     ${errorLog.gif_url ? ` + "`" + `
                         <a href="${errorLog.gif_url}" target="_blank" class="map-link" style="background: #ef4444;">
                             🎬 View GIF
+                        </a>
+                    ` + "`" + ` : ''}
+                    ${errorLog.song_url ? ` + "`" + `
+                        <a href="${errorLog.song_url}" target="_blank" class="map-link" style="background: #1db954;">
+                            🎵 Play on Spotify
                         </a>
                     ` + "`" + ` : ''}
                 ` + "`" + `;

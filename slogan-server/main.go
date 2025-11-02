@@ -14,8 +14,11 @@ import (
 )
 
 type ErrorLogRequest struct {
-	Message string `json:"message"`
-	GifURL  string `json:"gif_url"`
+	Message    string `json:"message"`
+	GifURL     string `json:"gif_url"`
+	SongTitle  string `json:"song_title"`
+	SongArtist string `json:"song_artist"`
+	SongURL    string `json:"song_url"`
 }
 
 type SloganResponse struct {
