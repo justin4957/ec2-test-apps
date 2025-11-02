@@ -20,7 +20,7 @@ GIPHY_API_KEY=${GIPHY_API_KEY:-}
 OPENAI_API_KEY=${OPENAI_API_KEY:-}
 SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID:-}
 SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET:-}
-SPOTIFY_PLAYLIST_ID=${SPOTIFY_PLAYLIST_ID:-}
+SPOTIFY_SEED_GENRES=${SPOTIFY_SEED_GENRES:-}
 ERROR_INTERVAL_SECONDS=${ERROR_INTERVAL_SECONDS:-60}
 
 # Get instance details
@@ -40,7 +40,7 @@ ssh -o StrictHostKeyChecking=no -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} \
     OPENAI_API_KEY="${OPENAI_API_KEY}" \
     SPOTIFY_CLIENT_ID="${SPOTIFY_CLIENT_ID}" \
     SPOTIFY_CLIENT_SECRET="${SPOTIFY_CLIENT_SECRET}" \
-    SPOTIFY_PLAYLIST_ID="${SPOTIFY_PLAYLIST_ID}" \
+    SPOTIFY_SEED_GENRES="${SPOTIFY_SEED_GENRES}" \
     ERROR_INTERVAL_SECONDS="${ERROR_INTERVAL_SECONDS}" \
     bash << 'EOF'
     set -e
@@ -114,11 +114,11 @@ ssh -o StrictHostKeyChecking=no -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} \
         echo "⚠️  No Giphy API key provided, using placeholder GIFs"
     fi
 
-    if [ ! -z "$SPOTIFY_CLIENT_ID" ] && [ ! -z "$SPOTIFY_CLIENT_SECRET" ] && [ ! -z "$SPOTIFY_PLAYLIST_ID" ]; then
-        echo "🎵 Using Spotify API for real songs from playlist"
+    if [ ! -z "$SPOTIFY_CLIENT_ID" ] && [ ! -z "$SPOTIFY_CLIENT_SECRET" ] && [ ! -z "$SPOTIFY_SEED_GENRES" ]; then
+        echo "🎵 Using Spotify API for song recommendations (genres: ${SPOTIFY_SEED_GENRES})"
         DOCKER_CMD="$DOCKER_CMD -e SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID}"
         DOCKER_CMD="$DOCKER_CMD -e SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET}"
-        DOCKER_CMD="$DOCKER_CMD -e SPOTIFY_PLAYLIST_ID=${SPOTIFY_PLAYLIST_ID}"
+        DOCKER_CMD="$DOCKER_CMD -e SPOTIFY_SEED_GENRES=${SPOTIFY_SEED_GENRES}"
     else
         echo "⚠️  No Spotify credentials provided, using placeholder songs"
     fi

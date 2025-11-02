@@ -23,18 +23,30 @@ type SpotifyAuthResponse struct {
 	ExpiresIn   int    `json:"expires_in"`
 }
 
-type SpotifyPlaylistResponse struct {
-	Items []struct {
-		Track struct {
-			Name        string `json:"name"`
-			ExternalURL struct {
-				Spotify string `json:"spotify"`
-			} `json:"external_urls"`
-			Artists []struct {
-				Name string `json:"name"`
-			} `json:"artists"`
-		} `json:"track"`
-	} `json:"items"`
+type SpotifyTracksResponse struct {
+	Tracks []struct {
+		Name        string `json:"name"`
+		ExternalURL struct {
+			Spotify string `json:"spotify"`
+		} `json:"external_urls"`
+		Artists []struct {
+			Name string `json:"name"`
+		} `json:"artists"`
+	} `json:"tracks"`
+}
+
+// Rock classics track IDs - hardcoded list since recommendations API requires user auth
+var rockClassicsTrackIDs = []string{
+	"4u7EnebtmKWzUH433cf5Qv", // Bohemian Rhapsody - Queen
+	"5CQ30WqJwcep0pYcV4AMNc", // Stairway to Heaven - Led Zeppelin
+	"40riOy7x9W7GXjyGp4pjAv", // Hotel California - Eagles
+	"7o2CTH4ctstm8TNelqjb51", // Sweet Child O' Mine - Guns N' Roses
+	"08mG3Y1vljYA6bvDt4Wqkj", // Back In Black - AC/DC
+	"2Fxmhks0bxGSBdJ92vM42m", // Smells Like Teen Spirit - Nirvana
+	"3qiyyUfYe7CRYLucrPmulD", // Thunderstruck - AC/DC
+	"5v4GgrXPMghOnBBLmveLac", // Dream On - Aerosmith
+	"2nLtzopw4rPReszdYBJU6h", // Enter Sandman - Metallica
+	"5ghIJDpPoe3CfHMGu71E6T", // More Than A Feeling - Boston
 }
 
 type Song struct {
@@ -171,16 +183,16 @@ type SpotifyCache struct {
 	tokenExpiry      time.Time
 	clientID         string
 	clientSecret     string
-	playlistID       string
+	seedGenres       string
 	refreshNeeded    bool
 }
 
-func newSpotifyCache(clientID, clientSecret, playlistID string) *SpotifyCache {
+func newSpotifyCache(clientID, clientSecret, seedGenres string) *SpotifyCache {
 	return &SpotifyCache{
 		songs:         make([]Song, 0),
 		clientID:      clientID,
 		clientSecret:  clientSecret,
-		playlistID:    playlistID,
+		seedGenres:    seedGenres,
 		refreshNeeded: true,
 	}
 }
@@ -223,15 +235,15 @@ func (spotifyCache *SpotifyCache) authenticate() error {
 	return nil
 }
 
-func (spotifyCache *SpotifyCache) loadSongsFromPlaylist() error {
-	if spotifyCache.playlistID == "" {
-		log.Println("SPOTIFY_PLAYLIST_ID not set, using placeholder songs")
+func (spotifyCache *SpotifyCache) loadSongsFromSpotify() error {
+	if spotifyCache.clientID == "" || spotifyCache.clientSecret == "" {
+		log.Println("Spotify credentials not set, using placeholder songs")
 		spotifyCache.songs = []Song{
-			{Title: "Bohemian Rhapsody", Artist: "Queen", URL: "https://open.spotify.com/track/placeholder1"},
-			{Title: "Stairway to Heaven", Artist: "Led Zeppelin", URL: "https://open.spotify.com/track/placeholder2"},
-			{Title: "Hotel California", Artist: "Eagles", URL: "https://open.spotify.com/track/placeholder3"},
-			{Title: "Imagine", Artist: "John Lennon", URL: "https://open.spotify.com/track/placeholder4"},
-			{Title: "Smells Like Teen Spirit", Artist: "Nirvana", URL: "https://open.spotify.com/track/placeholder5"},
+			{Title: "Bohemian Rhapsody", Artist: "Queen", URL: "https://open.spotify.com/track/4u7EnebtmKWzUH433cf5Qv"},
+			{Title: "Stairway to Heaven", Artist: "Led Zeppelin", URL: "https://open.spotify.com/track/5CQ30WqJwcep0pYcV4AMNc"},
+			{Title: "Hotel California", Artist: "Eagles", URL: "https://open.spotify.com/track/40riOy7x9W7GXjyGp4pjAv"},
+			{Title: "Sweet Child O' Mine", Artist: "Guns N' Roses", URL: "https://open.spotify.com/track/7o2CTH4ctstm8TNelqjb51"},
+			{Title: "Back In Black", Artist: "AC/DC", URL: "https://open.spotify.com/track/08mG3Y1vljYA6bvDt4Wqkj"},
 		}
 		spotifyCache.lastRefresh = time.Now()
 		spotifyCache.currentIndex = 0
@@ -246,18 +258,32 @@ func (spotifyCache *SpotifyCache) loadSongsFromPlaylist() error {
 		}
 	}
 
-	playlistURL := fmt.Sprintf("https://api.spotify.com/v1/playlists/%s/tracks?limit=50", spotifyCache.playlistID)
+	// Use Spotify Tracks API with hardcoded rock classics
+	// Recommendations API requires user authorization, so we use a curated list
+	trackIDs := rockClassicsTrackIDs
+	if len(trackIDs) > 50 {
+		trackIDs = trackIDs[:50] // Spotify API limit
+	}
+	idsParam := ""
+	for i, id := range trackIDs {
+		if i > 0 {
+			idsParam += ","
+		}
+		idsParam += id
+	}
 
-	httpRequest, err := http.NewRequest("GET", playlistURL, nil)
+	tracksURL := fmt.Sprintf("https://api.spotify.com/v1/tracks?ids=%s", idsParam)
+
+	httpRequest, err := http.NewRequest("GET", tracksURL, nil)
 	if err != nil {
-		return fmt.Errorf("failed to create playlist request: %w", err)
+		return fmt.Errorf("failed to create tracks request: %w", err)
 	}
 
 	httpRequest.Header.Set("Authorization", "Bearer "+spotifyCache.accessToken)
 
 	httpResponse, err := http.DefaultClient.Do(httpRequest)
 	if err != nil {
-		return fmt.Errorf("failed to fetch playlist: %w", err)
+		return fmt.Errorf("failed to fetch tracks: %w", err)
 	}
 	defer httpResponse.Body.Close()
 
@@ -265,22 +291,22 @@ func (spotifyCache *SpotifyCache) loadSongsFromPlaylist() error {
 		return fmt.Errorf("spotify API returned status: %d", httpResponse.StatusCode)
 	}
 
-	var playlistResponse SpotifyPlaylistResponse
-	if err := json.NewDecoder(httpResponse.Body).Decode(&playlistResponse); err != nil {
-		return fmt.Errorf("failed to decode playlist response: %w", err)
+	var tracksResponse SpotifyTracksResponse
+	if err := json.NewDecoder(httpResponse.Body).Decode(&tracksResponse); err != nil {
+		return fmt.Errorf("failed to decode tracks response: %w", err)
 	}
 
-	spotifyCache.songs = make([]Song, 0, len(playlistResponse.Items))
-	for _, item := range playlistResponse.Items {
-		if item.Track.Name != "" {
+	spotifyCache.songs = make([]Song, 0, len(tracksResponse.Tracks))
+	for _, track := range tracksResponse.Tracks {
+		if track.Name != "" {
 			artistName := "Unknown Artist"
-			if len(item.Track.Artists) > 0 {
-				artistName = item.Track.Artists[0].Name
+			if len(track.Artists) > 0 {
+				artistName = track.Artists[0].Name
 			}
 			spotifyCache.songs = append(spotifyCache.songs, Song{
-				Title:  item.Track.Name,
+				Title:  track.Name,
 				Artist: artistName,
-				URL:    item.Track.ExternalURL.Spotify,
+				URL:    track.ExternalURL.Spotify,
 			})
 		}
 	}
@@ -289,13 +315,13 @@ func (spotifyCache *SpotifyCache) loadSongsFromPlaylist() error {
 	spotifyCache.currentIndex = 0
 	spotifyCache.refreshNeeded = false
 
-	log.Printf("Loaded %d songs from Spotify playlist", len(spotifyCache.songs))
+	log.Printf("Loaded %d rock classics from Spotify", len(spotifyCache.songs))
 	return nil
 }
 
 func (spotifyCache *SpotifyCache) getNextSong() Song {
 	if spotifyCache.refreshNeeded || len(spotifyCache.songs) == 0 {
-		if err := spotifyCache.loadSongsFromPlaylist(); err != nil {
+		if err := spotifyCache.loadSongsFromSpotify(); err != nil {
 			log.Printf("Error loading songs: %v", err)
 			return Song{
 				Title:  "Error Song",
@@ -373,7 +399,7 @@ func main() {
 	giphyAPIKey := os.Getenv("GIPHY_API_KEY")
 	spotifyClientID := os.Getenv("SPOTIFY_CLIENT_ID")
 	spotifyClientSecret := os.Getenv("SPOTIFY_CLIENT_SECRET")
-	spotifyPlaylistID := os.Getenv("SPOTIFY_PLAYLIST_ID")
+	spotifySeedGenres := os.Getenv("SPOTIFY_SEED_GENRES")
 
 	sloganServerURL := os.Getenv("SLOGAN_SERVER_URL")
 	if sloganServerURL == "" {
@@ -396,7 +422,7 @@ func main() {
 	log.Printf("Sending errors every %.2f seconds", intervalSeconds)
 
 	gifCache := newGifCache(giphyAPIKey)
-	spotifyCache := newSpotifyCache(spotifyClientID, spotifyClientSecret, spotifyPlaylistID)
+	spotifyCache := newSpotifyCache(spotifyClientID, spotifyClientSecret, spotifySeedGenres)
 
 	// Convert interval to duration (handle decimal seconds)
 	intervalDuration := time.Duration(intervalSeconds * float64(time.Second))
