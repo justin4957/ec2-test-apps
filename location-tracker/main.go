@@ -1,55 +1,110 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"html/template"
 	"log"
 	"math/big"
 	"net"
 	"net/http"
 	"os"
+	"sort"
 	"sync"
 	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 )
 
 // Location represents a device location with timestamp
 type Location struct {
-	Latitude  float64   `json:"latitude"`
-	Longitude float64   `json:"longitude"`
-	Accuracy  float64   `json:"accuracy"`
-	Timestamp time.Time `json:"timestamp"`
-	DeviceID  string    `json:"device_id"`
-	UserAgent string    `json:"user_agent"`
+	Latitude  float64   `json:"latitude" dynamodbav:"latitude"`
+	Longitude float64   `json:"longitude" dynamodbav:"longitude"`
+	Accuracy  float64   `json:"accuracy" dynamodbav:"accuracy"`
+	Timestamp time.Time `json:"timestamp" dynamodbav:"timestamp"`
+	DeviceID  string    `json:"device_id" dynamodbav:"device_id"`
+	UserAgent string    `json:"user_agent" dynamodbav:"user_agent"`
 }
 
 // ErrorLog represents an error message with timestamp
 type ErrorLog struct {
-	Message   string    `json:"message"`
-	GifURL    string    `json:"gif_url"`
-	Slogan    string    `json:"slogan"`
-	Timestamp time.Time `json:"timestamp"`
+	ID         string    `json:"id,omitempty" dynamodbav:"id"`
+	Message    string    `json:"message" dynamodbav:"message"`
+	GifURL     string    `json:"gif_url" dynamodbav:"gif_url"`
+	Slogan     string    `json:"slogan" dynamodbav:"slogan"`
+	SongTitle  string    `json:"song_title,omitempty" dynamodbav:"song_title"`
+	SongArtist string    `json:"song_artist,omitempty" dynamodbav:"song_artist"`
+	SongURL    string    `json:"song_url,omitempty" dynamodbav:"song_url"`
+	Timestamp  time.Time `json:"timestamp" dynamodbav:"timestamp"`
+}
+
+// Business represents a nearby business from Google Maps
+type Business struct {
+	Name     string   `json:"name"`
+	Type     string   `json:"type"`
+	Address  string   `json:"address"`
+	PlaceID  string   `json:"place_id"`
+	Location struct {
+		Lat float64 `json:"lat"`
+		Lng float64 `json:"lng"`
+	} `json:"location"`
+}
+
+// Google Maps API response types
+type GooglePlacesResponse struct {
+	Results []struct {
+		Name         string   `json:"name"`
+		Types        []string `json:"types"`
+		PlaceID      string   `json:"place_id"`
+		FormattedAddress string `json:"formatted_address"`
+		Geometry struct {
+			Location struct {
+				Lat float64 `json:"lat"`
+				Lng float64 `json:"lng"`
+			} `json:"location"`
+		} `json:"geometry"`
+	} `json:"results"`
+	Status string `json:"status"`
 }
 
 var (
-	// In-memory storage (locations expire after 24 hours)
+	// In-memory cache (locations expire after 24 hours)
 	locations     = make(map[string]Location)
 	locationMutex sync.RWMutex
 
-	// Error log storage (keep last 50 errors)
+	// Error log cache (keep last 50 errors)
 	errorLogs     = make([]ErrorLog, 0, 50)
 	errorLogMutex sync.RWMutex
+
+	// Nearby businesses from last shared location
+	currentBusinesses     = make([]Business, 0, 5)
+	currentBusinessesMutex sync.RWMutex
 
 	// Global password from environment
 	globalPassword = os.Getenv("TRACKER_PASSWORD")
 
+	// Google Maps API key
+	googleMapsAPIKey = os.Getenv("GOOGLE_MAPS_API_KEY")
+
 	// HTTPS mode flag
 	useHTTPS = false
+
+	// DynamoDB client
+	dynamoClient *dynamodb.Client
+	useDynamoDB  = false
+
+	// DynamoDB table names
+	errorLogsTableName = "location-tracker-error-logs"
+	locationsTableName = "location-tracker-locations"
 )
 
 func main() {
@@ -63,10 +118,20 @@ func main() {
 		useHTTPS = true
 	}
 
+	// Initialize DynamoDB connection (reads existing tables, never creates/modifies)
+	initializeDynamoDB()
+
 	log.Printf("✅ Location tracker starting...")
 	log.Printf("🔒 Password authentication enabled")
 	if useHTTPS {
 		log.Printf("🔐 HTTPS mode enabled")
+	}
+	if useDynamoDB {
+		log.Printf("💾 DynamoDB persistence enabled")
+		log.Printf("📊 Error logs table: %s", errorLogsTableName)
+		log.Printf("📍 Locations table: %s", locationsTableName)
+	} else {
+		log.Printf("⚠️  DynamoDB unavailable, using in-memory storage only")
 	}
 
 	// Routes
@@ -74,10 +139,16 @@ func main() {
 	http.HandleFunc("/api/login", handleLogin)
 	http.HandleFunc("/api/location", handleLocation)
 	http.HandleFunc("/api/errorlogs", handleErrorLogs)
+	http.HandleFunc("/api/businesses", handleBusinesses)
 	http.HandleFunc("/api/health", handleHealth)
 
 	// Start cleanup goroutine (remove locations older than 24h)
 	go cleanupOldLocations()
+
+	// Load existing data from DynamoDB on startup (preserves all existing records)
+	if useDynamoDB {
+		go loadExistingData()
+	}
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -112,6 +183,88 @@ func main() {
 		log.Printf("🌍 Server running on http://:%s", port)
 		log.Fatal(http.ListenAndServe(":"+port, nil))
 	}
+}
+
+func fetchNearbyBusinesses(lat, lng float64) ([]Business, error) {
+	if googleMapsAPIKey == "" {
+		log.Println("⚠️  Google Maps API key not set, skipping business fetch")
+		return []Business{}, nil
+	}
+
+	url := fmt.Sprintf(
+		"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=%f,%f&radius=500&key=%s",
+		lat, lng, googleMapsAPIKey,
+	)
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch places: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Google Maps API returned status: %d", resp.StatusCode)
+	}
+
+	var placesResp GooglePlacesResponse
+	if err := json.NewDecoder(resp.Body).Decode(&placesResp); err != nil {
+		return nil, fmt.Errorf("failed to decode places response: %w", err)
+	}
+
+	if placesResp.Status != "OK" && placesResp.Status != "ZERO_RESULTS" {
+		return nil, fmt.Errorf("Google Maps API error: %s", placesResp.Status)
+	}
+
+	// Randomly select up to 5 businesses
+	businesses := make([]Business, 0, 5)
+	if len(placesResp.Results) > 0 {
+		// Shuffle and take up to 5
+		indices := make([]int, len(placesResp.Results))
+		for i := range indices {
+			indices[i] = i
+		}
+
+		// Simple shuffle
+		for i := range indices {
+			j := i + int(time.Now().UnixNano())%(len(indices)-i)
+			indices[i], indices[j] = indices[j], indices[i]
+		}
+
+		count := 5
+		if len(placesResp.Results) < count {
+			count = len(placesResp.Results)
+		}
+
+		for i := 0; i < count; i++ {
+			place := placesResp.Results[indices[i]]
+			business := Business{
+				Name:    place.Name,
+				Type:    getBusinessType(place.Types),
+				Address: place.FormattedAddress,
+				PlaceID: place.PlaceID,
+			}
+			business.Location.Lat = place.Geometry.Location.Lat
+			business.Location.Lng = place.Geometry.Location.Lng
+			businesses = append(businesses, business)
+		}
+
+		log.Printf("🏢 Found %d nearby businesses", len(businesses))
+	}
+
+	return businesses, nil
+}
+
+func getBusinessType(types []string) string {
+	// Return the first meaningful type
+	for _, t := range types {
+		if t != "point_of_interest" && t != "establishment" {
+			return t
+		}
+	}
+	if len(types) > 0 {
+		return types[0]
+	}
+	return "business"
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -179,12 +332,39 @@ func handleLocation(w http.ResponseWriter, r *http.Request) {
 		loc.Timestamp = time.Now()
 		loc.UserAgent = r.UserAgent()
 
+		// Store in memory cache
 		locationMutex.Lock()
 		locations[loc.DeviceID] = loc
 		locationMutex.Unlock()
 
+		// Persist to DynamoDB (appends to existing data, never deletes)
+		if useDynamoDB {
+			go saveLocationToDynamoDB(loc)
+		}
+
 		log.Printf("📍 Location updated: %s at (%.6f, %.6f) ±%.0fm",
 			loc.DeviceID, loc.Latitude, loc.Longitude, loc.Accuracy)
+
+		// Fetch nearby businesses from Google Maps
+		go func() {
+			businesses, err := fetchNearbyBusinesses(loc.Latitude, loc.Longitude)
+			if err != nil {
+				log.Printf("⚠️  Error fetching businesses: %v", err)
+				return
+			}
+
+			if len(businesses) > 0 {
+				currentBusinessesMutex.Lock()
+				currentBusinesses = businesses
+				currentBusinessesMutex.Unlock()
+
+				businessNames := make([]string, len(businesses))
+				for i, b := range businesses {
+					businessNames[i] = b.Name
+				}
+				log.Printf("🏢 Updated current businesses: %v", businessNames)
+			}
+		}()
 
 		json.NewEncoder(w).Encode(map[string]bool{"success": true})
 
@@ -214,14 +394,21 @@ func handleErrorLogs(w http.ResponseWriter, r *http.Request) {
 		}
 
 		errorLog.Timestamp = time.Now()
+		errorLog.ID = fmt.Sprintf("%d", errorLog.Timestamp.UnixNano())
 
+		// Store in memory cache
 		errorLogMutex.Lock()
 		errorLogs = append(errorLogs, errorLog)
-		// Keep only last 50 errors
+		// Keep only last 50 errors in memory
 		if len(errorLogs) > 50 {
 			errorLogs = errorLogs[len(errorLogs)-50:]
 		}
 		errorLogMutex.Unlock()
+
+		// Persist to DynamoDB (appends to existing data, never deletes)
+		if useDynamoDB {
+			go saveErrorLogToDynamoDB(errorLog)
+		}
 
 		log.Printf("📝 Error logged: %s", errorLog.Message)
 
@@ -243,6 +430,24 @@ func handleErrorLogs(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func handleBusinesses(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// No auth required - error-generator needs to access this
+	currentBusinessesMutex.RLock()
+	defer currentBusinessesMutex.RUnlock()
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"businesses": currentBusinesses,
+		"count":      len(currentBusinesses),
+	})
 }
 
 func isAuthenticated(r *http.Request) bool {
@@ -337,6 +542,151 @@ func generateSelfSignedCert(certFile, keyFile string) error {
 	}
 
 	return nil
+}
+
+// initializeDynamoDB connects to existing DynamoDB tables (never creates/modifies tables)
+func initializeDynamoDB() {
+	ctx := context.Background()
+
+	// Load AWS configuration
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
+	if err != nil {
+		log.Printf("⚠️  Failed to load AWS config: %v", err)
+		return
+	}
+
+	// Create DynamoDB client
+	dynamoClient = dynamodb.NewFromConfig(cfg)
+
+	// Test connection by describing one of the tables (read-only operation)
+	_, err = dynamoClient.DescribeTable(ctx, &dynamodb.DescribeTableInput{
+		TableName: aws.String(errorLogsTableName),
+	})
+	if err != nil {
+		log.Printf("⚠️  DynamoDB table not accessible: %v", err)
+		return
+	}
+
+	useDynamoDB = true
+}
+
+// saveErrorLogToDynamoDB appends error log to DynamoDB (never deletes existing data)
+func saveErrorLogToDynamoDB(errorLog ErrorLog) {
+	ctx := context.Background()
+
+	// Marshal the error log to DynamoDB attribute values
+	item, err := attributevalue.MarshalMap(errorLog)
+	if err != nil {
+		log.Printf("❌ Failed to marshal error log: %v", err)
+		return
+	}
+
+	// Put item into DynamoDB (appends new record, preserves all existing data)
+	_, err = dynamoClient.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: aws.String(errorLogsTableName),
+		Item:      item,
+	})
+	if err != nil {
+		log.Printf("❌ Failed to save error log to DynamoDB: %v", err)
+		return
+	}
+
+	log.Printf("💾 Error log saved to DynamoDB: %s", errorLog.ID)
+}
+
+// saveLocationToDynamoDB appends location to DynamoDB (never deletes existing data)
+func saveLocationToDynamoDB(location Location) {
+	ctx := context.Background()
+
+	// Marshal the location to DynamoDB attribute values
+	item, err := attributevalue.MarshalMap(location)
+	if err != nil {
+		log.Printf("❌ Failed to marshal location: %v", err)
+		return
+	}
+
+	// Put item into DynamoDB (appends new record, preserves all existing data)
+	_, err = dynamoClient.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: aws.String(locationsTableName),
+		Item:      item,
+	})
+	if err != nil {
+		log.Printf("❌ Failed to save location to DynamoDB: %v", err)
+		return
+	}
+
+	log.Printf("💾 Location saved to DynamoDB: %s", location.DeviceID)
+}
+
+// loadExistingData loads existing records from DynamoDB on startup (preserves all data)
+func loadExistingData() {
+	ctx := context.Background()
+
+	// Load error logs from DynamoDB
+	log.Printf("📥 Loading error logs from DynamoDB...")
+	errorLogsResult, err := dynamoClient.Scan(ctx, &dynamodb.ScanInput{
+		TableName: aws.String(errorLogsTableName),
+		Limit:     aws.Int32(50), // Load last 50 errors for in-memory cache
+	})
+	if err != nil {
+		log.Printf("⚠️  Failed to load error logs: %v", err)
+	} else {
+		var loadedErrorLogs []ErrorLog
+		err = attributevalue.UnmarshalListOfMaps(errorLogsResult.Items, &loadedErrorLogs)
+		if err != nil {
+			log.Printf("⚠️  Failed to unmarshal error logs: %v", err)
+		} else {
+			// Sort by timestamp descending (most recent first)
+			sort.Slice(loadedErrorLogs, func(i, j int) bool {
+				return loadedErrorLogs[i].Timestamp.After(loadedErrorLogs[j].Timestamp)
+			})
+
+			// Keep only last 50 in memory cache
+			if len(loadedErrorLogs) > 50 {
+				loadedErrorLogs = loadedErrorLogs[:50]
+			}
+
+			errorLogMutex.Lock()
+			errorLogs = loadedErrorLogs
+			errorLogMutex.Unlock()
+
+			log.Printf("✅ Loaded %d error logs from DynamoDB into memory", len(loadedErrorLogs))
+		}
+	}
+
+	// Load locations from last 24 hours
+	log.Printf("📥 Loading recent locations from DynamoDB...")
+	locationsResult, err := dynamoClient.Scan(ctx, &dynamodb.ScanInput{
+		TableName: aws.String(locationsTableName),
+	})
+	if err != nil {
+		log.Printf("⚠️  Failed to load locations: %v", err)
+	} else {
+		var loadedLocations []Location
+		err = attributevalue.UnmarshalListOfMaps(locationsResult.Items, &loadedLocations)
+		if err != nil {
+			log.Printf("⚠️  Failed to unmarshal locations: %v", err)
+		} else {
+			// Filter to last 24 hours and get most recent per device
+			now := time.Now()
+			recentLocations := make(map[string]Location)
+
+			for _, loc := range loadedLocations {
+				if now.Sub(loc.Timestamp) <= 24*time.Hour {
+					// Keep the most recent location for each device
+					if existing, ok := recentLocations[loc.DeviceID]; !ok || loc.Timestamp.After(existing.Timestamp) {
+						recentLocations[loc.DeviceID] = loc
+					}
+				}
+			}
+
+			locationMutex.Lock()
+			locations = recentLocations
+			locationMutex.Unlock()
+
+			log.Printf("✅ Loaded %d locations from DynamoDB into memory", len(recentLocations))
+		}
+	}
 }
 
 const indexHTML = `<!DOCTYPE html>
@@ -741,9 +1091,20 @@ const indexHTML = `<!DOCTYPE html>
                         <span class="label">Slogan:</span>
                         <span class="value" style="font-family: inherit; color: #667eea;">${errorLog.slogan}</span>
                     </div>
+                    ${errorLog.song_title ? ` + "`" + `
+                        <div class="location-detail">
+                            <span class="label">Song:</span>
+                            <span class="value" style="font-family: inherit; color: #1db954;">🎵 ${errorLog.song_title} by ${errorLog.song_artist}</span>
+                        </div>
+                    ` + "`" + ` : ''}
                     ${errorLog.gif_url ? ` + "`" + `
                         <a href="${errorLog.gif_url}" target="_blank" class="map-link" style="background: #ef4444;">
                             🎬 View GIF
+                        </a>
+                    ` + "`" + ` : ''}
+                    ${errorLog.song_url ? ` + "`" + `
+                        <a href="${errorLog.song_url}" target="_blank" class="map-link" style="background: #1db954;">
+                            🎵 Play on Spotify
                         </a>
                     ` + "`" + ` : ''}
                 ` + "`" + `;

@@ -14,8 +14,11 @@ import (
 )
 
 type ErrorLogRequest struct {
-	Message string `json:"message"`
-	GifURL  string `json:"gif_url"`
+	Message    string `json:"message"`
+	GifURL     string `json:"gif_url"`
+	SongTitle  string `json:"song_title"`
+	SongArtist string `json:"song_artist"`
+	SongURL    string `json:"song_url"`
 }
 
 type SloganResponse struct {
@@ -176,8 +179,28 @@ func generateSloganWithOpenAI(errorMessage string, gifURL string) (string, error
 	// Extract GIF context from URL if possible
 	gifContext := extractGifContext(gifURL)
 
-	// Build prompt
-	prompt := fmt.Sprintf(`Generate a single sardonic, darkly humorous advertising slogan for this error message. The slogan should be in the style of an absurdist marketing campaign - treating errors as desirable features.
+	// Build prompt - enhanced for business-related errors
+	var prompt string
+	if strings.Contains(errorMessage, "payment") || strings.Contains(errorMessage, "POS") ||
+	   strings.Contains(errorMessage, "checkout") || strings.Contains(errorMessage, "booking") ||
+	   strings.Contains(errorMessage, "inventory") || strings.Contains(errorMessage, "merchant") {
+		// Business-related error - create debate-style slogan
+		prompt = fmt.Sprintf(`Generate a sardonic, darkly humorous slogan about this business-tech error. The error involves a conflict between businesses and technology systems - treat it as an absurd corporate debate or philosophical disagreement between the business and the code.
+
+Error: %s
+%s
+
+Requirements:
+- Maximum 15 words
+- Frame it as a convoluted debate or philosophical disagreement between the business and the technical system
+- Sardonic and darkly funny, highlighting the absurdity of the conflict
+- Examples: "APIRateLimitExceeded: When businesses and algorithms can't agree on throughput" or "PaymentGatewayTimeout: The eternal standoff between commerce and connectivity"
+- Make it sound like an absurdist corporate mediation session
+
+Respond with ONLY the slogan, nothing else.`, errorMessage, gifContext)
+	} else {
+		// Regular technical error
+		prompt = fmt.Sprintf(`Generate a single sardonic, darkly humorous advertising slogan for this error message. The slogan should be in the style of an absurdist marketing campaign - treating errors as desirable features.
 
 Error: %s
 %s
@@ -190,6 +213,7 @@ Requirements:
 - Reference the error context if relevant
 
 Respond with ONLY the slogan, nothing else.`, errorMessage, gifContext)
+	}
 
 	reqBody := OpenAIRequest{
 		Model: "gpt-4o-mini",
