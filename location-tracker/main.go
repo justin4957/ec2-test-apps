@@ -164,13 +164,15 @@ func main() {
 		go loadExistingData()
 	}
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		if useHTTPS {
-			port = "8443"
-		} else {
-			port = "8080"
-		}
+	httpPort := "8080"
+	httpsPort := "8443"
+
+	// Allow custom ports via environment
+	if customHTTPPort := os.Getenv("HTTP_PORT"); customHTTPPort != "" {
+		httpPort = customHTTPPort
+	}
+	if customHTTPSPort := os.Getenv("HTTPS_PORT"); customHTTPSPort != "" {
+		httpsPort = customHTTPSPort
 	}
 
 	if useHTTPS {
@@ -189,13 +191,22 @@ func main() {
 			log.Printf("✅ Self-signed certificate generated")
 		}
 
-		log.Printf("🌍 Server running on https://:%s", port)
-		log.Fatal(http.ListenAndServeTLS(":"+port, certFile, keyFile, nil))
+		// Start HTTP server for Twilio webhooks (in background)
+		go func() {
+			log.Printf("🌍 HTTP server running on http://:%s (for Twilio webhooks)", httpPort)
+			if err := http.ListenAndServe(":"+httpPort, nil); err != nil {
+				log.Fatalf("❌ HTTP server failed: %v", err)
+			}
+		}()
+
+		// Start HTTPS server for browser access (main thread)
+		log.Printf("🌍 HTTPS server running on https://:%s (for browser access)", httpsPort)
+		log.Fatal(http.ListenAndServeTLS(":"+httpsPort, certFile, keyFile, nil))
 	} else {
 		log.Printf("⚠️  Running in HTTP mode - geolocation may not work in browsers!")
 		log.Printf("💡 Set USE_HTTPS=true to enable HTTPS")
-		log.Printf("🌍 Server running on http://:%s", port)
-		log.Fatal(http.ListenAndServe(":"+port, nil))
+		log.Printf("🌍 Server running on http://:%s", httpPort)
+		log.Fatal(http.ListenAndServe(":"+httpPort, nil))
 	}
 }
 
