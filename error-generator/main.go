@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -68,6 +69,22 @@ type SloganResponse struct {
 	Slogan string `json:"slogan"`
 }
 
+type Business struct {
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	Address  string `json:"address"`
+	PlaceID  string `json:"place_id"`
+	Location struct {
+		Lat float64 `json:"lat"`
+		Lng float64 `json:"lng"`
+	} `json:"location"`
+}
+
+type BusinessesResponse struct {
+	Businesses []Business `json:"businesses"`
+	Count      int        `json:"count"`
+}
+
 var errorMessages = []string{
 	"NullPointerException in UserService.java:42",
 	"IndexOutOfBoundsException: Index: 5, Size: 3",
@@ -84,6 +101,35 @@ var errorMessages = []string{
 	"IllegalArgumentException: negative timeout value",
 	"ClassCastException: String cannot be cast to Integer",
 	"ArithmeticException: division by zero",
+}
+
+// Business-related error templates (placeholders will be filled with actual business names)
+var businessErrorTemplates = []string{
+	"APIRateLimitExceeded: %s payment gateway throttling requests",
+	"OAuthTokenRevoked: %s authentication service denying access",
+	"MerchantIDConflict: %s POS system reporting duplicate transaction",
+	"InventoryMismatchException: %s database sync failed",
+	"GeofenceViolation: %s location service boundary exceeded",
+	"PaymentGatewayTimeout: %s checkout process unresponsive",
+	"CustomerDataLeakage: %s CRM exposing sensitive records",
+	"ReservationCollision: %s booking system double-allocated slot",
+	"LoyaltyPointsCorruption: %s rewards API returning invalid balances",
+	"DeliveryRouteOptimizationFailure: %s logistics algorithm deadlocked",
+	"MenuItemPricingDisagreement: %s order system vs. %s catalog mismatch",
+	"RefundProcessorHalted: %s transaction reversal stuck in limbo",
+	"StockLevelDesync: %s warehouse claiming negative inventory",
+	"BusinessHoursParsingError: %s schedule API returned malformed data",
+	"TaxCalculationBreach: %s payment system vs. local regulations conflict",
+}
+
+// HTTP client for location tracker with TLS skip verify (for self-signed certs)
+var locationTrackerHTTPClient = &http.Client{
+	Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true,
+		},
+	},
+	Timeout: 10 * time.Second,
 }
 
 type GifCache struct {
@@ -341,6 +387,54 @@ func (spotifyCache *SpotifyCache) getNextSong() Song {
 	return song
 }
 
+func fetchBusinesses(trackerURL string) ([]Business, error) {
+	if trackerURL == "" {
+		return []Business{}, nil
+	}
+
+	resp, err := locationTrackerHTTPClient.Get(trackerURL + "/api/businesses")
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch businesses: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("businesses endpoint returned status: %d", resp.StatusCode)
+	}
+
+	var businessesResp BusinessesResponse
+	if err := json.NewDecoder(resp.Body).Decode(&businessesResp); err != nil {
+		return nil, fmt.Errorf("failed to decode businesses response: %w", err)
+	}
+
+	return businessesResp.Businesses, nil
+}
+
+func generateBusinessError(businesses []Business) string {
+	if len(businesses) == 0 {
+		// Fallback to regular error if no businesses available
+		return errorMessages[rand.Intn(len(errorMessages))]
+	}
+
+	template := businessErrorTemplates[rand.Intn(len(businessErrorTemplates))]
+
+	// Count placeholders in template
+	placeholderCount := 0
+	for i := 0; i < len(template); i++ {
+		if template[i] == '%' && i+1 < len(template) && template[i+1] == 's' {
+			placeholderCount++
+		}
+	}
+
+	// Fill placeholders with random business names
+	args := make([]interface{}, placeholderCount)
+	for i := 0; i < placeholderCount; i++ {
+		args[i] = businesses[rand.Intn(len(businesses))].Name
+	}
+
+	return fmt.Sprintf(template, args...)
+}
+
 func sendErrorLogToSloganServer(sloganServerURL string, errorLogRequest ErrorLogRequest) (*SloganResponse, error) {
 	requestBody, err := json.Marshal(errorLogRequest)
 	if err != nil {
@@ -380,7 +474,7 @@ func sendErrorLogToTracker(trackerURL string, message string, gifURL string, slo
 		return fmt.Errorf("failed to marshal error log: %w", err)
 	}
 
-	httpResponse, err := http.Post(trackerURL+"/api/errorlogs", "application/json", bytes.NewBuffer(requestBody))
+	httpResponse, err := locationTrackerHTTPClient.Post(trackerURL+"/api/errorlogs", "application/json", bytes.NewBuffer(requestBody))
 	if err != nil {
 		return fmt.Errorf("failed to send to tracker: %w", err)
 	}
@@ -430,19 +524,31 @@ func main() {
 	defer ticker.Stop()
 
 	generateAndSendError := func() {
-		randomErrorMessage := errorMessages[rand.Intn(len(errorMessages))]
+		// Fetch current businesses from location tracker
+		var errorMessage string
+		businesses, err := fetchBusinesses(locationTrackerURL)
+		if err != nil {
+			log.Printf("⚠️  Error fetching businesses: %v", err)
+			errorMessage = errorMessages[rand.Intn(len(errorMessages))]
+		} else if len(businesses) > 0 {
+			errorMessage = generateBusinessError(businesses)
+			log.Printf("🏢 Using %d nearby businesses for error", len(businesses))
+		} else {
+			errorMessage = errorMessages[rand.Intn(len(errorMessages))]
+		}
+
 		gifURL := gifCache.getNextGif()
 		song := spotifyCache.getNextSong()
 
 		errorLogRequest := ErrorLogRequest{
-			Message:    randomErrorMessage,
+			Message:    errorMessage,
 			GifURL:     gifURL,
 			SongTitle:  song.Title,
 			SongArtist: song.Artist,
 			SongURL:    song.URL,
 		}
 
-		log.Printf("Sending error: %s", randomErrorMessage)
+		log.Printf("Sending error: %s", errorMessage)
 		log.Printf("With GIF: %s", gifURL)
 		log.Printf("With Song: %s by %s", song.Title, song.Artist)
 
@@ -454,7 +560,7 @@ func main() {
 
 		log.Printf("Received response: %s %s", sloganResponse.Emoji, sloganResponse.Slogan)
 		fmt.Printf("\n=== ERROR LOG ===\n")
-		fmt.Printf("Error: %s\n", randomErrorMessage)
+		fmt.Printf("Error: %s\n", errorMessage)
 		fmt.Printf("GIF: %s\n", gifURL)
 		fmt.Printf("Song: %s by %s\n", song.Title, song.Artist)
 		fmt.Printf("Song URL: %s\n", song.URL)
@@ -463,7 +569,7 @@ func main() {
 
 		// Send to location tracker if configured
 		if locationTrackerURL != "" {
-			if err := sendErrorLogToTracker(locationTrackerURL, randomErrorMessage, gifURL, sloganResponse.Slogan, song.Title, song.Artist, song.URL); err != nil {
+			if err := sendErrorLogToTracker(locationTrackerURL, errorMessage, gifURL, sloganResponse.Slogan, song.Title, song.Artist, song.URL); err != nil {
 				log.Printf("Warning: Failed to send to location tracker: %v", err)
 			} else {
 				log.Printf("📍 Sent error log to location tracker")

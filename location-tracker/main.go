@@ -7,6 +7,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"html/template"
 	"log"
 	"math/big"
@@ -38,6 +39,35 @@ type ErrorLog struct {
 	Timestamp  time.Time `json:"timestamp"`
 }
 
+// Business represents a nearby business from Google Maps
+type Business struct {
+	Name     string   `json:"name"`
+	Type     string   `json:"type"`
+	Address  string   `json:"address"`
+	PlaceID  string   `json:"place_id"`
+	Location struct {
+		Lat float64 `json:"lat"`
+		Lng float64 `json:"lng"`
+	} `json:"location"`
+}
+
+// Google Maps API response types
+type GooglePlacesResponse struct {
+	Results []struct {
+		Name         string   `json:"name"`
+		Types        []string `json:"types"`
+		PlaceID      string   `json:"place_id"`
+		FormattedAddress string `json:"formatted_address"`
+		Geometry struct {
+			Location struct {
+				Lat float64 `json:"lat"`
+				Lng float64 `json:"lng"`
+			} `json:"location"`
+		} `json:"geometry"`
+	} `json:"results"`
+	Status string `json:"status"`
+}
+
 var (
 	// In-memory storage (locations expire after 24 hours)
 	locations     = make(map[string]Location)
@@ -47,8 +77,15 @@ var (
 	errorLogs     = make([]ErrorLog, 0, 50)
 	errorLogMutex sync.RWMutex
 
+	// Nearby businesses from last shared location
+	currentBusinesses     = make([]Business, 0, 5)
+	currentBusinessesMutex sync.RWMutex
+
 	// Global password from environment
 	globalPassword = os.Getenv("TRACKER_PASSWORD")
+
+	// Google Maps API key
+	googleMapsAPIKey = os.Getenv("GOOGLE_MAPS_API_KEY")
 
 	// HTTPS mode flag
 	useHTTPS = false
@@ -76,6 +113,7 @@ func main() {
 	http.HandleFunc("/api/login", handleLogin)
 	http.HandleFunc("/api/location", handleLocation)
 	http.HandleFunc("/api/errorlogs", handleErrorLogs)
+	http.HandleFunc("/api/businesses", handleBusinesses)
 	http.HandleFunc("/api/health", handleHealth)
 
 	// Start cleanup goroutine (remove locations older than 24h)
@@ -114,6 +152,88 @@ func main() {
 		log.Printf("🌍 Server running on http://:%s", port)
 		log.Fatal(http.ListenAndServe(":"+port, nil))
 	}
+}
+
+func fetchNearbyBusinesses(lat, lng float64) ([]Business, error) {
+	if googleMapsAPIKey == "" {
+		log.Println("⚠️  Google Maps API key not set, skipping business fetch")
+		return []Business{}, nil
+	}
+
+	url := fmt.Sprintf(
+		"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=%f,%f&radius=500&key=%s",
+		lat, lng, googleMapsAPIKey,
+	)
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch places: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Google Maps API returned status: %d", resp.StatusCode)
+	}
+
+	var placesResp GooglePlacesResponse
+	if err := json.NewDecoder(resp.Body).Decode(&placesResp); err != nil {
+		return nil, fmt.Errorf("failed to decode places response: %w", err)
+	}
+
+	if placesResp.Status != "OK" && placesResp.Status != "ZERO_RESULTS" {
+		return nil, fmt.Errorf("Google Maps API error: %s", placesResp.Status)
+	}
+
+	// Randomly select up to 5 businesses
+	businesses := make([]Business, 0, 5)
+	if len(placesResp.Results) > 0 {
+		// Shuffle and take up to 5
+		indices := make([]int, len(placesResp.Results))
+		for i := range indices {
+			indices[i] = i
+		}
+
+		// Simple shuffle
+		for i := range indices {
+			j := i + int(time.Now().UnixNano())%(len(indices)-i)
+			indices[i], indices[j] = indices[j], indices[i]
+		}
+
+		count := 5
+		if len(placesResp.Results) < count {
+			count = len(placesResp.Results)
+		}
+
+		for i := 0; i < count; i++ {
+			place := placesResp.Results[indices[i]]
+			business := Business{
+				Name:    place.Name,
+				Type:    getBusinessType(place.Types),
+				Address: place.FormattedAddress,
+				PlaceID: place.PlaceID,
+			}
+			business.Location.Lat = place.Geometry.Location.Lat
+			business.Location.Lng = place.Geometry.Location.Lng
+			businesses = append(businesses, business)
+		}
+
+		log.Printf("🏢 Found %d nearby businesses", len(businesses))
+	}
+
+	return businesses, nil
+}
+
+func getBusinessType(types []string) string {
+	// Return the first meaningful type
+	for _, t := range types {
+		if t != "point_of_interest" && t != "establishment" {
+			return t
+		}
+	}
+	if len(types) > 0 {
+		return types[0]
+	}
+	return "business"
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -188,6 +308,27 @@ func handleLocation(w http.ResponseWriter, r *http.Request) {
 		log.Printf("📍 Location updated: %s at (%.6f, %.6f) ±%.0fm",
 			loc.DeviceID, loc.Latitude, loc.Longitude, loc.Accuracy)
 
+		// Fetch nearby businesses from Google Maps
+		go func() {
+			businesses, err := fetchNearbyBusinesses(loc.Latitude, loc.Longitude)
+			if err != nil {
+				log.Printf("⚠️  Error fetching businesses: %v", err)
+				return
+			}
+
+			if len(businesses) > 0 {
+				currentBusinessesMutex.Lock()
+				currentBusinesses = businesses
+				currentBusinessesMutex.Unlock()
+
+				businessNames := make([]string, len(businesses))
+				for i, b := range businesses {
+					businessNames[i] = b.Name
+				}
+				log.Printf("🏢 Updated current businesses: %v", businessNames)
+			}
+		}()
+
 		json.NewEncoder(w).Encode(map[string]bool{"success": true})
 
 	case "GET":
@@ -245,6 +386,24 @@ func handleErrorLogs(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func handleBusinesses(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// No auth required - error-generator needs to access this
+	currentBusinessesMutex.RLock()
+	defer currentBusinessesMutex.RUnlock()
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"businesses": currentBusinesses,
+		"count":      len(currentBusinesses),
+	})
 }
 
 func isAuthenticated(r *http.Request) bool {
