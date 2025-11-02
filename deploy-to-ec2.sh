@@ -26,6 +26,33 @@ GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY:-}
 TRACKER_PASSWORD=${TRACKER_PASSWORD:-}
 LOCATION_TRACKER_URL=${LOCATION_TRACKER_URL:-}
 
+# Validate critical environment variables
+echo "🔍 Validating environment variables..."
+MISSING_VARS=0
+
+if [ -z "$TRACKER_PASSWORD" ]; then
+    echo "❌ ERROR: TRACKER_PASSWORD is not set in .env.ec2"
+    MISSING_VARS=1
+fi
+
+if [ $MISSING_VARS -eq 1 ]; then
+    echo ""
+    echo "⚠️  Critical environment variables are missing!"
+    echo "   Please ensure .env.ec2 exists and contains:"
+    echo "   - TRACKER_PASSWORD=your_password"
+    echo ""
+    echo "   Optional but recommended:"
+    echo "   - GOOGLE_MAPS_API_KEY=your_key"
+    echo "   - GIPHY_API_KEY=your_key"
+    echo "   - OPENAI_API_KEY=your_key"
+    echo "   - SPOTIFY_CLIENT_ID=your_id"
+    echo "   - SPOTIFY_CLIENT_SECRET=your_secret"
+    echo ""
+    exit 1
+fi
+
+echo "✅ All critical environment variables are set"
+
 # Get instance details
 echo "🔍 Getting instance details..."
 PUBLIC_DNS=$(aws ec2 describe-instances \
@@ -112,10 +139,12 @@ ssh -o StrictHostKeyChecking=no -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} \
     echo "🚀 Starting location-tracker..."
 
     # Build location-tracker docker run command with optional API keys
+    # Expose both HTTP (8081) and HTTPS (8082) for Twilio webhook support
     TRACKER_CMD="docker run -d \
         --name location-tracker \
         --restart unless-stopped \
         --network ec2-test-network \
+        -p 8081:8080 \
         -p 8082:8443 \
         -e USE_HTTPS=true"
 
@@ -192,14 +221,65 @@ ssh -o StrictHostKeyChecking=no -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} \
     echo ""
     echo "📝 Recent logs from error-generator:"
     docker logs --tail 10 error-generator
+
+    echo ""
+    echo "🔍 Validating deployment..."
+
+    # Validate all containers are running (not restarting)
+    LOCATION_STATUS=$(docker inspect --format='{{.State.Status}}' location-tracker 2>/dev/null)
+    ERROR_GEN_STATUS=$(docker inspect --format='{{.State.Status}}' error-generator 2>/dev/null)
+    SLOGAN_STATUS=$(docker inspect --format='{{.State.Status}}' slogan-server 2>/dev/null)
+
+    if [ "$LOCATION_STATUS" != "running" ]; then
+        echo "⚠️  WARNING: location-tracker is not running (status: $LOCATION_STATUS)"
+        echo "   Check logs with: docker logs location-tracker"
+    else
+        echo "✅ location-tracker is running"
+    fi
+
+    if [ "$ERROR_GEN_STATUS" != "running" ]; then
+        echo "⚠️  WARNING: error-generator is not running (status: $ERROR_GEN_STATUS)"
+        echo "   Check logs with: docker logs error-generator"
+    else
+        echo "✅ error-generator is running"
+    fi
+
+    if [ "$SLOGAN_STATUS" != "running" ]; then
+        echo "⚠️  WARNING: slogan-server is not running (status: $SLOGAN_STATUS)"
+        echo "   Check logs with: docker logs slogan-server"
+    else
+        echo "✅ slogan-server is running"
+    fi
+
+    # Check if location-tracker loaded DynamoDB data
+    if docker logs location-tracker 2>&1 | grep -q "Loaded.*from DynamoDB"; then
+        echo "✅ DynamoDB data loaded successfully"
+    else
+        echo "⚠️  WARNING: Could not verify DynamoDB data loading"
+    fi
+
+    # Check if required environment variables are set
+    if ! docker exec location-tracker printenv TRACKER_PASSWORD >/dev/null 2>&1; then
+        echo "❌ ERROR: TRACKER_PASSWORD not set in location-tracker!"
+    else
+        echo "✅ TRACKER_PASSWORD is configured"
+    fi
 EOF
 
 echo ""
 echo "✅ Deployment complete!"
-echo "🌐 Slogan server is available at: http://${PUBLIC_DNS}:8080"
-echo "🌐 Location tracker is available at: http://${PUBLIC_DNS}:8082"
 echo ""
-echo "To view logs:"
+echo "🌐 Service URLs:"
+echo "   Slogan server:      http://${PUBLIC_DNS}:8080"
+echo "   Location tracker:   https://${PUBLIC_DNS}:8082 (HTTPS with self-signed cert)"
+echo "   Location tracker:   http://${PUBLIC_DNS}:8081 (HTTP for Twilio webhooks)"
+echo ""
+echo "📱 Twilio SMS Webhook URL:"
+echo "   http://${PUBLIC_DNS}:8081/api/twilio/sms"
+echo ""
+echo "📊 To view logs:"
 echo "  ssh -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} 'docker logs -f slogan-server'"
 echo "  ssh -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} 'docker logs -f location-tracker'"
 echo "  ssh -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} 'docker logs -f error-generator'"
+echo ""
+echo "📖 Troubleshooting: See DEPLOYMENT_TROUBLESHOOTING.md"

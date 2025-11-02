@@ -37,14 +37,15 @@ type Location struct {
 
 // ErrorLog represents an error message with timestamp
 type ErrorLog struct {
-	ID         string    `json:"id,omitempty" dynamodbav:"id"`
-	Message    string    `json:"message" dynamodbav:"message"`
-	GifURL     string    `json:"gif_url" dynamodbav:"gif_url"`
-	Slogan     string    `json:"slogan" dynamodbav:"slogan"`
-	SongTitle  string    `json:"song_title,omitempty" dynamodbav:"song_title"`
-	SongArtist string    `json:"song_artist,omitempty" dynamodbav:"song_artist"`
-	SongURL    string    `json:"song_url,omitempty" dynamodbav:"song_url"`
-	Timestamp  time.Time `json:"timestamp" dynamodbav:"timestamp"`
+	ID                  string    `json:"id,omitempty" dynamodbav:"id"`
+	Message             string    `json:"message" dynamodbav:"message"`
+	GifURL              string    `json:"gif_url" dynamodbav:"gif_url"`
+	Slogan              string    `json:"slogan" dynamodbav:"slogan"`
+	SongTitle           string    `json:"song_title,omitempty" dynamodbav:"song_title"`
+	SongArtist          string    `json:"song_artist,omitempty" dynamodbav:"song_artist"`
+	SongURL             string    `json:"song_url,omitempty" dynamodbav:"song_url"`
+	UserExperienceNote  string    `json:"user_experience_note,omitempty" dynamodbav:"user_experience_note"`
+	Timestamp           time.Time `json:"timestamp" dynamodbav:"timestamp"`
 }
 
 // Business represents a nearby business from Google Maps
@@ -76,6 +77,14 @@ type GooglePlacesResponse struct {
 	Status string `json:"status"`
 }
 
+// TwilioWebhook represents incoming SMS data from Twilio
+type TwilioWebhook struct {
+	MessageSid string `json:"MessageSid"`
+	Body       string `json:"Body"`
+	From       string `json:"From"`
+	To         string `json:"To"`
+}
+
 var (
 	// In-memory cache (locations expire after 24 hours)
 	locations     = make(map[string]Location)
@@ -88,6 +97,10 @@ var (
 	// Nearby businesses from last shared location
 	currentBusinesses     = make([]Business, 0, 5)
 	currentBusinessesMutex sync.RWMutex
+
+	// Pending user experience note from Twilio SMS
+	pendingUserExperienceNote string
+	userExperienceNoteMutex   sync.RWMutex
 
 	// Global password from environment
 	globalPassword = os.Getenv("TRACKER_PASSWORD")
@@ -141,6 +154,7 @@ func main() {
 	http.HandleFunc("/api/errorlogs", handleErrorLogs)
 	http.HandleFunc("/api/businesses", handleBusinesses)
 	http.HandleFunc("/api/health", handleHealth)
+	http.HandleFunc("/api/twilio/sms", handleTwilioWebhook)
 
 	// Start cleanup goroutine (remove locations older than 24h)
 	go cleanupOldLocations()
@@ -396,6 +410,15 @@ func handleErrorLogs(w http.ResponseWriter, r *http.Request) {
 		errorLog.Timestamp = time.Now()
 		errorLog.ID = fmt.Sprintf("%d", errorLog.Timestamp.UnixNano())
 
+		// Attach pending user experience note from Twilio SMS if available
+		userExperienceNoteMutex.Lock()
+		if pendingUserExperienceNote != "" {
+			errorLog.UserExperienceNote = pendingUserExperienceNote
+			log.Printf("💬 Attached user experience note: %s", pendingUserExperienceNote)
+			pendingUserExperienceNote = "" // Clear after attaching
+		}
+		userExperienceNoteMutex.Unlock()
+
 		// Store in memory cache
 		errorLogMutex.Lock()
 		errorLogs = append(errorLogs, errorLog)
@@ -448,6 +471,43 @@ func handleBusinesses(w http.ResponseWriter, r *http.Request) {
 		"businesses": currentBusinesses,
 		"count":      len(currentBusinesses),
 	})
+}
+
+func handleTwilioWebhook(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Parse form data (Twilio sends application/x-www-form-urlencoded)
+	if err := r.ParseForm(); err != nil {
+		log.Printf("⚠️  Error parsing Twilio webhook form: %v", err)
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	messageBody := r.FormValue("Body")
+	messageFrom := r.FormValue("From")
+	messageSid := r.FormValue("MessageSid")
+
+	if messageBody == "" {
+		log.Printf("⚠️  Received empty message body from Twilio")
+		http.Error(w, "Empty message body", http.StatusBadRequest)
+		return
+	}
+
+	// Store the message as pending user experience note
+	userExperienceNoteMutex.Lock()
+	pendingUserExperienceNote = messageBody
+	userExperienceNoteMutex.Unlock()
+
+	log.Printf("📱 Received SMS from %s (SID: %s): %s", messageFrom, messageSid, messageBody)
+	log.Printf("💬 Stored user experience note, will attach to next error log")
+
+	// Respond with TwiML (Twilio expects XML response)
+	w.Header().Set("Content-Type", "application/xml")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprint(w, `<?xml version="1.0" encoding="UTF-8"?><Response></Response>`)
 }
 
 func isAuthenticated(r *http.Request) bool {
@@ -1095,6 +1155,12 @@ const indexHTML = `<!DOCTYPE html>
                         <div class="location-detail">
                             <span class="label">Song:</span>
                             <span class="value" style="font-family: inherit; color: #1db954;">🎵 ${errorLog.song_title} by ${errorLog.song_artist}</span>
+                        </div>
+                    ` + "`" + ` : ''}
+                    ${errorLog.user_experience_note ? ` + "`" + `
+                        <div class="location-detail" style="border-left: 3px solid #10b981; padding-left: 12px; background: #f0fdf4;">
+                            <span class="label" style="color: #065f46;">💬 User Note:</span>
+                            <span class="value" style="font-family: inherit; color: #065f46; font-weight: 500;">${errorLog.user_experience_note}</span>
                         </div>
                     ` + "`" + ` : ''}
                     ${errorLog.gif_url ? ` + "`" + `

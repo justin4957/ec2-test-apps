@@ -2,12 +2,15 @@ FROM golang:1.21-alpine AS builder
 
 WORKDIR /app
 
-# Copy source
+# Copy go module files and source
+COPY go.mod ./
 COPY main.go ./
 
-# Initialize Go module and build
-RUN go mod init location-tracker && \
-    CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o location-tracker .
+# Tidy dependencies and download
+RUN go mod tidy && go mod download
+
+# Build
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o location-tracker .
 
 # Production image
 FROM alpine:latest
