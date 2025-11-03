@@ -14,11 +14,12 @@ import (
 )
 
 type ErrorLogRequest struct {
-	Message    string `json:"message"`
-	GifURL     string `json:"gif_url"`
-	SongTitle  string `json:"song_title"`
-	SongArtist string `json:"song_artist"`
-	SongURL    string `json:"song_url"`
+	Message      string   `json:"message"`
+	GifURL       string   `json:"gif_url"`
+	SongTitle    string   `json:"song_title"`
+	SongArtist   string   `json:"song_artist"`
+	SongURL      string   `json:"song_url"`
+	UserKeywords []string `json:"user_keywords,omitempty"`
 }
 
 type SloganResponse struct {
@@ -171,13 +172,19 @@ var (
 	httpClient   = &http.Client{Timeout: 10 * time.Second}
 )
 
-func generateSloganWithOpenAI(errorMessage string, gifURL string) (string, error) {
+func generateSloganWithOpenAI(errorMessage string, gifURL string, userKeywords []string) (string, error) {
 	if openaiAPIKey == "" {
 		return "", fmt.Errorf("OpenAI API key not configured")
 	}
 
 	// Extract GIF context from URL if possible
 	gifContext := extractGifContext(gifURL)
+
+	// Build keyword context for satirical purposes
+	keywordContext := ""
+	if len(userKeywords) > 0 {
+		keywordContext = fmt.Sprintf("\n\nFor satirical purposes, incorporate these user-generated keywords if relevant: %s. Feel free to acknowledge the absurd irony.", strings.Join(userKeywords, ", "))
+	}
 
 	// Build prompt - enhanced for business-related errors
 	var prompt string
@@ -188,7 +195,7 @@ func generateSloganWithOpenAI(errorMessage string, gifURL string) (string, error
 		prompt = fmt.Sprintf(`Generate a sardonic, darkly humorous slogan about this business-tech error. The error involves a conflict between businesses and technology systems - treat it as an absurd corporate debate or philosophical disagreement between the business and the code.
 
 Error: %s
-%s
+%s%s
 
 Requirements:
 - Maximum 15 words
@@ -197,13 +204,13 @@ Requirements:
 - Examples: "APIRateLimitExceeded: When businesses and algorithms can't agree on throughput" or "PaymentGatewayTimeout: The eternal standoff between commerce and connectivity"
 - Make it sound like an absurdist corporate mediation session
 
-Respond with ONLY the slogan, nothing else.`, errorMessage, gifContext)
+Respond with ONLY the slogan, nothing else.`, errorMessage, gifContext, keywordContext)
 	} else {
 		// Regular technical error
 		prompt = fmt.Sprintf(`Generate a single sardonic, darkly humorous advertising slogan for this error message. The slogan should be in the style of an absurdist marketing campaign - treating errors as desirable features.
 
 Error: %s
-%s
+%s%s
 
 Requirements:
 - Maximum 10 words
@@ -212,7 +219,7 @@ Requirements:
 - Similar to slogans like "Buffer overflow: Living life on the edge" or "Null pointer: The void stares back"
 - Reference the error context if relevant
 
-Respond with ONLY the slogan, nothing else.`, errorMessage, gifContext)
+Respond with ONLY the slogan, nothing else.`, errorMessage, gifContext, keywordContext)
 	}
 
 	reqBody := OpenAIRequest{
@@ -312,13 +319,16 @@ func handleErrorLog(responseWriter http.ResponseWriter, request *http.Request) {
 	}
 
 	log.Printf("Received error log: %s (GIF: %s)", errorLogRequest.Message, errorLogRequest.GifURL)
+	if len(errorLogRequest.UserKeywords) > 0 {
+		log.Printf("🔑 User keywords for satirical slogan: %v", errorLogRequest.UserKeywords)
+	}
 
 	var slogan string
 	var sloganSource string
 
 	// Try OpenAI first
 	if openaiAPIKey != "" {
-		generatedSlogan, err := generateSloganWithOpenAI(errorLogRequest.Message, errorLogRequest.GifURL)
+		generatedSlogan, err := generateSloganWithOpenAI(errorLogRequest.Message, errorLogRequest.GifURL, errorLogRequest.UserKeywords)
 		if err != nil {
 			log.Printf("OpenAI generation failed, using fallback: %v", err)
 			slogan = getFallbackSlogan()

@@ -73,22 +73,32 @@ Personal security / educational tool that:
 │                 │                              │                 │
 │ - Giphy cache   │   {"message": "...",        │ - 115 slogans   │
 │ - Timer (60s)   │    "gif_url": "...",        │ - OpenAI GPT-4  │
-│ - Location      │    "location": {...}}       │ - Random picker │
-│                 │                              │                 │
+│ - Spotify songs │    "song": {...}}           │ - Random picker │
+│ - Businesses    │                              │                 │
 │                 │ <────────────────────────── │                 │
 │                 │   {"emoji": "🚬",           │                 │
 │                 │    "slogan": "..."}         │                 │
 └─────────────────┘                              └─────────────────┘
-
-                      ┌──────────────────┐
-                      │ Location Tracker │
-                      │                  │
-                      │ - Password auth  │
-                      │ - Real-time map  │
-                      │ - 24h retention  │
-                      │ - Auto-refresh   │
-                      └──────────────────┘
-                         Browser/Device
+         │                                                │
+         │ POST /api/errorlogs                           │
+         v                                                v
+┌──────────────────────────────────────────────────────────────┐
+│                     Location Tracker                         │
+│                                                              │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    │
+│  │   Auth &    │    │   Error     │    │   Twilio    │    │
+│  │   Location  │    │   Logging   │    │   SMS       │    │
+│  │   Tracking  │    │   Storage   │    │   Webhook   │    │
+│  └─────────────┘    └─────────────┘    └─────────────┘    │
+│                                                              │
+│  - Password auth      - Error logs         - SMS → Notes   │
+│  - Real-time map      - DynamoDB           - Auto-attach   │
+│  - 24h retention      - Google Maps        - User feedback │
+│  - Auto-refresh       - Businesses         - Context       │
+└──────────────────────────────────────────────────────────────┘
+         ▲                                           ▲
+         │                                           │
+    Browser/Device                          Twilio SMS Webhook
 ```
 
 ## Features
@@ -129,6 +139,14 @@ Personal security / educational tool that:
 - Auto-cleanup after 24 hours
 - **IMPORTANT**: ONLY for tracking YOUR OWN devices with explicit consent
 - See [location-tracker/README.md](location-tracker/README.md) for full details
+
+### 📱 Twilio SMS Integration (NEW)
+- **User Experience Notes**: Send SMS messages via Twilio that attach to error logs
+- SMS messages are stored and automatically attached to the next error log
+- Provides real-world context and user feedback for error tracking
+- Simple webhook endpoint: `/api/twilio/sms`
+- Notes displayed in UI with special highlighting
+- See [TWILIO_INTEGRATION.md](TWILIO_INTEGRATION.md) for setup and configuration
 
   Error: 
 <img width="481" height="187" alt="Screenshot 2025-10-29 at 12 05 48 PM" src="https://github.com/user-attachments/assets/701e2516-41cb-4370-8f96-efda2758d448" />
