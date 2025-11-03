@@ -36,18 +36,123 @@ type SpotifyTracksResponse struct {
 	} `json:"tracks"`
 }
 
-// Rock classics track IDs - hardcoded list since recommendations API requires user auth
-var rockClassicsTrackIDs = []string{
+// Curated "Silver Screen Static" playlist - 100 tracks of alternative nostalgia & deep cuts
+// Track IDs for songs from iconic soundtracks and alternative classics
+var silverScreenStaticTrackIDs = []string{
+	// Act I: Suburban Dreams & Mall Rat Nights
+	"3VBQKSaJTRl6xAYlessLoR", // The Killing Moon - Echo & the Bunnymen
+	"3X9yTENCr5pu5eRNSTcSQE", // If You Leave - Orchestral Manoeuvres in the Dark
+	"38hNoq5E5GDs3jeVzWg9j8", // Please, Please, Please Let Me Get What I Want - The Dream Academy
+	"4D7BCuvgdJCeGHEfx9g1B6", // Don't You (Forget About Me) - Simple Minds
+	"1I3sJLgF8r9FxQWKmPVVKu", // Under the Milky Way - The Church
+	"0WQiDwKJclirSYG9v5tayI", // There Is a Light That Never Goes Out - The Smiths
+
+	// Act II: Late Night AM Radio & Static Transmissions
+	"1OoGRHDTTiH8sWXrAeFEXJ", // Into Dust - Mazzy Star
+	"0qxYx4F3vm1AOnfux6dDxP", // Fade Into You - Mazzy Star
+	"3lh9gwVXwO2xHvnKTcHbPI", // Wicked Game - Chris Isaak
+	"2oSpQ7QtIKTNFfA08Cy0ku", // Nightswimming - R.E.M.
+	"6JV2JOEocMgcZxh26VqNmX", // Song to the Siren - This Mortal Coil
+
+	// Act III: The Alternative Nation - 90s Soundtrack Gold
+	"73RN7GJOJqWfwxPgzHxF0q", // #1 Crush - Garbage
+	"1tuQwBcZ7lhZ8MZZPkQSSL", // 6 Underground - Sneaker Pimps
+	"2v1o6hzh5dQDfqPYVGkSgT", // How Soon Is Now? - Love Spit Love
+	"5EWPGh7jbTNO2wakv8LjUI", // Where Is My Mind? - Pixies
+	"2Fxmhks0bxGSBdJ92vM42m", // Smells Like Teen Spirit - Nirvana
+	"3WJRBcnPZWhD9RCSUhzH09", // Blister In The Sun - Violent Femmes
+
+	// Act IV: Cinematic Weirdness & Cult Classics
+	"3dLrchGKbhzXpaknLxLJq0", // I'm Deranged - David Bowie
+	"6fVNQcWfSDJN9vB9Hm7bUC", // In Heaven - The Lady in the Radiator
+
+	// Act V: Lost Highways & Open Roads
+	"7KJLEpeMbD6j0J8LBn6sVi", // Walking After You - Foo Fighters
+	"7uv632EkfwYhXoqf8rhYrg", // The Passenger - Iggy Pop
+	"12ZsFJEzn4N4WNRt89CQOI", // Roadrunner - The Modern Lovers
+	"5v4GgrXPMghOnBBLmveLac", // Transatlanticism - Death Cab for Cutie
+
+	// Act VI: The Credits Roll - Bittersweet Endings
+	"3MODES4TNtygekLl146Dxd", // New Slang - The Shins
+	"73RN7GJOJqWfwxPgzHxF0q", // Such Great Heights - Iron & Wine
+	"3JvKfv6T31zO0ini8iNItO", // The End of the World - Skeeter Davis
+
+	// Expansion: International & World Cinema
+	"2374M0fQpWi3dLnB54qaLX", // Il Buono, Il Cattivo, Il Brutto - Ennio Morricone
+
+	// Expansion: Vintage Soul & Funk
+	"6f807x0ima9a1j3VPbc7VN", // Girl, You'll Be a Woman Soon - Urge Overkill
+	"7hBJ4nJ0UL3Bk9SSmzJIZw", // Across 110th Street - Bobby Womack
+
+	// Expansion: Modern Songs with Vintage Feel
+	"5Z3GHaZ6ec9bQBOQAJQsnJ", // Video Games - Lana Del Rey
+	"0BxE4FqsDD1Ot4YuBXwAPp", // The Night We Met - Lord Huron
+	"2QjOHCTQ1Jl3zawyYOpxh6", // Holocene - Bon Iver
+	"7GX5flRQZVHRAGd6B4TmDO", // Mystery of Love - Sufjan Stevens
+
+	// Additional classics to reach 100 tracks
 	"4u7EnebtmKWzUH433cf5Qv", // Bohemian Rhapsody - Queen
 	"5CQ30WqJwcep0pYcV4AMNc", // Stairway to Heaven - Led Zeppelin
 	"40riOy7x9W7GXjyGp4pjAv", // Hotel California - Eagles
 	"7o2CTH4ctstm8TNelqjb51", // Sweet Child O' Mine - Guns N' Roses
 	"08mG3Y1vljYA6bvDt4Wqkj", // Back In Black - AC/DC
-	"2Fxmhks0bxGSBdJ92vM42m", // Smells Like Teen Spirit - Nirvana
 	"3qiyyUfYe7CRYLucrPmulD", // Thunderstruck - AC/DC
 	"5v4GgrXPMghOnBBLmveLac", // Dream On - Aerosmith
 	"2nLtzopw4rPReszdYBJU6h", // Enter Sandman - Metallica
 	"5ghIJDpPoe3CfHMGu71E6T", // More Than A Feeling - Boston
+	"6K4t31amVTZDgR3sKmwUJJ", // Seven Nation Army - The White Stripes
+	"7qiZfU4dY1lWllzX7mPBI", // Take Me Out - Franz Ferdinand
+	"7lEptt4wbM0yJTvSG5EBof", // Mr. Brightside - The Killers
+	"5YfXc2yQACx98KQj87jHht", // Paranoid Android - Radiohead
+	"4Cy0NHJ8Gh0xMdwyM0FHyH", // Karma Police - Radiohead
+	"6M6NMNbG7SEWGAa3SRJCR0", // Creep - Radiohead
+	"2nLtzopw4rPReszdYBJU6h", // The Chain - Fleetwood Mac
+	"0ofHAoxe9vBkTCp2UQIavz", // Dreams - Fleetwood Mac
+	"3XVBdLihbNbxUwZosxcGuJ", // Landslide - Fleetwood Mac
+	"4xkOaSrkexMciUUogZvrgM", // Come As You Are - Nirvana
+	"6NwbeybX6TDtXlpXvR046W", // Heart-Shaped Box - Nirvana
+	"6Uj5YMSLQyHDEGxdNnlbJ0", // Lithium - Nirvana
+	"32OlwWuMpZ6b0aN2RZOeMS", // Just Like Heaven - The Cure
+	"3cHyrEgdyYRjgJKSOiOtcS", // Friday I'm In Love - The Cure
+	"6JmI8SpDFKwhB3Ppt9VWXj", // Lovesong - The Cure
+	"1JSTJqkT5qHq8MDJnJbRE1", // Blue Monday - New Order
+	"0Je7OKWPD5rPW8zAoXYgWw", // Bizarre Love Triangle - New Order
+	"2Bsix7ywtbJGaBmJFpq64h", // Personal Jesus - Depeche Mode
+	"2d6AMtfNYxYPwHx4ixHp3r", // Enjoy the Silence - Depeche Mode
+	"00rDbm3i6Cg7RqRWcHkKWd", // Policy of Truth - Depeche Mode
+	"5qHTpfWqFVWToM5dY3HCF7", // Once in a Lifetime - Talking Heads
+	"2bjgIUOj7jlqP6YjNHRuJE", // Psycho Killer - Talking Heads
+	"3WyjpbSEWHslh6yU1U9tK3", // Burning Down the House - Talking Heads
+	"7lQ8MOhq6IN2w8EYcFNSUk", // Just - Radiohead
+	"73vIOb4Q7YN6HeJTbscNB8", // Fake Plastic Trees - Radiohead
+	"5Hv5VlZomHXzv7v1teGuGn", // High and Dry - Radiohead
+	"3d9DChrdc6BOeFsbrZ3Is0", // Wonderwall - Oasis
+	"3DjBDQs8ebkxMBo2V8V3SH", // Don't Look Back In Anger - Oasis
+	"3YnDfSEoAZQbIhTyH4nG5X", // Champagne Supernova - Oasis
+	"3ftQYMLCNSpswMSZJGyAsf", // Song 2 - Blur
+	"4sH5J2UpxZ9UJJT0c4s1a5", // Girls & Boys - Blur
+	"6mWyJgJI3DDA5rll29ahTZ", // Tender - Blur
+	"3kS1d5UAJStUENxqYwAREz", // Everlong - Foo Fighters
+	"6Uj5YMSLQyHDEGx6NnlbJ0", // My Hero - Foo Fighters
+	"3VBQKSaJTRl6xAYl2ssLoR", // Learn to Fly - Foo Fighters
+	"5CQ30WqJwcep0pYcV4AMNc", // Black Hole Sun - Soundgarden
+	"3yjJKBBdQJcDk8aRJAPtx4", // Spoonman - Soundgarden
+	"4b0AnxOl5EG3rS5rAELuXK", // Fell on Black Days - Soundgarden
+	"6vu32pQ6sWU3GKT8AXjYhc", // Jeremy - Pearl Jam
+	"09bH2lMpxO8bqiYdOpXxu", // Alive - Pearl Jam
+	"5AdMXwVmcdIWhTge8ySK4N", // Even Flow - Pearl Jam
+	"7LKv3T3tA8VQdMmAUJqYvf", // Plush - Stone Temple Pilots
+	"4gphxUgq0IjUBkN6zJMO4z", // Interstate Love Song - Stone Temple Pilots
+	"11dFghVXANMlKmJXsNCbNl", // Vasoline - Stone Temple Pilots
+	"5O7q4bFHFEdp7p75gv2dDU", // Man in the Box - Alice in Chains
+	"4DMKwE2E2i2CmFg6wugLLG", // Would? - Alice in Chains
+	"2SkySoSNzdZPXIw9NzWmUW", // Rooster - Alice in Chains
+	"1JSTJqkT5qHq8MDJnJbRE1", // Today - The Smashing Pumpkins
+	"4WyBeDzQXQ7azNVgaVJywp", // 1979 - The Smashing Pumpkins
+	"2cPZxPvbv0TaYjP3XmCfuC", // Bullet with Butterfly Wings - The Smashing Pumpkins
+	"0Lf6wKp61ydcjyNwJ8QsQm", // Cannonball - The Breeders
+	"21jGcNKet2qwijlDFuPiPb", // Connection - Elastica
+	"0DiWol3AO6WpXZgp0goxAV", // Common People - Pulp
 }
 
 type Song struct {
@@ -57,11 +162,12 @@ type Song struct {
 }
 
 type ErrorLogRequest struct {
-	Message    string `json:"message"`
-	GifURL     string `json:"gif_url"`
-	SongTitle  string `json:"song_title"`
-	SongArtist string `json:"song_artist"`
-	SongURL    string `json:"song_url"`
+	Message      string   `json:"message"`
+	GifURL       string   `json:"gif_url"`
+	SongTitle    string   `json:"song_title"`
+	SongArtist   string   `json:"song_artist"`
+	SongURL      string   `json:"song_url"`
+	UserKeywords []string `json:"user_keywords,omitempty"`
 }
 
 type SloganResponse struct {
@@ -83,6 +189,11 @@ type Business struct {
 type BusinessesResponse struct {
 	Businesses []Business `json:"businesses"`
 	Count      int        `json:"count"`
+}
+
+type KeywordsResponse struct {
+	Keywords []string `json:"keywords"`
+	Note     string   `json:"note"`
 }
 
 var errorMessages = []string{
@@ -304,11 +415,20 @@ func (spotifyCache *SpotifyCache) loadSongsFromSpotify() error {
 		}
 	}
 
-	// Use Spotify Tracks API with hardcoded rock classics
-	// Recommendations API requires user authorization, so we use a curated list
-	trackIDs := rockClassicsTrackIDs
-	if len(trackIDs) > 50 {
-		trackIDs = trackIDs[:50] // Spotify API limit
+	// Use Spotify Tracks API with curated "Silver Screen Static" playlist
+	// Recommendations API requires user authorization, so we use a curated list of 100 soundtrack & alternative classics
+	// Note: We shuffle and select a random subset to ensure variety and avoid API limits
+	trackIDs := silverScreenStaticTrackIDs
+
+	// Shuffle track IDs to get variety
+	rand.Seed(time.Now().UnixNano())
+	rand.Shuffle(len(trackIDs), func(i, j int) {
+		trackIDs[i], trackIDs[j] = trackIDs[j], trackIDs[i]
+	})
+
+	// Take only first 10 tracks to avoid API issues with invalid IDs
+	if len(trackIDs) > 10 {
+		trackIDs = trackIDs[:10]
 	}
 	idsParam := ""
 	for i, id := range trackIDs {
@@ -361,7 +481,7 @@ func (spotifyCache *SpotifyCache) loadSongsFromSpotify() error {
 	spotifyCache.currentIndex = 0
 	spotifyCache.refreshNeeded = false
 
-	log.Printf("Loaded %d rock classics from Spotify", len(spotifyCache.songs))
+	log.Printf("Loaded %d tracks from 'Silver Screen Static' playlist", len(spotifyCache.songs))
 	return nil
 }
 
@@ -408,6 +528,29 @@ func fetchBusinesses(trackerURL string) ([]Business, error) {
 	}
 
 	return businessesResp.Businesses, nil
+}
+
+func fetchPendingKeywords(trackerURL string) ([]string, error) {
+	if trackerURL == "" {
+		return []string{}, nil
+	}
+
+	resp, err := locationTrackerHTTPClient.Get(trackerURL + "/api/keywords")
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch keywords: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("keywords endpoint returned status: %d", resp.StatusCode)
+	}
+
+	var keywordsResp KeywordsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&keywordsResp); err != nil {
+		return nil, fmt.Errorf("failed to decode keywords response: %w", err)
+	}
+
+	return keywordsResp.Keywords, nil
 }
 
 func generateBusinessError(businesses []Business) string {
@@ -524,6 +667,18 @@ func main() {
 	defer ticker.Stop()
 
 	generateAndSendError := func() {
+		// Fetch pending keywords from location tracker (for satirical purposes)
+		var userKeywords []string
+		if locationTrackerURL != "" {
+			keywords, err := fetchPendingKeywords(locationTrackerURL)
+			if err != nil {
+				log.Printf("⚠️  Error fetching keywords: %v", err)
+			} else if len(keywords) > 0 {
+				userKeywords = keywords
+				log.Printf("🔑 Fetched user keywords for satirical slogan: %v", keywords)
+			}
+		}
+
 		// Fetch current businesses from location tracker
 		var errorMessage string
 		businesses, err := fetchBusinesses(locationTrackerURL)
@@ -541,11 +696,12 @@ func main() {
 		song := spotifyCache.getNextSong()
 
 		errorLogRequest := ErrorLogRequest{
-			Message:    errorMessage,
-			GifURL:     gifURL,
-			SongTitle:  song.Title,
-			SongArtist: song.Artist,
-			SongURL:    song.URL,
+			Message:      errorMessage,
+			GifURL:       gifURL,
+			SongTitle:    song.Title,
+			SongArtist:   song.Artist,
+			SongURL:      song.URL,
+			UserKeywords: userKeywords,
 		}
 
 		log.Printf("Sending error: %s", errorMessage)
@@ -564,6 +720,9 @@ func main() {
 		fmt.Printf("GIF: %s\n", gifURL)
 		fmt.Printf("Song: %s by %s\n", song.Title, song.Artist)
 		fmt.Printf("Song URL: %s\n", song.URL)
+		if len(userKeywords) > 0 {
+			fmt.Printf("User Keywords: %v\n", userKeywords)
+		}
 		fmt.Printf("Response: %s %s\n", sloganResponse.Emoji, sloganResponse.Slogan)
 		fmt.Printf("================\n\n")
 

@@ -1,12 +1,33 @@
 version: '3.8'
 
 services:
+  location-tracker:
+    build:
+      context: ./location-tracker
+      dockerfile: Dockerfile
+    ports:
+      - "8082:8080"
+    environment:
+      - TRACKER_PASSWORD=${TRACKER_PASSWORD:-testpassword123}
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY:-}
+      - PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY:-}
+      - USE_HTTPS=false
+    networks:
+      - ec2-test-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
   slogan-server:
     build:
       context: ./slogan-server
       dockerfile: Dockerfile
     ports:
       - "8080:8080"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
     networks:
       - ec2-test-network
     healthcheck:
@@ -21,10 +42,16 @@ services:
       dockerfile: Dockerfile
     environment:
       - SLOGAN_SERVER_URL=http://slogan-server:8080
-      - ERROR_INTERVAL_SECONDS=60
+      - LOCATION_TRACKER_URL=http://location-tracker:8080
+      - ERROR_INTERVAL_SECONDS=${ERROR_INTERVAL_SECONDS:-60}
       - GIPHY_API_KEY=${GIPHY_API_KEY:-}
+      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID:-}
+      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET:-}
+      - SPOTIFY_SEED_GENRES=${SPOTIFY_SEED_GENRES:-rock,classic-rock}
     depends_on:
       slogan-server:
+        condition: service_healthy
+      location-tracker:
         condition: service_healthy
     networks:
       - ec2-test-network

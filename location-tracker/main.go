@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
@@ -10,12 +11,14 @@ import (
 	"encoding/pem"
 	"fmt"
 	"html/template"
+	"io"
 	"log"
 	"math/big"
 	"net"
 	"net/http"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -45,7 +48,50 @@ type ErrorLog struct {
 	SongArtist          string    `json:"song_artist,omitempty" dynamodbav:"song_artist"`
 	SongURL             string    `json:"song_url,omitempty" dynamodbav:"song_url"`
 	UserExperienceNote  string    `json:"user_experience_note,omitempty" dynamodbav:"user_experience_note"`
+	UserNoteKeywords    []string  `json:"user_note_keywords,omitempty" dynamodbav:"user_note_keywords"`
+	NearbyBusinesses    []string  `json:"nearby_businesses,omitempty" dynamodbav:"nearby_businesses"`
 	Timestamp           time.Time `json:"timestamp" dynamodbav:"timestamp"`
+}
+
+// GoverningBody represents regulatory or private interest organizations with oversight responsibilities
+type GoverningBody struct {
+	ID               string                 `json:"id,omitempty" dynamodbav:"id"`
+	OrganizationName string                 `json:"organization_name" dynamodbav:"organization_name"`
+	GoverningBodies  []GoverningBodyDetails `json:"governing_bodies" dynamodbav:"governing_bodies"`
+	Timestamp        time.Time              `json:"timestamp" dynamodbav:"timestamp"`
+}
+
+// GoverningBodyDetails stores flexible information about a governing authority
+type GoverningBodyDetails struct {
+	Name        string                 `json:"name" dynamodbav:"name"`
+	Type        string                 `json:"type" dynamodbav:"type"` // "regulatory" or "private_interest"
+	Description string                 `json:"description,omitempty" dynamodbav:"description"`
+	Website     string                 `json:"website,omitempty" dynamodbav:"website"`
+	ContactInfo map[string]interface{} `json:"contact_info,omitempty" dynamodbav:"contact_info"` // Flexible contact storage
+	SourceData  map[string]interface{} `json:"source_data,omitempty" dynamodbav:"source_data"`   // Flexible additional data
+}
+
+// PerplexityRequest represents a request to Perplexity API
+type PerplexityRequest struct {
+	Model    string              `json:"model"`
+	Messages []PerplexityMessage `json:"messages"`
+}
+
+// PerplexityMessage represents a message in Perplexity API format
+type PerplexityMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+// PerplexityResponse represents response from Perplexity API
+type PerplexityResponse struct {
+	Choices []struct {
+		Message PerplexityMessage `json:"message"`
+	} `json:"choices"`
+	Error *struct {
+		Message string `json:"message"`
+		Type    string `json:"type"`
+	} `json:"error"`
 }
 
 // Business represents a nearby business from Google Maps
@@ -98,8 +144,13 @@ var (
 	currentBusinesses     = make([]Business, 0, 5)
 	currentBusinessesMutex sync.RWMutex
 
+	// Governing bodies cache (keyed by business name)
+	governingBodiesCache     = make(map[string][]GoverningBodyDetails)
+	governingBodiesCacheMutex sync.RWMutex
+
 	// Pending user experience note from Twilio SMS
 	pendingUserExperienceNote string
+	pendingUserNoteKeywords   []string
 	userExperienceNoteMutex   sync.RWMutex
 
 	// Global password from environment
@@ -107,6 +158,9 @@ var (
 
 	// Google Maps API key
 	googleMapsAPIKey = os.Getenv("GOOGLE_MAPS_API_KEY")
+
+	// Perplexity API key
+	perplexityAPIKey = os.Getenv("PERPLEXITY_API_KEY")
 
 	// HTTPS mode flag
 	useHTTPS = false
@@ -116,8 +170,9 @@ var (
 	useDynamoDB  = false
 
 	// DynamoDB table names
-	errorLogsTableName = "location-tracker-error-logs"
-	locationsTableName = "location-tracker-locations"
+	errorLogsTableName      = "location-tracker-error-logs"
+	locationsTableName      = "location-tracker-locations"
+	governingBodiesTableName = "location-tracker-governing-bodies"
 )
 
 func main() {
@@ -153,6 +208,8 @@ func main() {
 	http.HandleFunc("/api/location", handleLocation)
 	http.HandleFunc("/api/errorlogs", handleErrorLogs)
 	http.HandleFunc("/api/businesses", handleBusinesses)
+	http.HandleFunc("/api/keywords", handlePendingKeywords)
+	http.HandleFunc("/api/governingbodies", handleGoverningBodies)
 	http.HandleFunc("/api/health", handleHealth)
 	http.HandleFunc("/api/twilio/sms", handleTwilioWebhook)
 
@@ -292,6 +349,176 @@ func getBusinessType(types []string) string {
 	return "business"
 }
 
+// extractKeywords extracts meaningful keywords from user notes for satirical purposes
+func extractKeywords(userNote string) []string {
+	keywords := make([]string, 0)
+
+	// Remove common stopwords
+	stopwords := map[string]bool{
+		"the": true, "a": true, "an": true, "and": true, "or": true, "but": true,
+		"in": true, "on": true, "at": true, "to": true, "for": true, "of": true,
+		"with": true, "by": true, "from": true, "is": true, "are": true, "was": true,
+		"were": true, "be": true, "been": true, "being": true, "have": true, "has": true,
+		"had": true, "do": true, "does": true, "did": true, "will": true, "would": true,
+		"could": true, "should": true, "this": true, "that": true, "these": true, "those": true,
+	}
+
+	words := strings.FieldsFunc(strings.ToLower(userNote), func(r rune) bool {
+		return !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9'))
+	})
+
+	for _, word := range words {
+		if len(word) > 3 && !stopwords[word] {
+			keywords = append(keywords, word)
+		}
+	}
+
+	return keywords
+}
+
+// searchGoverningBodies uses Perplexity API to find governing bodies for businesses in an area
+func searchGoverningBodies(businessName string, businessType string, businessAddress string, userKeywords []string) ([]GoverningBodyDetails, error) {
+	if perplexityAPIKey == "" {
+		log.Println("⚠️  Perplexity API key not set, skipping governing body search")
+		return []GoverningBodyDetails{}, nil
+	}
+
+	// Build satirical prompt that references user keywords if available
+	keywordContext := ""
+	if len(userKeywords) > 0 {
+		keywordContext = fmt.Sprintf("\n\nFor satirical purposes, the user mentioned these keywords: %s. Feel free to acknowledge the absurd irony in the regulatory landscape.", strings.Join(userKeywords, ", "))
+	}
+
+	// Build business context
+	businessContext := fmt.Sprintf("%s (type: %s)", businessName, businessType)
+	if businessAddress != "" {
+		businessContext += fmt.Sprintf(" located at %s", businessAddress)
+	}
+
+	prompt := fmt.Sprintf(`Find the governing authorities (both legal regulatory bodies and private interest organizations) responsible for oversight of this business: %s
+
+Focus on returning:
+1. Official website URLs for regulatory bodies
+2. Contact information (phone, email, addresses) for these authorities
+3. Names of local, state/provincial, and federal regulatory agencies
+4. Industry associations and private oversight groups
+
+Return the information in this JSON format:
+{
+  "governing_bodies": [
+    {
+      "name": "Authority Name",
+      "type": "regulatory" or "private_interest",
+      "description": "Brief description of their oversight role",
+      "website": "https://...",
+      "contact_info": {
+        "phone": "...",
+        "email": "...",
+        "address": "..."
+      }
+    }
+  ]
+}%s
+
+Return ONLY valid JSON, no additional text.`, businessContext, keywordContext)
+
+	reqBody := PerplexityRequest{
+		Model: "sonar",
+		Messages: []PerplexityMessage{
+			{
+				Role:    "user",
+				Content: prompt,
+			},
+		},
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal perplexity request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", "https://api.perplexity.ai/chat/completions", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create perplexity request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+perplexityAPIKey)
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call perplexity API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read perplexity response: %w", err)
+	}
+
+	var perplexityResp PerplexityResponse
+	if err := json.Unmarshal(body, &perplexityResp); err != nil {
+		return nil, fmt.Errorf("failed to parse perplexity response: %w", err)
+	}
+
+	if perplexityResp.Error != nil {
+		return nil, fmt.Errorf("perplexity API error: %s", perplexityResp.Error.Message)
+	}
+
+	if len(perplexityResp.Choices) == 0 {
+		return nil, fmt.Errorf("no choices in perplexity response")
+	}
+
+	// Parse the JSON response from Perplexity
+	content := perplexityResp.Choices[0].Message.Content
+
+	// Try to extract JSON from response (sometimes wrapped in markdown)
+	jsonStart := strings.Index(content, "{")
+	jsonEnd := strings.LastIndex(content, "}")
+	if jsonStart >= 0 && jsonEnd > jsonStart {
+		content = content[jsonStart : jsonEnd+1]
+	}
+
+	var result struct {
+		GoverningBodies []GoverningBodyDetails `json:"governing_bodies"`
+	}
+
+	if err := json.Unmarshal([]byte(content), &result); err != nil {
+		log.Printf("⚠️  Failed to parse governing bodies JSON, raw content: %s", content)
+		return []GoverningBodyDetails{}, nil
+	}
+
+	log.Printf("🏛️  Found %d governing bodies for %s (%s)", len(result.GoverningBodies), businessName, businessType)
+	return result.GoverningBodies, nil
+}
+
+// saveGoverningBodyToDynamoDB stores governing body information in DynamoDB
+func saveGoverningBodyToDynamoDB(governingBody GoverningBody) {
+	if !useDynamoDB {
+		return
+	}
+
+	ctx := context.Background()
+
+	item, err := attributevalue.MarshalMap(governingBody)
+	if err != nil {
+		log.Printf("❌ Failed to marshal governing body: %v", err)
+		return
+	}
+
+	_, err = dynamoClient.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: aws.String(governingBodiesTableName),
+		Item:      item,
+	})
+	if err != nil {
+		log.Printf("❌ Failed to save governing body to DynamoDB: %v", err)
+		return
+	}
+
+	log.Printf("💾 Governing body info saved to DynamoDB: %s", governingBody.OrganizationName)
+}
+
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
@@ -421,14 +648,76 @@ func handleErrorLogs(w http.ResponseWriter, r *http.Request) {
 		errorLog.Timestamp = time.Now()
 		errorLog.ID = fmt.Sprintf("%d", errorLog.Timestamp.UnixNano())
 
-		// Attach pending user experience note from Twilio SMS if available
+		// Attach pending user experience note and keywords from Twilio SMS if available
 		userExperienceNoteMutex.Lock()
+		var userKeywords []string
 		if pendingUserExperienceNote != "" {
 			errorLog.UserExperienceNote = pendingUserExperienceNote
+			errorLog.UserNoteKeywords = pendingUserNoteKeywords
+			userKeywords = pendingUserNoteKeywords
 			log.Printf("💬 Attached user experience note: %s", pendingUserExperienceNote)
+			if len(pendingUserNoteKeywords) > 0 {
+				log.Printf("🔑 Extracted keywords: %v", pendingUserNoteKeywords)
+			}
 			pendingUserExperienceNote = "" // Clear after attaching
+			pendingUserNoteKeywords = nil
 		}
 		userExperienceNoteMutex.Unlock()
+
+		// Get current nearby businesses from Google Maps
+		currentBusinessesMutex.RLock()
+		businesses := make([]Business, len(currentBusinesses))
+		copy(businesses, currentBusinesses)
+		currentBusinessesMutex.RUnlock()
+
+		// Store business names in error log
+		if len(businesses) > 0 {
+			businessNames := make([]string, len(businesses))
+			for i, b := range businesses {
+				businessNames[i] = b.Name
+			}
+			errorLog.NearbyBusinesses = businessNames
+			log.Printf("🏢 Associated with %d nearby businesses from Google Maps", len(businesses))
+
+			// Search for governing bodies for each business (asynchronously)
+			go func() {
+				for _, business := range businesses {
+					governingBodies, err := searchGoverningBodies(business.Name, business.Type, business.Address, userKeywords)
+					if err != nil {
+						log.Printf("⚠️  Error searching governing bodies for %s: %v", business.Name, err)
+						continue
+					}
+
+					if len(governingBodies) > 0 {
+						// Cache the governing bodies
+						governingBodiesCacheMutex.Lock()
+						governingBodiesCache[business.Name] = governingBodies
+						governingBodiesCacheMutex.Unlock()
+
+						governingBodyRecord := GoverningBody{
+							ID:               fmt.Sprintf("%s-%d", business.Name, time.Now().UnixNano()),
+							OrganizationName: business.Name,
+							GoverningBodies:  governingBodies,
+							Timestamp:        time.Now(),
+						}
+
+						saveGoverningBodyToDynamoDB(governingBodyRecord)
+
+						// Log the results with website and contact info
+						for _, gb := range governingBodies {
+							contactInfo := ""
+							if phone, ok := gb.ContactInfo["phone"].(string); ok && phone != "" {
+								contactInfo += fmt.Sprintf(" | Phone: %s", phone)
+							}
+							if email, ok := gb.ContactInfo["email"].(string); ok && email != "" {
+								contactInfo += fmt.Sprintf(" | Email: %s", email)
+							}
+							log.Printf("🏛️  %s (%s) - %s%s", gb.Name, gb.Type, gb.Website, contactInfo)
+						}
+					}
+				}
+			}()
+		}
 
 		// Store in memory cache
 		errorLogMutex.Lock()
@@ -484,6 +773,44 @@ func handleBusinesses(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func handlePendingKeywords(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// No auth required - error-generator needs to access this
+	userExperienceNoteMutex.RLock()
+	defer userExperienceNoteMutex.RUnlock()
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"keywords": pendingUserNoteKeywords,
+		"note":     pendingUserExperienceNote,
+	})
+}
+
+func handleGoverningBodies(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Requires auth to view
+	if !isAuthenticated(r) {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	governingBodiesCacheMutex.RLock()
+	defer governingBodiesCacheMutex.RUnlock()
+
+	json.NewEncoder(w).Encode(governingBodiesCache)
+}
+
 func handleTwilioWebhook(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -507,13 +834,20 @@ func handleTwilioWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Store the message as pending user experience note
+	// Extract keywords from user note for satirical purposes
+	keywords := extractKeywords(messageBody)
+
+	// Store the message and keywords as pending user experience note
 	userExperienceNoteMutex.Lock()
 	pendingUserExperienceNote = messageBody
+	pendingUserNoteKeywords = keywords
 	userExperienceNoteMutex.Unlock()
 
 	log.Printf("📱 Received SMS from %s (SID: %s): %s", messageFrom, messageSid, messageBody)
 	log.Printf("💬 Stored user experience note, will attach to next error log")
+	if len(keywords) > 0 {
+		log.Printf("🔑 Extracted keywords for satirical prompts: %v", keywords)
+	}
 
 	// Respond with TwiML (Twilio expects XML response)
 	w.Header().Set("Content-Type", "application/xml")
@@ -925,6 +1259,8 @@ const indexHTML = `<!DOCTYPE html>
                 <div id="locations"></div>
                 <h3 style="margin-top: 30px; color: #667eea;">📝 Recent Error Logs</h3>
                 <div id="errorlogs"></div>
+                <h3 style="margin-top: 30px; color: #667eea;">🏛️ Governing Bodies for Nearby Businesses</h3>
+                <div id="governingbodies"></div>
             </div>
         </div>
     </div>
@@ -957,6 +1293,7 @@ const indexHTML = `<!DOCTYPE html>
                     setInterval(() => {
                         refreshLocations();
                         refreshErrorLogs();
+                        refreshGoverningBodies();
                     }, 10000);
                 } else {
                     errorEl.style.display = 'block';
@@ -1184,6 +1521,84 @@ const indexHTML = `<!DOCTYPE html>
                             🎵 Play on Spotify
                         </a>
                     ` + "`" + ` : ''}
+                ` + "`" + `;
+                container.appendChild(div);
+            }
+        }
+
+        // Refresh governing bodies
+        async function refreshGoverningBodies() {
+            try {
+                const res = await fetch('/api/governingbodies');
+                if (!res.ok) {
+                    return;
+                }
+
+                const governingBodies = await res.json();
+                displayGoverningBodies(governingBodies);
+            } catch (e) {
+                console.error('Error fetching governing bodies:', e);
+            }
+        }
+
+        // Display governing bodies
+        function displayGoverningBodies(governingBodiesMap) {
+            const container = document.getElementById('governingbodies');
+
+            if (!governingBodiesMap || Object.keys(governingBodiesMap).length === 0) {
+                container.innerHTML = ` + "`" + `
+                    <div class="empty-state" style="padding: 40px 20px;">
+                        <p style="color: #6b7280;">No governing body information yet</p>
+                        <p style="font-size: 14px; margin-top: 10px; color: #9ca3af;">
+                            Share a location to fetch nearby businesses and their regulatory authorities
+                        </p>
+                    </div>
+                ` + "`" + `;
+                return;
+            }
+
+            container.innerHTML = '';
+
+            for (const [businessName, governingBodies] of Object.entries(governingBodiesMap)) {
+                const div = document.createElement('div');
+                div.className = 'location-card';
+                div.style.borderLeft = '4px solid #8b5cf6';
+
+                let bodiesHTML = '';
+                for (const gb of governingBodies) {
+                    const typeColor = gb.type === 'regulatory' ? '#dc2626' : '#2563eb';
+                    const typeIcon = gb.type === 'regulatory' ? '⚖️' : '🏢';
+
+                    let contactHTML = '';
+                    if (gb.contact_info) {
+                        if (gb.contact_info.phone) {
+                            contactHTML += ` + "`" + `<div style="margin-top: 4px; font-size: 13px;">📞 ${gb.contact_info.phone}</div>` + "`" + `;
+                        }
+                        if (gb.contact_info.email) {
+                            contactHTML += ` + "`" + `<div style="margin-top: 4px; font-size: 13px;">✉️ <a href="mailto:${gb.contact_info.email}" style="color: #667eea;">${gb.contact_info.email}</a></div>` + "`" + `;
+                        }
+                        if (gb.contact_info.address) {
+                            contactHTML += ` + "`" + `<div style="margin-top: 4px; font-size: 13px;">📍 ${gb.contact_info.address}</div>` + "`" + `;
+                        }
+                    }
+
+                    bodiesHTML += ` + "`" + `
+                        <div style="padding: 12px; background: #f9fafb; border-radius: 6px; margin-bottom: 10px;">
+                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+                                <span>${typeIcon}</span>
+                                <strong style="color: ${typeColor}; font-size: 14px;">${gb.name}</strong>
+                                <span style="background: ${typeColor}20; color: ${typeColor}; padding: 2px 8px; border-radius: 4px; font-size: 11px; text-transform: uppercase;">${gb.type}</span>
+                            </div>
+                            ${gb.description ? ` + "`" + `<div style="color: #6b7280; font-size: 13px; margin-bottom: 6px;">${gb.description}</div>` + "`" + ` : ''}
+                            ${gb.website ? ` + "`" + `<div style="margin-top: 6px;"><a href="${gb.website}" target="_blank" style="color: #667eea; text-decoration: none; font-size: 13px;">🔗 ${gb.website}</a></div>` + "`" + ` : ''}
+                            ${contactHTML}
+                        </div>
+                    ` + "`" + `;
+                }
+
+                div.innerHTML = ` + "`" + `
+                    <h3 style="margin-bottom: 15px; color: #8b5cf6; font-size: 16px;">🏢 ${businessName}</h3>
+                    ${bodiesHTML}
                 ` + "`" + `;
                 container.appendChild(div);
             }
