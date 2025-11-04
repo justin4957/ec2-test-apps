@@ -100,14 +100,14 @@ This will show you:
 python rhythm_service.py
 ```
 
-The service starts on port 5000. Test it:
+The service starts on **port 5001** (to avoid conflict with macOS AirPlay on port 5000). Test it:
 
 ```bash
 # Health check
-curl http://localhost:5000/health
+curl http://localhost:5001/health
 
 # Analyze a song
-curl -X POST http://localhost:5000/api/analyze-song \
+curl -X POST http://localhost:5001/api/analyze-song \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Where Is My Mind?",
@@ -119,7 +119,7 @@ curl -X POST http://localhost:5000/api/analyze-song \
   }'
 
 # Trigger a beat
-curl -X POST http://localhost:5000/api/beat-trigger \
+curl -X POST http://localhost:5001/api/beat-trigger \
   -H "Content-Type: application/json" \
   -d '{"section": "chorus", "beat_num": 1}'
 ```
@@ -128,7 +128,7 @@ curl -X POST http://localhost:5000/api/beat-trigger \
 
 ```bash
 docker build -t rhythm-service .
-docker run -p 5000:5000 --env-file .env rhythm-service
+docker run -p 5001:5001 --env-file .env rhythm-service
 ```
 
 ## How It Works

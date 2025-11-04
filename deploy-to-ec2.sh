@@ -23,6 +23,7 @@ SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET:-}
 SPOTIFY_SEED_GENRES=${SPOTIFY_SEED_GENRES:-}
 ERROR_INTERVAL_SECONDS=${ERROR_INTERVAL_SECONDS:-60}
 GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY:-}
+PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY:-}
 TRACKER_PASSWORD=${TRACKER_PASSWORD:-}
 LOCATION_TRACKER_URL=${LOCATION_TRACKER_URL:-}
 
@@ -73,6 +74,7 @@ ssh -o StrictHostKeyChecking=no -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} \
     SPOTIFY_SEED_GENRES="${SPOTIFY_SEED_GENRES}" \
     ERROR_INTERVAL_SECONDS="${ERROR_INTERVAL_SECONDS}" \
     GOOGLE_MAPS_API_KEY="${GOOGLE_MAPS_API_KEY}" \
+    PERPLEXITY_API_KEY="${PERPLEXITY_API_KEY}" \
     TRACKER_PASSWORD="${TRACKER_PASSWORD}" \
     LOCATION_TRACKER_URL="${LOCATION_TRACKER_URL}" \
     bash << 'EOF'
@@ -80,6 +82,12 @@ ssh -o StrictHostKeyChecking=no -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} \
 
     echo "🔐 Logging into ECR..."
     aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 310829530225.dkr.ecr.us-east-1.amazonaws.com
+
+    echo ""
+    echo "🗑️  Removing cached images to force fresh pull..."
+    docker rmi -f 310829530225.dkr.ecr.us-east-1.amazonaws.com/slogan-server:latest 2>/dev/null || true
+    docker rmi -f 310829530225.dkr.ecr.us-east-1.amazonaws.com/error-generator:latest 2>/dev/null || true
+    docker rmi -f 310829530225.dkr.ecr.us-east-1.amazonaws.com/location-tracker:latest 2>/dev/null || true
 
     echo ""
     echo "📥 Pulling slogan-server image..."
@@ -153,6 +161,13 @@ ssh -o StrictHostKeyChecking=no -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} \
         TRACKER_CMD="$TRACKER_CMD -e GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}"
     else
         echo "⚠️  No Google Maps API key provided, business queries will be skipped"
+    fi
+
+    if [ ! -z "$PERPLEXITY_API_KEY" ]; then
+        echo "🔍 Using Perplexity API for governing body searches"
+        TRACKER_CMD="$TRACKER_CMD -e PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY}"
+    else
+        echo "⚠️  No Perplexity API key provided, governing body searches will be skipped"
     fi
 
     if [ ! -z "$TRACKER_PASSWORD" ]; then

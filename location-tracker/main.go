@@ -882,7 +882,10 @@ func cleanupOldLocations() {
 
 func serveHTML(w http.ResponseWriter, r *http.Request) {
 	tmpl := template.Must(template.New("index").Parse(indexHTML))
-	tmpl.Execute(w, nil)
+	if err := tmpl.Execute(w, nil); err != nil {
+		log.Printf("❌ Error executing template: %v", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
 }
 
 // generateSelfSignedCert creates a self-signed certificate for local testing
@@ -1546,14 +1549,11 @@ const indexHTML = `<!DOCTYPE html>
             const container = document.getElementById('governingbodies');
 
             if (!governingBodiesMap || Object.keys(governingBodiesMap).length === 0) {
-                container.innerHTML = ` + "`" + `
-                    <div class="empty-state" style="padding: 40px 20px;">
-                        <p style="color: #6b7280;">No governing body information yet</p>
-                        <p style="font-size: 14px; margin-top: 10px; color: #9ca3af;">
-                            Share a location to fetch nearby businesses and their regulatory authorities
-                        </p>
-                    </div>
-                ` + "`" + `;
+                container.innerHTML = '<div class="empty-state" style="padding: 40px 20px;">' +
+                    '<p style="color: #6b7280;">No governing body information yet</p>' +
+                    '<p style="font-size: 14px; margin-top: 10px; color: #9ca3af;">' +
+                    'Share a location to fetch nearby businesses and their regulatory authorities' +
+                    '</p></div>';
                 return;
             }
 
@@ -1572,34 +1572,29 @@ const indexHTML = `<!DOCTYPE html>
                     let contactHTML = '';
                     if (gb.contact_info) {
                         if (gb.contact_info.phone) {
-                            contactHTML += ` + "`" + `<div style="margin-top: 4px; font-size: 13px;">📞 ${gb.contact_info.phone}</div>` + "`" + `;
+                            contactHTML += '<div style="margin-top: 4px; font-size: 13px;">📞 ' + gb.contact_info.phone + '</div>';
                         }
                         if (gb.contact_info.email) {
-                            contactHTML += ` + "`" + `<div style="margin-top: 4px; font-size: 13px;">✉️ <a href="mailto:${gb.contact_info.email}" style="color: #667eea;">${gb.contact_info.email}</a></div>` + "`" + `;
+                            contactHTML += '<div style="margin-top: 4px; font-size: 13px;">✉️ <a href="mailto:' + gb.contact_info.email + '" style="color: #667eea;">' + gb.contact_info.email + '</a></div>';
                         }
                         if (gb.contact_info.address) {
-                            contactHTML += ` + "`" + `<div style="margin-top: 4px; font-size: 13px;">📍 ${gb.contact_info.address}</div>` + "`" + `;
+                            contactHTML += '<div style="margin-top: 4px; font-size: 13px;">📍 ' + gb.contact_info.address + '</div>';
                         }
                     }
 
-                    bodiesHTML += ` + "`" + `
-                        <div style="padding: 12px; background: #f9fafb; border-radius: 6px; margin-bottom: 10px;">
-                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
-                                <span>${typeIcon}</span>
-                                <strong style="color: ${typeColor}; font-size: 14px;">${gb.name}</strong>
-                                <span style="background: ${typeColor}20; color: ${typeColor}; padding: 2px 8px; border-radius: 4px; font-size: 11px; text-transform: uppercase;">${gb.type}</span>
-                            </div>
-                            ${gb.description ? ` + "`" + `<div style="color: #6b7280; font-size: 13px; margin-bottom: 6px;">${gb.description}</div>` + "`" + ` : ''}
-                            ${gb.website ? ` + "`" + `<div style="margin-top: 6px;"><a href="${gb.website}" target="_blank" style="color: #667eea; text-decoration: none; font-size: 13px;">🔗 ${gb.website}</a></div>` + "`" + ` : ''}
-                            ${contactHTML}
-                        </div>
-                    ` + "`" + `;
+                    bodiesHTML += '<div style="padding: 12px; background: #f9fafb; border-radius: 6px; margin-bottom: 10px;">' +
+                        '<div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">' +
+                        '<span>' + typeIcon + '</span>' +
+                        '<strong style="color: ' + typeColor + '; font-size: 14px;">' + gb.name + '</strong>' +
+                        '<span style="background: ' + typeColor + '20; color: ' + typeColor + '; padding: 2px 8px; border-radius: 4px; font-size: 11px; text-transform: uppercase;">' + gb.type + '</span>' +
+                        '</div>' +
+                        (gb.description ? '<div style="color: #6b7280; font-size: 13px; margin-bottom: 6px;">' + gb.description + '</div>' : '') +
+                        (gb.website ? '<div style="margin-top: 6px;"><a href="' + gb.website + '" target="_blank" style="color: #667eea; text-decoration: none; font-size: 13px;">🔗 ' + gb.website + '</a></div>' : '') +
+                        contactHTML +
+                        '</div>';
                 }
 
-                div.innerHTML = ` + "`" + `
-                    <h3 style="margin-bottom: 15px; color: #8b5cf6; font-size: 16px;">🏢 ${businessName}</h3>
-                    ${bodiesHTML}
-                ` + "`" + `;
+                div.innerHTML = '<h3 style="margin-bottom: 15px; color: #8b5cf6; font-size: 16px;">🏢 ' + businessName + '</h3>' + bodiesHTML;
                 container.appendChild(div);
             }
         }
