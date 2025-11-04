@@ -300,6 +300,19 @@ pip install -r requirements.txt
 python rhythm_service.py
 ```
 
+6. **(Demo!)** Try the rhythm-driven error demo - generates errors every 16 beats:
+```bash
+# In one terminal, start error-generator in rhythm mode
+cd error-generator
+RHYTHM_SERVICE_URL=http://localhost:5001 go run main.go
+
+# In another terminal, run the demo
+cd rhythm-service
+python3 demo_rhythm_errors.py
+```
+
+This simulates an entire song (intro → verses → chorus → bridge → outro) and triggers errors synchronized to the beat every 16 beats (4 bars). Perfect for demos and understanding the rhythm-to-error mapping! See [rhythm-service/README.md](rhythm-service/README.md#-demo-mode) for more options.
+
 ![Rocket](https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExdnpoa3N5cjNrYnBiM2t5c3l3bGk4aGxjYWI5NXZwanljdmU0YmpwbiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/3o6Zt6ML6BklcajjsA/giphy.gif)
 
 ### Configuration

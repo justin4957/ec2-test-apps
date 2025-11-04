@@ -132,6 +132,85 @@ curl -X POST http://localhost:5001/api/analyze-song \
   }'
 ```
 
+## 🎸 Demo Mode
+
+Experience the full rhythm-driven error generation with the included demo script!
+
+### Running the Demo
+
+The demo simulates an entire song and triggers errors every 16 beats (4 bars), showcasing the complete integration:
+
+```bash
+# Make sure error-generator is running first
+cd ../error-generator
+RHYTHM_SERVICE_URL=http://localhost:5001 go run main.go
+
+# In another terminal, run the demo
+cd ../rhythm-service
+python3 demo_rhythm_errors.py
+```
+
+**What it does:**
+- ✨ Simulates a complete song structure (intro, verses, choruses, bridge, outro)
+- 🎵 Triggers errors every 16 beats synchronized to song sections
+- 🎭 Maps sections to error types (verse=basic, chorus=business, bridge=chaotic, outro=philosophical)
+- 📊 Shows detailed progress and statistics
+
+**Output example:**
+```
+🎵 SONG STRUCTURE
+==========================================
+Tempo: 120 BPM | Beat Duration: 0.500s
+Error Trigger Interval: Every 16 beats (4 bars)
+
+Section         Beats           Duration        Error Type
+----------------------------------------------------------
+intro           0-8              4.0s           basic
+verse           8-24            16.0s           basic
+chorus          32-48           16.0s           business
+bridge          88-104          16.0s           chaotic
+outro           120-128          8.0s           philosophical
+----------------------------------------------------------
+TOTAL           128             64.0s
+Expected Error Triggers: 8
+
+🎵 Beat  16 | verse        | basic          | Trigger #1
+🎵 Beat  32 | chorus       | business       | Trigger #2
+🎵 Beat  48 | verse        | basic          | Trigger #3
+...
+```
+
+### Demo Options
+
+```bash
+# Fast mode (default) - runs as fast as possible
+python3 demo_rhythm_errors.py
+
+# Real-time mode - simulates actual song playback
+python3 demo_rhythm_errors.py --realtime
+
+# Custom tempo
+TEMPO=140 python3 demo_rhythm_errors.py
+
+# Custom error generator URL
+ERROR_GENERATOR_URL=http://localhost:9090 python3 demo_rhythm_errors.py
+
+# Help
+python3 demo_rhythm_errors.py --help
+```
+
+### What You'll See
+
+1. **Song Structure Display** - Visual breakdown of all sections
+2. **Real-time Triggers** - Each error logged with beat number, section, and error type
+3. **Summary Statistics** - Total triggers, execution time, and verification
+
+This demo is perfect for:
+- 🎓 Understanding the rhythm-to-error mapping
+- 🧪 Testing the integration between services
+- 🎨 Demonstrating the system to others
+- 🔧 Debugging timing and synchronization issues
+
 ## Components
 
 ### Beat Detector (`beat_detector.py`)
