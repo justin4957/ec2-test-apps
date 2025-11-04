@@ -281,8 +281,8 @@ def main():
     if not SPOTIFY_CLIENT_ID or not SPOTIFY_CLIENT_SECRET:
         logger.warning("⚠️  Spotify credentials not set. Some features may be limited.")
 
-    # Start Flask server
-    port = int(os.getenv('PORT', 5000))
+    # Start Flask server (using 5001 to avoid macOS AirPlay on 5000)
+    port = int(os.getenv('PORT', 5001))
     app.run(host='0.0.0.0', port=port, debug=False)
 
 
