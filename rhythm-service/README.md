@@ -101,25 +101,25 @@ cp .env.example .env
 python rhythm_service.py
 ```
 
-The service will start on port 5000 by default.
+The service will start on port 5001 by default (to avoid conflict with macOS AirPlay on port 5000).
 
 ### Testing
 
 Test the health endpoint:
 ```bash
-curl http://localhost:5000/health
+curl http://localhost:5001/health
 ```
 
 Trigger a manual beat:
 ```bash
-curl -X POST http://localhost:5000/api/beat-trigger \
+curl -X POST http://localhost:5001/api/beat-trigger \
   -H "Content-Type: application/json" \
   -d '{"section": "chorus", "beat_num": 1}'
 ```
 
 Analyze a song:
 ```bash
-curl -X POST http://localhost:5000/api/analyze-song \
+curl -X POST http://localhost:5001/api/analyze-song \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Where Is My Mind?",

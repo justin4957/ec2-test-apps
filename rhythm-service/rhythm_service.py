@@ -129,7 +129,8 @@ class RhythmController:
             )
 
             if response.status_code == 200:
-                logger.info(f"✓ Triggered {error_type} error on beat {beat_num}")
+                result = response.json()
+                logger.info(f"✓ Triggered {error_type} error on beat {beat_num}: {result.get('message')}")
             else:
                 logger.warning(f"Error generator responded with {response.status_code}")
 
