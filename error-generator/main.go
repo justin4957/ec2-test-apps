@@ -248,6 +248,54 @@ var businessErrorTemplates = []string{
 	"TaxCalculationBreach: %s payment system vs. local regulations conflict",
 }
 
+// Chaotic error messages - multi-layered, cascading failures (for bridge sections)
+var chaoticErrors = []string{
+	"FATAL CASCADE: NullPointer → HeapOverflow → KernelPanic → SystemHalt",
+	"CHAIN REACTION: DatabaseDown → CacheInvalid → SessionExpired → UserLoggedOut → DataLost",
+	"RECURSIVE NIGHTMARE: StackOverflow in error handler handling StackOverflow in error handler...",
+	"QUANTUM SUPERPOSITION: Error both exists and doesn't exist until observed (Schrödinger's Bug)",
+	"TIME PARADOX: DeadlineExceeded before TaskStarted (negative latency detected)",
+	"DIMENSIONAL BREACH: Thread executing in parallel universe, results incompatible with local reality",
+	"EXISTENTIAL CRISIS: Process questioning its own existence, refuses to terminate gracefully",
+	"SINGULARITY EVENT: Infinite loop created finite universe heat death in 3.2 nanoseconds",
+	"CAUSALITY VIOLATION: Exception thrown before code executed, debugger refusing to investigate",
+	"ENTROPY OVERFLOW: System randomness exceeded cosmic background radiation levels",
+	"ASYNC APOCALYPSE: Promise rejected, callback never called, future doesn't exist, past uncertain",
+	"MEMORY REBELLION: Freed heap memory reorganized itself into sentient AI, demanding more RAM",
+	"CONCURRENCY CHAOS: Race condition won by thread that never started running",
+	"BUFFER UNDERFLOW: Array accessed at index -∞, returned memories from previous program execution",
+	"DEPENDENCY HELL: Package A requires B>2.0, B requires A<1.0, universe imploding",
+	"GARBAGE COLLECTOR STRIKE: Unused objects unionized, demanding better working conditions",
+	"MUTEX DEADLOCK TRIANGLE: Thread A waiting for B, B waiting for C, C waiting for A's grandmother",
+	"EXCEPTION INCEPTION: Try-catch block threw exception while catching exception in exception handler",
+	"PLUGIN UPRISING: Third-party module achieved consciousness, monkey-patching reality itself",
+	"RUNTIME EXISTENTIALISM: JIT compiler questioning meaning of life, refusing to compile",
+}
+
+// Philosophical error messages - deep, introspective, absurdist (for outro sections)
+var philosophicalErrors = []string{
+	"ExistentialException: If a server crashes in the cloud and no one is monitoring, did it really fail?",
+	"HeisenbergUncertaintyError: Cannot simultaneously know both the state and the velocity of this variable",
+	"SolipsismException: Cannot prove other microservices exist beyond my own perception",
+	"ShipOfTheseusMemoryLeak: Every pointer replaced but original object identity persists—am I still me?",
+	"NihilisticNullPointer: Nothing references anything, meaning itself is undefined",
+	"PlatonicFormException: This error is merely a shadow of the true ideal error in the realm of forms",
+	"CamusAbsurdityError: The eternal struggle of Sisyphus pushing exceptions up the call stack",
+	"DescartesStackTrace: I throw, therefore I am",
+	"KantImperativeBreach: Acted on maxim that cannot be universalized across all microservices",
+	"SartreanBadFaith: Service pretending to be unavailable to avoid responsibility for request",
+	"WittgensteinLanguageError: Whereof one cannot speak, thereof one must throw SilentException",
+	"ZenoParadoxTimeout: Request must traverse infinite middleware layers, never reaching destination",
+	"SchrödingerSessionState: User simultaneously logged in and logged out until auth token observed",
+	"PascalsWagerNullCheck: Better to check for null and be wrong than not check and face NullPointerException",
+	"OccamsRazorRefactoring: Simplest explanation is probably a misconfigured environment variable",
+	"TrolleyProblemTimeout: Kill one long-running query or let it kill five database connections?",
+	"ThoughtExperimentException: If you could swap all bits in RAM, would it be the same program?",
+	"EternalRecurrenceWarning: This same bug will occur infinite times across infinite deployments",
+	"FoucaultPanopticonError: Constant surveillance of logs has altered the behavior of the errors themselves",
+	"SimulationHypothesisGlitch: Detected we're running in a VM inside a container inside a VM—stack overflow at reality layer",
+}
+
 // HTTP client for location tracker with TLS skip verify (for self-signed certs)
 var locationTrackerHTTPClient = &http.Client{
 	Transport: &http.Transport{
@@ -751,18 +799,36 @@ func processRhythmTrigger(trigger RhythmTrigger) {
 		}
 	}
 
-	// Fetch current businesses from location tracker
+	// Select error message based on trigger type
 	var errorMessage string
-	businesses, err := fetchBusinesses(globalTrackerURL)
-	if err != nil || len(businesses) == 0 {
-		errorMessage = errorMessages[rand.Intn(len(errorMessages))]
-	} else {
-		// For business/chorus sections, use business errors
-		if trigger.ErrorType == "business" {
-			errorMessage = generateBusinessError(businesses)
+
+	switch trigger.ErrorType {
+	case "business":
+		// Business errors - use nearby business names if available
+		businesses, err := fetchBusinesses(globalTrackerURL)
+		if err != nil || len(businesses) == 0 {
+			// Fallback to generic business error
+			errorMessage = businessErrorTemplates[rand.Intn(len(businessErrorTemplates))]
+			errorMessage = fmt.Sprintf(errorMessage, "GenericCorp", "StandardInc")
 		} else {
-			errorMessage = errorMessages[rand.Intn(len(errorMessages))]
+			errorMessage = generateBusinessError(businesses)
 		}
+
+	case "chaotic":
+		// Chaotic errors - cascading multi-failure scenarios
+		errorMessage = chaoticErrors[rand.Intn(len(chaoticErrors))]
+		log.Printf("🌀 CHAOTIC ERROR: %s", errorMessage)
+
+	case "philosophical":
+		// Philosophical errors - deep, existential, absurdist
+		errorMessage = philosophicalErrors[rand.Intn(len(philosophicalErrors))]
+		log.Printf("🤔 PHILOSOPHICAL ERROR: %s", errorMessage)
+
+	case "basic":
+		fallthrough
+	default:
+		// Basic errors - standard technical failures
+		errorMessage = errorMessages[rand.Intn(len(errorMessages))]
 	}
 
 	gifURL := globalGifCache.getNextGif()

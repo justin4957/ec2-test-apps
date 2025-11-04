@@ -74,7 +74,11 @@ Personal security / educational tool that:
 **Educational ML project** that uses FPGA-accelerated neural networks to sync error generation with music:
 - **Beat detection ML model** deployed on FPGA via hls4ml
 - Real-time audio analysis of Spotify tracks
-- **Song structure detection** (verse/chorus/bridge) triggers different error patterns
+- **Song structure detection** (verse/chorus/bridge) triggers different error patterns:
+  - 🎸 **Verse** → Basic errors (NullPointer, IndexOutOfBounds)
+  - 🎤 **Chorus** → Business errors (nearby locations, payment gateways)
+  - 🌀 **Bridge** → **Chaotic errors** (cascading failures, quantum bugs!)
+  - 🤔 **Outro** → **Philosophical errors** (existential, absurdist)
 - Ultra-low-latency inference (~microseconds) for musical synchronization
 - Transforms error logging into a rhythmic performance
 - See [rhythm-service/README.md](rhythm-service/README.md) for details
@@ -300,18 +304,32 @@ pip install -r requirements.txt
 python rhythm_service.py
 ```
 
-6. **(Demo!)** Try the rhythm-driven error demo - generates errors every 16 beats:
+6. **(Demo!)** Try the full 3-service rhythm-driven error demo:
 ```bash
-# In one terminal, start error-generator in rhythm mode
+# Terminal 1: Start slogan server
+cd slogan-server
+go run main.go
+
+# Terminal 2: Start error-generator in rhythm mode
 cd error-generator
 RHYTHM_SERVICE_URL=http://localhost:5001 go run main.go
 
-# In another terminal, run the demo
+# Terminal 3: Run the demo with a REAL SPOTIFY TRACK! 🎵
 cd rhythm-service
+python3 demo_rhythm_errors.py --track "Where Is My Mind?" --artist "Pixies"
+
+# Or use simulated song
 python3 demo_rhythm_errors.py
 ```
 
-This simulates an entire song (intro → verses → chorus → bridge → outro) and triggers errors synchronized to the beat every 16 beats (4 bars). Perfect for demos and understanding the rhythm-to-error mapping! See [rhythm-service/README.md](rhythm-service/README.md#-demo-mode) for more options.
+This uses **real song data from Spotify** (tempo, duration, actual sections!) and triggers errors synchronized to the beat every 16 beats (4 bars). Watch as:
+- **Demo script** sends beat triggers based on real song analysis
+- **Error generator** creates thematic errors with GIFs
+- **Slogan server** responds with sardonic slogans
+
+**🆕 NEW:** Use actual Spotify tracks with `--track` and `--artist` flags!
+
+See [DEMO_QUICKSTART.md](DEMO_QUICKSTART.md) for detailed walkthrough!
 
 ![Rocket](https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExdnpoa3N5cjNrYnBiM2t5c3l3bGk4aGxjYWI5NXZwanljdmU0YmpwbiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/3o6Zt6ML6BklcajjsA/giphy.gif)
 

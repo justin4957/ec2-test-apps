@@ -138,15 +138,20 @@ Experience the full rhythm-driven error generation with the included demo script
 
 ### Running the Demo
 
-The demo simulates an entire song and triggers errors every 16 beats (4 bars), showcasing the complete integration:
+The demo triggers errors every 16 beats (4 bars), showcasing the complete integration.
+
+**🆕 NEW: Use Real Spotify Tracks!**
 
 ```bash
 # Make sure error-generator is running first
 cd ../error-generator
 RHYTHM_SERVICE_URL=http://localhost:5001 go run main.go
 
-# In another terminal, run the demo
+# In another terminal, run the demo with a REAL SPOTIFY TRACK
 cd ../rhythm-service
+python3 demo_rhythm_errors.py --track "Where Is My Mind?" --artist "Pixies"
+
+# Or use simulated song
 python3 demo_rhythm_errors.py
 ```
 
@@ -186,10 +191,19 @@ Expected Error Triggers: 8
 # Fast mode (default) - runs as fast as possible
 python3 demo_rhythm_errors.py
 
+# 🆕 Use a real Spotify track
+python3 demo_rhythm_errors.py --track "Smells Like Teen Spirit" --artist "Nirvana"
+
+# 🆕 Use Spotify URI
+python3 demo_rhythm_errors.py --spotify-uri "spotify:track:5EWPGh7jbTNO2wakv8LjUI"
+
 # Real-time mode - simulates actual song playback
 python3 demo_rhythm_errors.py --realtime
 
-# Custom tempo
+# Real-time with Spotify track
+python3 demo_rhythm_errors.py --track "Where Is My Mind?" --artist "Pixies" --realtime
+
+# Custom tempo (simulated mode only)
 TEMPO=140 python3 demo_rhythm_errors.py
 
 # Custom error generator URL
@@ -198,6 +212,15 @@ ERROR_GENERATOR_URL=http://localhost:9090 python3 demo_rhythm_errors.py
 # Help
 python3 demo_rhythm_errors.py --help
 ```
+
+**Spotify Setup:**
+To use real Spotify tracks, set your credentials:
+```bash
+export SPOTIFY_CLIENT_ID="your_client_id"
+export SPOTIFY_CLIENT_SECRET="your_client_secret"
+```
+
+Get credentials from: https://developer.spotify.com/dashboard
 
 ### What You'll See
 
