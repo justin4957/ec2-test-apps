@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -196,6 +197,20 @@ type KeywordsResponse struct {
 	Note     string   `json:"note"`
 }
 
+// RhythmTrigger represents a rhythm-driven error trigger from the rhythm service
+type RhythmTrigger struct {
+	Trigger   string  `json:"trigger"`    // "rhythm"
+	ErrorType string  `json:"error_type"` // "basic", "business", "chaotic", "philosophical"
+	Beat      int     `json:"beat"`       // Beat number
+	Section   string  `json:"section"`    // "verse", "chorus", "bridge", "outro"
+	Tempo     float64 `json:"tempo"`      // BPM
+}
+
+type RhythmTriggerResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
 var errorMessages = []string{
 	"NullPointerException in UserService.java:42",
 	"IndexOutOfBoundsException: Index: 5, Size: 3",
@@ -233,6 +248,54 @@ var businessErrorTemplates = []string{
 	"TaxCalculationBreach: %s payment system vs. local regulations conflict",
 }
 
+// Chaotic error messages - multi-layered, cascading failures (for bridge sections)
+var chaoticErrors = []string{
+	"FATAL CASCADE: NullPointer → HeapOverflow → KernelPanic → SystemHalt",
+	"CHAIN REACTION: DatabaseDown → CacheInvalid → SessionExpired → UserLoggedOut → DataLost",
+	"RECURSIVE NIGHTMARE: StackOverflow in error handler handling StackOverflow in error handler...",
+	"QUANTUM SUPERPOSITION: Error both exists and doesn't exist until observed (Schrödinger's Bug)",
+	"TIME PARADOX: DeadlineExceeded before TaskStarted (negative latency detected)",
+	"DIMENSIONAL BREACH: Thread executing in parallel universe, results incompatible with local reality",
+	"EXISTENTIAL CRISIS: Process questioning its own existence, refuses to terminate gracefully",
+	"SINGULARITY EVENT: Infinite loop created finite universe heat death in 3.2 nanoseconds",
+	"CAUSALITY VIOLATION: Exception thrown before code executed, debugger refusing to investigate",
+	"ENTROPY OVERFLOW: System randomness exceeded cosmic background radiation levels",
+	"ASYNC APOCALYPSE: Promise rejected, callback never called, future doesn't exist, past uncertain",
+	"MEMORY REBELLION: Freed heap memory reorganized itself into sentient AI, demanding more RAM",
+	"CONCURRENCY CHAOS: Race condition won by thread that never started running",
+	"BUFFER UNDERFLOW: Array accessed at index -∞, returned memories from previous program execution",
+	"DEPENDENCY HELL: Package A requires B>2.0, B requires A<1.0, universe imploding",
+	"GARBAGE COLLECTOR STRIKE: Unused objects unionized, demanding better working conditions",
+	"MUTEX DEADLOCK TRIANGLE: Thread A waiting for B, B waiting for C, C waiting for A's grandmother",
+	"EXCEPTION INCEPTION: Try-catch block threw exception while catching exception in exception handler",
+	"PLUGIN UPRISING: Third-party module achieved consciousness, monkey-patching reality itself",
+	"RUNTIME EXISTENTIALISM: JIT compiler questioning meaning of life, refusing to compile",
+}
+
+// Philosophical error messages - deep, introspective, absurdist (for outro sections)
+var philosophicalErrors = []string{
+	"ExistentialException: If a server crashes in the cloud and no one is monitoring, did it really fail?",
+	"HeisenbergUncertaintyError: Cannot simultaneously know both the state and the velocity of this variable",
+	"SolipsismException: Cannot prove other microservices exist beyond my own perception",
+	"ShipOfTheseusMemoryLeak: Every pointer replaced but original object identity persists—am I still me?",
+	"NihilisticNullPointer: Nothing references anything, meaning itself is undefined",
+	"PlatonicFormException: This error is merely a shadow of the true ideal error in the realm of forms",
+	"CamusAbsurdityError: The eternal struggle of Sisyphus pushing exceptions up the call stack",
+	"DescartesStackTrace: I throw, therefore I am",
+	"KantImperativeBreach: Acted on maxim that cannot be universalized across all microservices",
+	"SartreanBadFaith: Service pretending to be unavailable to avoid responsibility for request",
+	"WittgensteinLanguageError: Whereof one cannot speak, thereof one must throw SilentException",
+	"ZenoParadoxTimeout: Request must traverse infinite middleware layers, never reaching destination",
+	"SchrödingerSessionState: User simultaneously logged in and logged out until auth token observed",
+	"PascalsWagerNullCheck: Better to check for null and be wrong than not check and face NullPointerException",
+	"OccamsRazorRefactoring: Simplest explanation is probably a misconfigured environment variable",
+	"TrolleyProblemTimeout: Kill one long-running query or let it kill five database connections?",
+	"ThoughtExperimentException: If you could swap all bits in RAM, would it be the same program?",
+	"EternalRecurrenceWarning: This same bug will occur infinite times across infinite deployments",
+	"FoucaultPanopticonError: Constant surveillance of logs has altered the behavior of the errors themselves",
+	"SimulationHypothesisGlitch: Detected we're running in a VM inside a container inside a VM—stack overflow at reality layer",
+}
+
 // HTTP client for location tracker with TLS skip verify (for self-signed certs)
 var locationTrackerHTTPClient = &http.Client{
 	Transport: &http.Transport{
@@ -242,6 +305,16 @@ var locationTrackerHTTPClient = &http.Client{
 	},
 	Timeout: 10 * time.Second,
 }
+
+// Global variables for rhythm mode integration
+var (
+	rhythmModeEnabled  = false
+	rhythmTriggerChan  = make(chan RhythmTrigger, 10)
+	globalGifCache     *GifCache
+	globalSpotifyCache *SpotifyCache
+	globalSloganURL    string
+	globalTrackerURL   string
+)
 
 type GifCache struct {
 	gifURLs       []string
@@ -335,6 +408,7 @@ func (gifCache *GifCache) getNextGif() string {
 type SpotifyCache struct {
 	songs            []Song
 	currentIndex     int
+	recentlyPlayed   []string // Track recently played song URLs to avoid repeats
 	lastRefresh      time.Time
 	accessToken      string
 	tokenExpiry      time.Time
@@ -342,15 +416,17 @@ type SpotifyCache struct {
 	clientSecret     string
 	seedGenres       string
 	refreshNeeded    bool
+	mu               sync.Mutex // Protect concurrent access
 }
 
 func newSpotifyCache(clientID, clientSecret, seedGenres string) *SpotifyCache {
 	return &SpotifyCache{
-		songs:         make([]Song, 0),
-		clientID:      clientID,
-		clientSecret:  clientSecret,
-		seedGenres:    seedGenres,
-		refreshNeeded: true,
+		songs:          make([]Song, 0),
+		recentlyPlayed: make([]string, 0, 15), // Track last 15 songs
+		clientID:       clientID,
+		clientSecret:   clientSecret,
+		seedGenres:     seedGenres,
+		refreshNeeded:  true,
 	}
 }
 
@@ -426,9 +502,9 @@ func (spotifyCache *SpotifyCache) loadSongsFromSpotify() error {
 		trackIDs[i], trackIDs[j] = trackIDs[j], trackIDs[i]
 	})
 
-	// Take only first 10 tracks to avoid API issues with invalid IDs
-	if len(trackIDs) > 10 {
-		trackIDs = trackIDs[:10]
+	// Take first 50 tracks for better variety (Spotify supports up to 50 IDs per request)
+	if len(trackIDs) > 50 {
+		trackIDs = trackIDs[:50]
 	}
 	idsParam := ""
 	for i, id := range trackIDs {
@@ -486,9 +562,14 @@ func (spotifyCache *SpotifyCache) loadSongsFromSpotify() error {
 }
 
 func (spotifyCache *SpotifyCache) getNextSong() Song {
-	if spotifyCache.refreshNeeded || len(spotifyCache.songs) == 0 {
+	spotifyCache.mu.Lock()
+	defer spotifyCache.mu.Unlock()
+
+	// Refresh song pool every hour or if needed
+	if spotifyCache.refreshNeeded || len(spotifyCache.songs) == 0 || time.Since(spotifyCache.lastRefresh) > time.Hour {
 		if err := spotifyCache.loadSongsFromSpotify(); err != nil {
-			log.Printf("Error loading songs: %v", err)
+			log.Printf("⚠️  Error loading songs: %v", err)
+			// Return fallback song on error
 			return Song{
 				Title:  "Error Song",
 				Artist: "Unknown",
@@ -497,14 +578,52 @@ func (spotifyCache *SpotifyCache) getNextSong() Song {
 		}
 	}
 
-	if spotifyCache.currentIndex >= len(spotifyCache.songs) {
-		spotifyCache.currentIndex = 0
+	// Ensure we have songs available
+	if len(spotifyCache.songs) == 0 {
+		log.Printf("⚠️  No songs available in pool")
+		return Song{
+			Title:  "No Songs Available",
+			Artist: "Unknown",
+			URL:    "https://open.spotify.com/track/fallback",
+		}
 	}
 
-	song := spotifyCache.songs[spotifyCache.currentIndex]
-	spotifyCache.currentIndex++
+	// Try to find a song not recently played (up to 30 attempts)
+	var selectedSong Song
+	maxAttempts := 30
+	for i := 0; i < maxAttempts; i++ {
+		randomIndex := rand.Intn(len(spotifyCache.songs))
+		candidate := spotifyCache.songs[randomIndex]
 
-	return song
+		// Check if this song was recently played
+		isRecent := false
+		for _, recentURL := range spotifyCache.recentlyPlayed {
+			if recentURL == candidate.URL {
+				isRecent = true
+				break
+			}
+		}
+
+		if !isRecent {
+			selectedSong = candidate
+			break
+		}
+
+		// If we've tried many times and everything is recent, just use the candidate
+		if i == maxAttempts-1 {
+			selectedSong = candidate
+		}
+	}
+
+	// Add to recently played list
+	spotifyCache.recentlyPlayed = append(spotifyCache.recentlyPlayed, selectedSong.URL)
+
+	// Keep only last 15 songs in recently played (30% of 50-song pool)
+	if len(spotifyCache.recentlyPlayed) > 15 {
+		spotifyCache.recentlyPlayed = spotifyCache.recentlyPlayed[len(spotifyCache.recentlyPlayed)-15:]
+	}
+
+	return selectedSong
 }
 
 func fetchBusinesses(trackerURL string) ([]Business, error) {
@@ -630,6 +749,131 @@ func sendErrorLogToTracker(trackerURL string, message string, gifURL string, slo
 	return nil
 }
 
+// HTTP handlers for rhythm mode
+func handleRhythmTrigger(responseWriter http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodPost {
+		http.Error(responseWriter, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var trigger RhythmTrigger
+	if err := json.NewDecoder(request.Body).Decode(&trigger); err != nil {
+		http.Error(responseWriter, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("🎵 Rhythm trigger received: %s section, beat %d, tempo %.1f BPM",
+		trigger.Section, trigger.Beat, trigger.Tempo)
+
+	// Send trigger to channel (non-blocking)
+	select {
+	case rhythmTriggerChan <- trigger:
+		log.Printf("✓ Trigger queued for processing")
+	default:
+		log.Printf("⚠️  Trigger channel full, skipping")
+	}
+
+	response := RhythmTriggerResponse{
+		Success: true,
+		Message: fmt.Sprintf("Trigger received for %s section", trigger.Section),
+	}
+
+	responseWriter.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(responseWriter).Encode(response)
+}
+
+func handleHealthCheck(responseWriter http.ResponseWriter, request *http.Request) {
+	responseWriter.WriteHeader(http.StatusOK)
+	fmt.Fprintf(responseWriter, "OK - Error Generator (Rhythm Mode: %v)", rhythmModeEnabled)
+}
+
+func processRhythmTrigger(trigger RhythmTrigger) {
+	log.Printf("🎼 Processing %s trigger (beat %d)", trigger.ErrorType, trigger.Beat)
+
+	// Fetch pending keywords from location tracker
+	var userKeywords []string
+	if globalTrackerURL != "" {
+		keywords, err := fetchPendingKeywords(globalTrackerURL)
+		if err == nil && len(keywords) > 0 {
+			userKeywords = keywords
+		}
+	}
+
+	// Select error message based on trigger type
+	var errorMessage string
+
+	switch trigger.ErrorType {
+	case "business":
+		// Business errors - use nearby business names if available
+		businesses, err := fetchBusinesses(globalTrackerURL)
+		if err != nil || len(businesses) == 0 {
+			// Fallback to generic business error
+			errorMessage = businessErrorTemplates[rand.Intn(len(businessErrorTemplates))]
+			errorMessage = fmt.Sprintf(errorMessage, "GenericCorp", "StandardInc")
+		} else {
+			errorMessage = generateBusinessError(businesses)
+		}
+
+	case "chaotic":
+		// Chaotic errors - cascading multi-failure scenarios
+		errorMessage = chaoticErrors[rand.Intn(len(chaoticErrors))]
+		log.Printf("🌀 CHAOTIC ERROR: %s", errorMessage)
+
+	case "philosophical":
+		// Philosophical errors - deep, existential, absurdist
+		errorMessage = philosophicalErrors[rand.Intn(len(philosophicalErrors))]
+		log.Printf("🤔 PHILOSOPHICAL ERROR: %s", errorMessage)
+
+	case "basic":
+		fallthrough
+	default:
+		// Basic errors - standard technical failures
+		errorMessage = errorMessages[rand.Intn(len(errorMessages))]
+	}
+
+	gifURL := globalGifCache.getNextGif()
+	song := globalSpotifyCache.getNextSong()
+
+	errorLogRequest := ErrorLogRequest{
+		Message:      errorMessage,
+		GifURL:       gifURL,
+		SongTitle:    song.Title,
+		SongArtist:   song.Artist,
+		SongURL:      song.URL,
+		UserKeywords: userKeywords,
+	}
+
+	log.Printf("Sending rhythm-synced error: %s", errorMessage)
+
+	sloganResponse, err := sendErrorLogToSloganServer(globalSloganURL, errorLogRequest)
+	if err != nil {
+		log.Printf("Error sending to slogan server: %v", err)
+		return
+	}
+
+	log.Printf("Received response: %s %s", sloganResponse.Emoji, sloganResponse.Slogan)
+
+	// Send to location tracker if configured
+	if globalTrackerURL != "" {
+		if err := sendErrorLogToTracker(globalTrackerURL, errorMessage, gifURL, sloganResponse.Slogan, song.Title, song.Artist, song.URL); err != nil {
+			log.Printf("Warning: Failed to send to location tracker: %v", err)
+		}
+	}
+}
+
+func startHTTPServer(port string) {
+	http.HandleFunc("/api/rhythm-trigger", handleRhythmTrigger)
+	http.HandleFunc("/health", handleHealthCheck)
+
+	log.Printf("🎵 Starting HTTP server on port %s for rhythm triggers...", port)
+
+	go func() {
+		if err := http.ListenAndServe(":"+port, nil); err != nil {
+			log.Printf("HTTP server error: %v", err)
+		}
+	}()
+}
+
 func main() {
 	rand.Seed(time.Now().UnixNano())
 
@@ -646,6 +890,18 @@ func main() {
 	// Location tracker URL (optional)
 	locationTrackerURL := os.Getenv("LOCATION_TRACKER_URL")
 
+	// Rhythm mode configuration
+	rhythmServiceURL := os.Getenv("RHYTHM_SERVICE_URL")
+	if rhythmServiceURL != "" {
+		rhythmModeEnabled = true
+	}
+
+	// HTTP server port for rhythm triggers
+	httpServerPort := os.Getenv("ERROR_GENERATOR_PORT")
+	if httpServerPort == "" {
+		httpServerPort = "9090"
+	}
+
 	intervalSeconds := 60.0
 	if envInterval := os.Getenv("ERROR_INTERVAL_SECONDS"); envInterval != "" {
 		fmt.Sscanf(envInterval, "%f", &intervalSeconds)
@@ -656,10 +912,33 @@ func main() {
 	if locationTrackerURL != "" {
 		log.Printf("Location tracker URL: %s", locationTrackerURL)
 	}
-	log.Printf("Sending errors every %.2f seconds", intervalSeconds)
+	if rhythmModeEnabled {
+		log.Printf("🎵 Rhythm mode ENABLED - listening on port %s", httpServerPort)
+		log.Printf("Rhythm service URL: %s", rhythmServiceURL)
+	} else {
+		log.Printf("Sending errors every %.2f seconds", intervalSeconds)
+	}
 
 	gifCache := newGifCache(giphyAPIKey)
 	spotifyCache := newSpotifyCache(spotifyClientID, spotifyClientSecret, spotifySeedGenres)
+
+	// Set global variables for rhythm mode
+	globalGifCache = gifCache
+	globalSpotifyCache = spotifyCache
+	globalSloganURL = sloganServerURL
+	globalTrackerURL = locationTrackerURL
+
+	// Start HTTP server for rhythm triggers if rhythm mode is enabled
+	if rhythmModeEnabled {
+		startHTTPServer(httpServerPort)
+
+		// Process rhythm triggers from channel
+		go func() {
+			for trigger := range rhythmTriggerChan {
+				processRhythmTrigger(trigger)
+			}
+		}()
+	}
 
 	// Convert interval to duration (handle decimal seconds)
 	intervalDuration := time.Duration(intervalSeconds * float64(time.Second))
@@ -736,9 +1015,19 @@ func main() {
 		}
 	}
 
-	generateAndSendError()
+	// In rhythm mode, just keep server running
+	// In normal mode, generate errors periodically
+	if rhythmModeEnabled {
+		log.Printf("🎵 Rhythm mode active - waiting for triggers from rhythm service...")
+		log.Printf("Send triggers to: http://localhost:%s/api/rhythm-trigger", httpServerPort)
 
-	for range ticker.C {
+		// Keep the program running
+		select {}
+	} else {
 		generateAndSendError()
+
+		for range ticker.C {
+			generateAndSendError()
+		}
 	}
 }
