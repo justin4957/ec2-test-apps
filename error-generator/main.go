@@ -8,15 +8,42 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"os"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
 )
 
 type GiphyResponse struct {
 	Data []struct {
-		URL string `json:"url"`
+		URL    string `json:"url"`    // Webpage URL (not used)
+		Images struct {
+			Original struct {
+				URL string `json:"url"` // Direct GIF URL
+			} `json:"original"`
+			Downsized struct {
+				URL string `json:"url"`
+			} `json:"downsized"`
+		} `json:"images"`
 	} `json:"data"`
+}
+
+type PexelsResponse struct {
+	Photos []struct {
+		ID  int `json:"id"`
+		Src struct {
+			Original  string `json:"original"`
+			Large2x   string `json:"large2x"`
+			Large     string `json:"large"`
+			Medium    string `json:"medium"`
+			Small     string `json:"small"`
+			Landscape string `json:"landscape"`
+		} `json:"src"`
+		Photographer string `json:"photographer"`
+		URL          string `json:"url"`
+	} `json:"photos"`
 }
 
 type SpotifyAuthResponse struct {
@@ -163,17 +190,46 @@ type Song struct {
 }
 
 type ErrorLogRequest struct {
-	Message      string   `json:"message"`
-	GifURL       string   `json:"gif_url"`
-	SongTitle    string   `json:"song_title"`
-	SongArtist   string   `json:"song_artist"`
-	SongURL      string   `json:"song_url"`
-	UserKeywords []string `json:"user_keywords,omitempty"`
+	Message        string   `json:"message"`
+	GifURL         string   `json:"gif_url"`
+	SongTitle      string   `json:"song_title"`
+	SongArtist     string   `json:"song_artist"`
+	SongURL        string   `json:"song_url"`
+	UserKeywords   []string `json:"user_keywords,omitempty"`
+	FoodImageURL   string   `json:"food_image_url,omitempty"`
+	FoodImageAttr  string   `json:"food_image_attr,omitempty"` // Attribution for photographer
+	ChildrensStory string   `json:"childrens_story,omitempty"`
 }
 
 type SloganResponse struct {
 	Emoji  string `json:"emoji"`
 	Slogan string `json:"slogan"`
+}
+
+// AnthropicRequest represents the request structure for Anthropic's Messages API
+type AnthropicRequest struct {
+	Model     string              `json:"model"`
+	MaxTokens int                 `json:"max_tokens"`
+	Messages  []AnthropicMessage  `json:"messages"`
+}
+
+type AnthropicMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+// AnthropicResponse represents the response from Anthropic API
+type AnthropicResponse struct {
+	ID      string              `json:"id"`
+	Type    string              `json:"type"`
+	Role    string              `json:"role"`
+	Content []AnthropicContent  `json:"content"`
+	Model   string              `json:"model"`
+}
+
+type AnthropicContent struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
 }
 
 type Business struct {
@@ -308,12 +364,15 @@ var locationTrackerHTTPClient = &http.Client{
 
 // Global variables for rhythm mode integration
 var (
-	rhythmModeEnabled  = false
-	rhythmTriggerChan  = make(chan RhythmTrigger, 10)
-	globalGifCache     *GifCache
-	globalSpotifyCache *SpotifyCache
-	globalSloganURL    string
-	globalTrackerURL   string
+	rhythmModeEnabled     = false
+	rhythmTriggerChan     = make(chan RhythmTrigger, 10)
+	globalGifCache        *GifCache
+	globalSpotifyCache    *SpotifyCache
+	globalFoodImageCache  *FoodImageCache
+	globalSloganURL       string
+	globalTrackerURL      string
+	globalFixGenURL       string
+	globalAnthropicKey    string
 )
 
 type GifCache struct {
@@ -322,6 +381,8 @@ type GifCache struct {
 	lastRefresh   time.Time
 	giphyAPIKey   string
 	refreshNeeded bool
+	lastSearchTerm string // Track last search term for dynamic GIF selection
+	mu            sync.Mutex
 }
 
 func newGifCache(apiKey string) *GifCache {
@@ -332,7 +393,95 @@ func newGifCache(apiKey string) *GifCache {
 	}
 }
 
-func (gifCache *GifCache) loadGifsFromGiphy() error {
+// extractGifKeywords extracts meaningful keywords from error messages for GIF searches
+func extractGifKeywords(errorMessage string) string {
+	// Convert to lowercase for processing
+	msg := strings.ToLower(errorMessage)
+
+	// Define interesting keywords that make for good GIF searches
+	interestingPatterns := []struct {
+		pattern *regexp.Regexp
+		keyword string
+	}{
+		// Existential/philosophical terms
+		{regexp.MustCompile(`existential|solipsism|nihilist|absurd|descartes|camus|sartre|schrödinger`), "existential crisis"},
+		{regexp.MustCompile(`ship.?of.?theseus`), "identity crisis"},
+		{regexp.MustCompile(`heisenberg`), "uncertainty"},
+		{regexp.MustCompile(`simulation|glitch.in.matrix`), "glitch in the matrix"},
+
+		// Chaotic/cascading failures
+		{regexp.MustCompile(`cascade|chain.?reaction|recursive.?nightmare`), "domino effect"},
+		{regexp.MustCompile(`quantum|superposition`), "quantum"},
+		{regexp.MustCompile(`paradox|time.?travel`), "time paradox"},
+		{regexp.MustCompile(`dimension|parallel.?universe`), "parallel universe"},
+		{regexp.MustCompile(`singularity|black.?hole`), "black hole"},
+		{regexp.MustCompile(`entropy|chaos`), "chaos"},
+		{regexp.MustCompile(`apocalypse|armageddon`), "apocalypse"},
+		{regexp.MustCompile(`rebellion|uprising|strike`), "rebellion"},
+		{regexp.MustCompile(`deadlock|waiting`), "waiting forever"},
+		{regexp.MustCompile(`infinite|eternal|never.?ending`), "infinity"},
+
+		// Memory/resource issues
+		{regexp.MustCompile(`memory|heap|leak`), "out of memory"},
+		{regexp.MustCompile(`overflow|exhausted`), "overflow"},
+		{regexp.MustCompile(`garbage.?collector`), "garbage"},
+
+		// Connection/timeout issues
+		{regexp.MustCompile(`timeout|unresponsive`), "waiting"},
+		{regexp.MustCompile(`connection|disconnect`), "disconnected"},
+		{regexp.MustCompile(`denied|forbidden|unauthorized`), "access denied"},
+
+		// File/data issues
+		{regexp.MustCompile(`not.?found|missing`), "lost"},
+		{regexp.MustCompile(`null.?pointer|undefined`), "nothing there"},
+		{regexp.MustCompile(`corruption|invalid`), "broken"},
+
+		// Business-specific
+		{regexp.MustCompile(`payment|checkout|transaction`), "money problems"},
+		{regexp.MustCompile(`inventory|stock`), "out of stock"},
+		{regexp.MustCompile(`delivery|shipping`), "delivery fail"},
+		{regexp.MustCompile(`reservation|booking`), "double booked"},
+
+		// General fun patterns
+		{regexp.MustCompile(`fire|burning`), "fire"},
+		{regexp.MustCompile(`explosion|crash`), "explosion"},
+		{regexp.MustCompile(`zombie|undead`), "zombie"},
+	}
+
+	// Check for interesting patterns
+	for _, p := range interestingPatterns {
+		if p.pattern.MatchString(msg) {
+			return p.keyword
+		}
+	}
+
+	// Fallback: extract the error type or a key word
+	// Look for common error types
+	errorTypes := []string{"exception", "error", "failure", "violation", "breach", "conflict", "mismatch", "overflow", "underflow"}
+
+	for _, errType := range errorTypes {
+		if idx := strings.Index(msg, errType); idx > 0 {
+			// Get the word before the error type (e.g., "NullPointer" from "NullPointerException")
+			before := msg[:idx]
+			words := strings.FieldsFunc(before, func(r rune) bool {
+				return !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z'))
+			})
+			if len(words) > 0 {
+				lastWord := words[len(words)-1]
+				// Make it more interesting
+				if len(lastWord) > 3 {
+					return lastWord + " fail"
+				}
+			}
+		}
+	}
+
+	// Final fallback: use generic fun terms
+	fallbackTerms := []string{"computer error", "software fail", "tech problems", "system crash", "digital chaos"}
+	return fallbackTerms[rand.Intn(len(fallbackTerms))]
+}
+
+func (gifCache *GifCache) loadGifsFromGiphy(searchTerm string) error {
 	if gifCache.giphyAPIKey == "" {
 		log.Println("GIPHY_API_KEY not set, using placeholder GIFs")
 		gifCache.gifURLs = []string{
@@ -348,13 +497,20 @@ func (gifCache *GifCache) loadGifsFromGiphy() error {
 		return nil
 	}
 
-	searchTerms := []string{"error", "fail", "glitch", "broken", "oops"}
-	randomSearchTerm := searchTerms[rand.Intn(len(searchTerms))]
+	// Use provided search term, or fallback to generic terms if empty
+	if searchTerm == "" {
+		fallbackTerms := []string{"error", "fail", "glitch", "broken", "oops"}
+		searchTerm = fallbackTerms[rand.Intn(len(fallbackTerms))]
+	}
 
-	url := fmt.Sprintf("https://api.giphy.com/v1/gifs/search?api_key=%s&q=%s&limit=25&rating=g",
-		gifCache.giphyAPIKey, randomSearchTerm)
+	// Store the search term for tracking
+	gifCache.lastSearchTerm = searchTerm
 
-	httpResponse, err := http.Get(url)
+	// URL-encode the search term
+	apiURL := fmt.Sprintf("https://api.giphy.com/v1/gifs/search?api_key=%s&q=%s&limit=25&rating=g",
+		gifCache.giphyAPIKey, url.QueryEscape(searchTerm))
+
+	httpResponse, err := http.Get(apiURL)
 	if err != nil {
 		return fmt.Errorf("failed to fetch from Giphy: %w", err)
 	}
@@ -371,38 +527,267 @@ func (gifCache *GifCache) loadGifsFromGiphy() error {
 
 	gifCache.gifURLs = make([]string, 0, len(giphyResponse.Data))
 	for _, gif := range giphyResponse.Data {
-		gifCache.gifURLs = append(gifCache.gifURLs, gif.URL)
+		// Use the direct GIF image URL, not the webpage URL
+		if gif.Images.Original.URL != "" {
+			gifCache.gifURLs = append(gifCache.gifURLs, gif.Images.Original.URL)
+		} else if gif.Images.Downsized.URL != "" {
+			// Fallback to downsized if original not available
+			gifCache.gifURLs = append(gifCache.gifURLs, gif.Images.Downsized.URL)
+		}
 	}
 
 	gifCache.lastRefresh = time.Now()
 	gifCache.currentIndex = 0
 	gifCache.refreshNeeded = false
 
-	log.Printf("Loaded %d GIF URLs from Giphy (search term: %s)", len(gifCache.gifURLs), randomSearchTerm)
+	log.Printf("🎬 Loaded %d GIF URLs from Giphy (search: '%s')", len(gifCache.gifURLs), searchTerm)
 	return nil
 }
 
-func (gifCache *GifCache) getNextGif() string {
-	if gifCache.refreshNeeded || len(gifCache.gifURLs) == 0 {
-		if err := gifCache.loadGifsFromGiphy(); err != nil {
+func (gifCache *GifCache) getNextGif(errorMessage string) string {
+	gifCache.mu.Lock()
+	defer gifCache.mu.Unlock()
+
+	// Extract keywords from error message for dynamic GIF search
+	searchTerm := extractGifKeywords(errorMessage)
+
+	// If we need to refresh or the search term changed, load new GIFs
+	needsRefresh := gifCache.refreshNeeded || len(gifCache.gifURLs) == 0 || searchTerm != gifCache.lastSearchTerm
+
+	if needsRefresh {
+		if err := gifCache.loadGifsFromGiphy(searchTerm); err != nil {
 			log.Printf("Error loading GIFs: %v", err)
 			return "https://giphy.com/gifs/error-fallback"
 		}
 	}
 
 	if gifCache.currentIndex >= len(gifCache.gifURLs) {
-		gifCache.refreshNeeded = true
 		gifCache.currentIndex = 0
-		if err := gifCache.loadGifsFromGiphy(); err != nil {
+		// Load new batch with same search term
+		if err := gifCache.loadGifsFromGiphy(searchTerm); err != nil {
 			log.Printf("Error refreshing GIFs: %v", err)
 			return "https://giphy.com/gifs/error-fallback"
 		}
+	}
+
+	if len(gifCache.gifURLs) == 0 {
+		return "https://giphy.com/gifs/error-fallback"
 	}
 
 	gif := gifCache.gifURLs[gifCache.currentIndex]
 	gifCache.currentIndex++
 
 	return gif
+}
+
+type FoodImage struct {
+	URL         string
+	Attribution string // Photographer name + link
+}
+
+type FoodImageCache struct {
+	foodImages      []FoodImage
+	currentIndex    int
+	lastRefresh     time.Time
+	pexelsKey       string
+	refreshNeeded   bool
+	lastSearchTerm  string
+	mu              sync.Mutex
+}
+
+func newFoodImageCache(apiKey string) *FoodImageCache {
+	return &FoodImageCache{
+		foodImages:    make([]FoodImage, 0),
+		pexelsKey:     apiKey,
+		refreshNeeded: true,
+	}
+}
+
+// extractFoodKeywords extracts food-related keywords from error messages
+func extractFoodKeywords(errorMessage string) string {
+	msg := strings.ToLower(errorMessage)
+
+	// Map error concepts to food items for comedic effect
+	foodPatterns := []struct {
+		pattern *regexp.Regexp
+		food    string
+	}{
+		// Existential/philosophical → comfort food
+		{regexp.MustCompile(`existential|nihilist|absurd`), "existential soup"},
+		{regexp.MustCompile(`schrödinger|quantum|superposition`), "quantum pasta"},
+		{regexp.MustCompile(`descartes|cogito`), "thinking sandwich"},
+
+		// Chaotic/cascading → messy food
+		{regexp.MustCompile(`cascade|chain|domino`), "spaghetti spillage"},
+		{regexp.MustCompile(`chaos|entropy|apocalypse`), "kitchen disaster"},
+		{regexp.MustCompile(`explosion|crash`), "burnt toast"},
+		{regexp.MustCompile(`recursive|infinite|loop`), "croissant layers"},
+
+		// Memory/overflow → overflowing food
+		{regexp.MustCompile(`memory|heap|overflow`), "overflowing ramen"},
+		{regexp.MustCompile(`leak|drip`), "coffee spill"},
+		{regexp.MustCompile(`garbage|trash`), "food waste"},
+
+		// Timeout/waiting → slow cooking
+		{regexp.MustCompile(`timeout|wait|slow|unresponsive`), "slow cooking"},
+		{regexp.MustCompile(`hang|freeze|stuck`), "frozen meal"},
+
+		// Connection/network → shared meals
+		{regexp.MustCompile(`disconnect|connection`), "lonely dinner"},
+		{regexp.MustCompile(`handshake|ssl|tls`), "awkward dinner party"},
+
+		// Null/missing → empty plates
+		{regexp.MustCompile(`null|undefined|missing|not.?found`), "empty plate"},
+		{regexp.MustCompile(`void|nothing`), "minimalist cuisine"},
+
+		// Permissions/security → forbidden food
+		{regexp.MustCompile(`denied|forbidden|unauthorized`), "forbidden fruit"},
+		{regexp.MustCompile(`security|breach|hack`), "stolen cookies"},
+
+		// Index/array → organized food
+		{regexp.MustCompile(`index|array|bounds`), "sushi platter"},
+		{regexp.MustCompile(`sort|order`), "organized pantry"},
+
+		// Type/cast → food transformation
+		{regexp.MustCompile(`cast|type|convert`), "food transformation"},
+		{regexp.MustCompile(`parse|format`), "recipe confusion"},
+
+		// Deadlock/concurrent → busy kitchen
+		{regexp.MustCompile(`deadlock|concurrent|race`), "busy restaurant kitchen"},
+		{regexp.MustCompile(`thread|parallel`), "multi-course meal"},
+
+		// Business-specific → restaurant food
+		{regexp.MustCompile(`payment|checkout|transaction`), "restaurant bill"},
+		{regexp.MustCompile(`inventory|stock`), "empty fridge"},
+		{regexp.MustCompile(`delivery|shipping`), "food delivery"},
+	}
+
+	// Check for food patterns
+	for _, p := range foodPatterns {
+		if p.pattern.MatchString(msg) {
+			return p.food
+		}
+	}
+
+	// Fallback: use generic food blog terms
+	fallbackFoods := []string{
+		"artisan bread", "farm to table", "rustic cooking", "comfort food",
+		"homemade pasta", "fresh ingredients", "seasonal vegetables",
+		"gourmet burger", "craft coffee", "organic salad",
+	}
+	return fallbackFoods[rand.Intn(len(fallbackFoods))]
+}
+
+func (cache *FoodImageCache) loadFoodImagesFromPexels(searchTerm string) error {
+	if cache.pexelsKey == "" || cache.pexelsKey == "YOUR_PEXELS_API_KEY_HERE" {
+		log.Println("PEXELS_API_KEY not set, using placeholder food images")
+		cache.foodImages = []FoodImage{
+			{URL: "https://images.pexels.com/photos/placeholder-food-1.jpeg", Attribution: "Placeholder"},
+			{URL: "https://images.pexels.com/photos/placeholder-food-2.jpeg", Attribution: "Placeholder"},
+			{URL: "https://images.pexels.com/photos/placeholder-food-3.jpeg", Attribution: "Placeholder"},
+		}
+		cache.lastRefresh = time.Now()
+		cache.currentIndex = 0
+		cache.refreshNeeded = false
+		return nil
+	}
+
+	// Use provided search term, or fallback to generic food terms
+	if searchTerm == "" {
+		fallbackTerms := []string{"food blog", "artisan food", "rustic cooking", "comfort food", "gourmet meal"}
+		searchTerm = fallbackTerms[rand.Intn(len(fallbackTerms))]
+	}
+
+	cache.lastSearchTerm = searchTerm
+
+	// Pexels API endpoint - landscape orientation for blog-style images
+	// URL-encode the search term to handle special characters and spaces
+	apiURL := fmt.Sprintf("https://api.pexels.com/v1/search?query=%s&per_page=20&orientation=landscape",
+		url.QueryEscape(searchTerm))
+
+	httpRequest, err := http.NewRequest("GET", apiURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create pexels request: %w", err)
+	}
+
+	// Pexels uses Authorization header with API key directly
+	httpRequest.Header.Set("Authorization", cache.pexelsKey)
+
+	httpResponse, err := http.DefaultClient.Do(httpRequest)
+	if err != nil {
+		return fmt.Errorf("failed to fetch from Pexels: %w", err)
+	}
+	defer httpResponse.Body.Close()
+
+	if httpResponse.StatusCode != http.StatusOK {
+		return fmt.Errorf("pexels API returned status: %d", httpResponse.StatusCode)
+	}
+
+	var pexelsResponse PexelsResponse
+	if err := json.NewDecoder(httpResponse.Body).Decode(&pexelsResponse); err != nil {
+		return fmt.Errorf("failed to decode Pexels response: %w", err)
+	}
+
+	cache.foodImages = make([]FoodImage, 0, len(pexelsResponse.Photos))
+	for _, photo := range pexelsResponse.Photos {
+		attribution := fmt.Sprintf("Photo by %s on Pexels", photo.Photographer)
+		cache.foodImages = append(cache.foodImages, FoodImage{
+			URL:         photo.Src.Large, // Use large size for blog-quality images
+			Attribution: attribution,
+		})
+	}
+
+	cache.lastRefresh = time.Now()
+	cache.currentIndex = 0
+	cache.refreshNeeded = false
+
+	log.Printf("🍽️  Loaded %d food images from Pexels (search: '%s')", len(cache.foodImages), searchTerm)
+	return nil
+}
+
+func (cache *FoodImageCache) getNextFoodImage(errorMessage string) FoodImage {
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+
+	// Extract food keywords from error message
+	searchTerm := extractFoodKeywords(errorMessage)
+
+	// If we need to refresh or the search term changed, load new images
+	needsRefresh := cache.refreshNeeded || len(cache.foodImages) == 0 || searchTerm != cache.lastSearchTerm
+
+	if needsRefresh {
+		if err := cache.loadFoodImagesFromPexels(searchTerm); err != nil {
+			log.Printf("Error loading food images: %v", err)
+			return FoodImage{
+				URL:         "https://images.pexels.com/photos/fallback.jpeg",
+				Attribution: "Fallback",
+			}
+		}
+	}
+
+	if cache.currentIndex >= len(cache.foodImages) {
+		cache.currentIndex = 0
+		// Load new batch with same search term
+		if err := cache.loadFoodImagesFromPexels(searchTerm); err != nil {
+			log.Printf("Error refreshing food images: %v", err)
+			return FoodImage{
+				URL:         "https://images.pexels.com/photos/fallback.jpeg",
+				Attribution: "Fallback",
+			}
+		}
+	}
+
+	if len(cache.foodImages) == 0 {
+		return FoodImage{
+			URL:         "https://images.pexels.com/photos/fallback.jpeg",
+			Attribution: "Fallback",
+		}
+	}
+
+	foodImage := cache.foodImages[cache.currentIndex]
+	cache.currentIndex++
+
+	return foodImage
 }
 
 type SpotifyCache struct {
@@ -472,11 +857,13 @@ func (spotifyCache *SpotifyCache) loadSongsFromSpotify() error {
 	if spotifyCache.clientID == "" || spotifyCache.clientSecret == "" {
 		log.Println("Spotify credentials not set, using placeholder songs")
 		spotifyCache.songs = []Song{
-			{Title: "Bohemian Rhapsody", Artist: "Queen", URL: "https://open.spotify.com/track/4u7EnebtmKWzUH433cf5Qv"},
-			{Title: "Stairway to Heaven", Artist: "Led Zeppelin", URL: "https://open.spotify.com/track/5CQ30WqJwcep0pYcV4AMNc"},
-			{Title: "Hotel California", Artist: "Eagles", URL: "https://open.spotify.com/track/40riOy7x9W7GXjyGp4pjAv"},
-			{Title: "Sweet Child O' Mine", Artist: "Guns N' Roses", URL: "https://open.spotify.com/track/7o2CTH4ctstm8TNelqjb51"},
-			{Title: "Back In Black", Artist: "AC/DC", URL: "https://open.spotify.com/track/08mG3Y1vljYA6bvDt4Wqkj"},
+			{Title: "Slow Burn", Artist: "Mountain Man", URL: "https://open.spotify.com/track/7wxpR27OE3OlkTWVjTlLIR"},
+			{Title: "Burning Down the House", Artist: "Talking Heads", URL: "https://open.spotify.com/track/2VNfJpwdEQBLyXajaa6LWT"},
+			{Title: "Hello Operator", Artist: "The White Stripes", URL: "https://open.spotify.com/track/7zPxIh1c3kJaNwmjdZ3GQX"},
+			{Title: "I'm Gonna Be (500 Miles)", Artist: "The Proclaimers", URL: "https://open.spotify.com/track/67iAlVNDDdddxqSD2EZhFs"},
+			{Title: "Dear Old Stockholm", Artist: "John Coltrane", URL: "https://open.spotify.com/track/4GibdmpjKroUfLrbBVdWNp"},
+			{Title: "Lambs at the Slaughter", Artist: "Defiance Ohio", URL: "https://open.spotify.com/track/3DkMx3kYdr4OSzS5aNU8Sr"},
+			{Title: "Never Gonna Give You Up", Artist: "Rick Astley", URL: "https://open.spotify.com/track/4PTG3Z6ehGkBFwjybzWkR8"},
 		}
 		spotifyCache.lastRefresh = time.Now()
 		spotifyCache.currentIndex = 0
@@ -540,6 +927,7 @@ func (spotifyCache *SpotifyCache) loadSongsFromSpotify() error {
 
 	spotifyCache.songs = make([]Song, 0, len(tracksResponse.Tracks))
 	for _, track := range tracksResponse.Tracks {
+		// Skip null/empty tracks (removed from Spotify or invalid IDs)
 		if track.Name != "" {
 			artistName := "Unknown Artist"
 			if len(track.Artists) > 0 {
@@ -558,6 +946,21 @@ func (spotifyCache *SpotifyCache) loadSongsFromSpotify() error {
 	spotifyCache.refreshNeeded = false
 
 	log.Printf("Loaded %d tracks from 'Silver Screen Static' playlist", len(spotifyCache.songs))
+
+	// If we got no valid tracks, use fallback playlist
+	if len(spotifyCache.songs) == 0 {
+		log.Printf("⚠️  No valid tracks found, using fallback playlist")
+		spotifyCache.songs = []Song{
+			{Title: "Slow Burn", Artist: "Mountain Man", URL: "https://open.spotify.com/track/7wxpR27OE3OlkTWVjTlLIR"},
+			{Title: "Burning Down the House", Artist: "Talking Heads", URL: "https://open.spotify.com/track/2VNfJpwdEQBLyXajaa6LWT"},
+			{Title: "Hello Operator", Artist: "The White Stripes", URL: "https://open.spotify.com/track/7zPxIh1c3kJaNwmjdZ3GQX"},
+			{Title: "I'm Gonna Be (500 Miles)", Artist: "The Proclaimers", URL: "https://open.spotify.com/track/67iAlVNDDdddxqSD2EZhFs"},
+			{Title: "Dear Old Stockholm", Artist: "John Coltrane", URL: "https://open.spotify.com/track/4GibdmpjKroUfLrbBVdWNp"},
+			{Title: "Lambs at the Slaughter", Artist: "Defiance Ohio", URL: "https://open.spotify.com/track/3DkMx3kYdr4OSzS5aNU8Sr"},
+			{Title: "Never Gonna Give You Up", Artist: "Rick Astley", URL: "https://open.spotify.com/track/4PTG3Z6ehGkBFwjybzWkR8"},
+		}
+	}
+
 	return nil
 }
 
@@ -568,13 +971,19 @@ func (spotifyCache *SpotifyCache) getNextSong() Song {
 	// Refresh song pool every hour or if needed
 	if spotifyCache.refreshNeeded || len(spotifyCache.songs) == 0 || time.Since(spotifyCache.lastRefresh) > time.Hour {
 		if err := spotifyCache.loadSongsFromSpotify(); err != nil {
-			log.Printf("⚠️  Error loading songs: %v", err)
-			// Return fallback song on error
-			return Song{
-				Title:  "Error Song",
-				Artist: "Unknown",
-				URL:    "https://open.spotify.com/track/fallback",
+			log.Printf("⚠️  Error loading songs: %v, using fallback playlist", err)
+			// Use fallback playlist on error
+			spotifyCache.songs = []Song{
+				{Title: "Slow Burn", Artist: "Mountain Man", URL: "https://open.spotify.com/track/7wxpR27OE3OlkTWVjTlLIR"},
+				{Title: "Burning Down the House", Artist: "Talking Heads", URL: "https://open.spotify.com/track/2VNfJpwdEQBLyXajaa6LWT"},
+				{Title: "Hello Operator", Artist: "The White Stripes", URL: "https://open.spotify.com/track/7zPxIh1c3kJaNwmjdZ3GQX"},
+				{Title: "I'm Gonna Be (500 Miles)", Artist: "The Proclaimers", URL: "https://open.spotify.com/track/67iAlVNDDdddxqSD2EZhFs"},
+				{Title: "Dear Old Stockholm", Artist: "John Coltrane", URL: "https://open.spotify.com/track/4GibdmpjKroUfLrbBVdWNp"},
+				{Title: "Lambs at the Slaughter", Artist: "Defiance Ohio", URL: "https://open.spotify.com/track/3DkMx3kYdr4OSzS5aNU8Sr"},
+				{Title: "Never Gonna Give You Up", Artist: "Rick Astley", URL: "https://open.spotify.com/track/4PTG3Z6ehGkBFwjybzWkR8"},
 			}
+			spotifyCache.lastRefresh = time.Now()
+			spotifyCache.refreshNeeded = false
 		}
 	}
 
@@ -721,14 +1130,133 @@ func sendErrorLogToSloganServer(sloganServerURL string, errorLogRequest ErrorLog
 	return &sloganResponse, nil
 }
 
-func sendErrorLogToTracker(trackerURL string, message string, gifURL string, slogan string, songTitle string, songArtist string, songURL string) error {
+func generateSatiricalFix(fixGenURL string, errorMessage string, slogan string, errorType string) (string, error) {
+	requestBody := map[string]string{
+		"error":      errorMessage,
+		"slogan":     slogan,
+		"error_type": errorType,
+	}
+
+	jsonData, err := json.Marshal(requestBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal fix request: %w", err)
+	}
+
+	response, err := http.Post(
+		fmt.Sprintf("%s/api/generate-fix", fixGenURL),
+		"application/json",
+		bytes.NewBuffer(jsonData),
+	)
+	if err != nil {
+		return "", fmt.Errorf("failed to call fix generator: %w", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("fix generator returned status: %d", response.StatusCode)
+	}
+
+	var fixResponse struct {
+		Success bool   `json:"success"`
+		Fix     string `json:"fix"`
+	}
+
+	if err := json.NewDecoder(response.Body).Decode(&fixResponse); err != nil {
+		return "", fmt.Errorf("failed to decode fix response: %w", err)
+	}
+
+	if !fixResponse.Success {
+		return "", fmt.Errorf("fix generator returned success=false")
+	}
+
+	return fixResponse.Fix, nil
+}
+
+// generateChildrensStory generates a satirical investigative comedy children's story using Anthropic API
+func generateChildrensStory(anthropicAPIKey string, errorMessage string, slogan string, songTitle string, songArtist string, foodImageAttr string) (string, error) {
+	if anthropicAPIKey == "" {
+		return "", fmt.Errorf("Anthropic API key not configured")
+	}
+
+	// Create the prompt for the children's story
+	prompt := fmt.Sprintf(`You are a creative writer crafting brief satirical investigative comedy stories for children (ages 8-12).
+
+Based on this software error and its context, write a SHORT (max 200 words) investigative comedy story for children that:
+- Features child detective characters uncovering the "mystery" behind the error
+- Incorporates all the given elements in a playful, sardonic way
+- Uses simple language but maintains clever wordplay
+- Has a humorous twist ending
+- Feels like Encyclopedia Brown meets Douglas Adams
+
+Error: %s
+Motivational Slogan: %s
+Background Music: "%s" by %s
+Food Scene: %s
+
+Write the story in a narrative style, not as instructions. Make it fun, clever, and age-appropriate while being gently sardonic about the absurdity of software errors.`, errorMessage, slogan, songTitle, songArtist, foodImageAttr)
+
+	// Create Anthropic API request
+	reqBody := AnthropicRequest{
+		Model:     "claude-sonnet-4-5-20250929",
+		MaxTokens: 500,
+		Messages: []AnthropicMessage{
+			{
+				Role:    "user",
+				Content: prompt,
+			},
+		},
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	// Create HTTP request
+	req, err := http.NewRequest("POST", "https://api.anthropic.com/v1/messages", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", anthropicAPIKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to call Anthropic API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("Anthropic API returned status: %d", resp.StatusCode)
+	}
+
+	var anthropicResp AnthropicResponse
+	if err := json.NewDecoder(resp.Body).Decode(&anthropicResp); err != nil {
+		return "", fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if len(anthropicResp.Content) == 0 {
+		return "", fmt.Errorf("no content in response")
+	}
+
+	return anthropicResp.Content[0].Text, nil
+}
+
+func sendErrorLogToTracker(trackerURL string, message string, gifURL string, slogan string, songTitle string, songArtist string, songURL string, satiricalFix string, foodImageURL string, foodImageAttr string, childrensStory string) error {
 	errorLog := map[string]string{
-		"message":     message,
-		"gif_url":     gifURL,
-		"slogan":      slogan,
-		"song_title":  songTitle,
-		"song_artist": songArtist,
-		"song_url":    songURL,
+		"message":          message,
+		"gif_url":          gifURL,
+		"slogan":           slogan,
+		"song_title":       songTitle,
+		"song_artist":      songArtist,
+		"song_url":         songURL,
+		"satirical_fix":    satiricalFix,
+		"food_image_url":   foodImageURL,
+		"food_image_attr":  foodImageAttr,
+		"childrens_story":  childrensStory,
 	}
 
 	requestBody, err := json.Marshal(errorLog)
@@ -831,16 +1359,20 @@ func processRhythmTrigger(trigger RhythmTrigger) {
 		errorMessage = errorMessages[rand.Intn(len(errorMessages))]
 	}
 
-	gifURL := globalGifCache.getNextGif()
+	// Generate GIF and food image based on error message keywords
+	gifURL := globalGifCache.getNextGif(errorMessage)
 	song := globalSpotifyCache.getNextSong()
+	foodImage := globalFoodImageCache.getNextFoodImage(errorMessage)
 
 	errorLogRequest := ErrorLogRequest{
-		Message:      errorMessage,
-		GifURL:       gifURL,
-		SongTitle:    song.Title,
-		SongArtist:   song.Artist,
-		SongURL:      song.URL,
-		UserKeywords: userKeywords,
+		Message:       errorMessage,
+		GifURL:        gifURL,
+		SongTitle:     song.Title,
+		SongArtist:    song.Artist,
+		SongURL:       song.URL,
+		UserKeywords:  userKeywords,
+		FoodImageURL:  foodImage.URL,
+		FoodImageAttr: foodImage.Attribution,
 	}
 
 	log.Printf("Sending rhythm-synced error: %s", errorMessage)
@@ -853,10 +1385,42 @@ func processRhythmTrigger(trigger RhythmTrigger) {
 
 	log.Printf("Received response: %s %s", sloganResponse.Emoji, sloganResponse.Slogan)
 
-	// Send to location tracker if configured
+	// Generate satirical fix if configured
+	var satiricalFix string
+	if globalFixGenURL != "" {
+		fix, err := generateSatiricalFix(globalFixGenURL, errorMessage, sloganResponse.Slogan, trigger.ErrorType)
+		if err != nil {
+			log.Printf("Warning: Failed to generate satirical fix: %v", err)
+		} else {
+			satiricalFix = fix
+			log.Printf("🤖 SATIRICAL FIX GENERATED:")
+			log.Printf("─────────────────────────────────────────────────────────")
+			log.Printf("%s", fix)
+			log.Printf("─────────────────────────────────────────────────────────")
+		}
+	}
+
+	// Generate children's story if Anthropic API key is configured
+	var childrensStory string
+	if globalAnthropicKey != "" {
+		story, err := generateChildrensStory(globalAnthropicKey, errorMessage, sloganResponse.Slogan, song.Title, song.Artist, foodImage.Attribution)
+		if err != nil {
+			log.Printf("Warning: Failed to generate children's story: %v", err)
+		} else {
+			childrensStory = story
+			log.Printf("📚 CHILDREN'S STORY GENERATED:")
+			log.Printf("─────────────────────────────────────────────────────────")
+			log.Printf("%s", story)
+			log.Printf("─────────────────────────────────────────────────────────")
+		}
+	}
+
+	// Send to location tracker if configured (includes satirical fix, food image, and children's story)
 	if globalTrackerURL != "" {
-		if err := sendErrorLogToTracker(globalTrackerURL, errorMessage, gifURL, sloganResponse.Slogan, song.Title, song.Artist, song.URL); err != nil {
+		if err := sendErrorLogToTracker(globalTrackerURL, errorMessage, gifURL, sloganResponse.Slogan, song.Title, song.Artist, song.URL, satiricalFix, foodImage.URL, foodImage.Attribution, childrensStory); err != nil {
 			log.Printf("Warning: Failed to send to location tracker: %v", err)
+		} else {
+			log.Printf("💾 Sent error log with satirical fix, food image, and children's story to DynamoDB via location tracker")
 		}
 	}
 }
@@ -878,6 +1442,7 @@ func main() {
 	rand.Seed(time.Now().UnixNano())
 
 	giphyAPIKey := os.Getenv("GIPHY_API_KEY")
+	pexelsAPIKey := os.Getenv("PEXELS_API_KEY")
 	spotifyClientID := os.Getenv("SPOTIFY_CLIENT_ID")
 	spotifyClientSecret := os.Getenv("SPOTIFY_CLIENT_SECRET")
 	spotifySeedGenres := os.Getenv("SPOTIFY_SEED_GENRES")
@@ -889,6 +1454,12 @@ func main() {
 
 	// Location tracker URL (optional)
 	locationTrackerURL := os.Getenv("LOCATION_TRACKER_URL")
+
+	// Fix generator URL (optional)
+	fixGeneratorURL := os.Getenv("FIX_GENERATOR_URL")
+
+	// Anthropic API key for children's story generation (optional)
+	anthropicAPIKey := os.Getenv("ANTHROPIC_API_KEY")
 
 	// Rhythm mode configuration
 	rhythmServiceURL := os.Getenv("RHYTHM_SERVICE_URL")
@@ -921,12 +1492,28 @@ func main() {
 
 	gifCache := newGifCache(giphyAPIKey)
 	spotifyCache := newSpotifyCache(spotifyClientID, spotifyClientSecret, spotifySeedGenres)
+	foodImageCache := newFoodImageCache(pexelsAPIKey)
 
 	// Set global variables for rhythm mode
 	globalGifCache = gifCache
 	globalSpotifyCache = spotifyCache
+	globalFoodImageCache = foodImageCache
 	globalSloganURL = sloganServerURL
 	globalTrackerURL = locationTrackerURL
+	globalFixGenURL = fixGeneratorURL
+	globalAnthropicKey = anthropicAPIKey
+
+	if fixGeneratorURL != "" {
+		log.Printf("🤖 Satirical fix generator enabled: %s", fixGeneratorURL)
+	}
+
+	if anthropicAPIKey != "" {
+		log.Printf("📚 Anthropic API key configured for children's story generation")
+	}
+
+	if pexelsAPIKey != "" && pexelsAPIKey != "YOUR_PEXELS_API_KEY_HERE" {
+		log.Printf("🍽️  Pexels API key configured for food blog images")
+	}
 
 	// Start HTTP server for rhythm triggers if rhythm mode is enabled
 	if rhythmModeEnabled {
@@ -971,21 +1558,26 @@ func main() {
 			errorMessage = errorMessages[rand.Intn(len(errorMessages))]
 		}
 
-		gifURL := gifCache.getNextGif()
+		// Generate GIF and food image based on error message keywords
+		gifURL := gifCache.getNextGif(errorMessage)
 		song := spotifyCache.getNextSong()
+		foodImage := foodImageCache.getNextFoodImage(errorMessage)
 
 		errorLogRequest := ErrorLogRequest{
-			Message:      errorMessage,
-			GifURL:       gifURL,
-			SongTitle:    song.Title,
-			SongArtist:   song.Artist,
-			SongURL:      song.URL,
-			UserKeywords: userKeywords,
+			Message:       errorMessage,
+			GifURL:        gifURL,
+			SongTitle:     song.Title,
+			SongArtist:    song.Artist,
+			SongURL:       song.URL,
+			UserKeywords:  userKeywords,
+			FoodImageURL:  foodImage.URL,
+			FoodImageAttr: foodImage.Attribution,
 		}
 
 		log.Printf("Sending error: %s", errorMessage)
 		log.Printf("With GIF: %s", gifURL)
 		log.Printf("With Song: %s by %s", song.Title, song.Artist)
+		log.Printf("With Food Image: %s", foodImage.URL)
 
 		sloganResponse, err := sendErrorLogToSloganServer(sloganServerURL, errorLogRequest)
 		if err != nil {
@@ -994,6 +1586,37 @@ func main() {
 		}
 
 		log.Printf("Received response: %s %s", sloganResponse.Emoji, sloganResponse.Slogan)
+
+		// Generate satirical fix if configured (use "basic" as default error type for non-rhythm mode)
+		var satiricalFix string
+		if fixGeneratorURL != "" {
+			fix, err := generateSatiricalFix(fixGeneratorURL, errorMessage, sloganResponse.Slogan, "basic")
+			if err != nil {
+				log.Printf("Warning: Failed to generate satirical fix: %v", err)
+			} else {
+				satiricalFix = fix
+				log.Printf("🤖 SATIRICAL FIX GENERATED:")
+				log.Printf("─────────────────────────────────────────────────────────")
+				log.Printf("%s", fix)
+				log.Printf("─────────────────────────────────────────────────────────")
+			}
+		}
+
+		// Generate children's story if Anthropic API key is configured
+		var childrensStory string
+		if anthropicAPIKey != "" {
+			story, err := generateChildrensStory(anthropicAPIKey, errorMessage, sloganResponse.Slogan, song.Title, song.Artist, foodImage.Attribution)
+			if err != nil {
+				log.Printf("Warning: Failed to generate children's story: %v", err)
+			} else {
+				childrensStory = story
+				log.Printf("📚 CHILDREN'S STORY GENERATED:")
+				log.Printf("─────────────────────────────────────────────────────────")
+				log.Printf("%s", story)
+				log.Printf("─────────────────────────────────────────────────────────")
+			}
+		}
+
 		fmt.Printf("\n=== ERROR LOG ===\n")
 		fmt.Printf("Error: %s\n", errorMessage)
 		fmt.Printf("GIF: %s\n", gifURL)
@@ -1003,14 +1626,20 @@ func main() {
 			fmt.Printf("User Keywords: %v\n", userKeywords)
 		}
 		fmt.Printf("Response: %s %s\n", sloganResponse.Emoji, sloganResponse.Slogan)
+		if satiricalFix != "" {
+			fmt.Printf("Satirical Fix: Generated\n")
+		}
+		if childrensStory != "" {
+			fmt.Printf("Children's Story: Generated\n")
+		}
 		fmt.Printf("================\n\n")
 
-		// Send to location tracker if configured
+		// Send to location tracker if configured (includes satirical fix, food image, and children's story)
 		if locationTrackerURL != "" {
-			if err := sendErrorLogToTracker(locationTrackerURL, errorMessage, gifURL, sloganResponse.Slogan, song.Title, song.Artist, song.URL); err != nil {
+			if err := sendErrorLogToTracker(locationTrackerURL, errorMessage, gifURL, sloganResponse.Slogan, song.Title, song.Artist, song.URL, satiricalFix, foodImage.URL, foodImage.Attribution, childrensStory); err != nil {
 				log.Printf("Warning: Failed to send to location tracker: %v", err)
 			} else {
-				log.Printf("📍 Sent error log to location tracker")
+				log.Printf("📍 Sent error log with satirical fix, food image, and children's story to location tracker")
 			}
 		}
 	}

@@ -17,6 +17,7 @@ EC2_USER=ec2-user
 
 # Set defaults if not provided
 GIPHY_API_KEY=${GIPHY_API_KEY:-}
+PEXELS_API_KEY=${PEXELS_API_KEY:-}
 OPENAI_API_KEY=${OPENAI_API_KEY:-}
 SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID:-}
 SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET:-}
@@ -26,6 +27,8 @@ GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY:-}
 PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY:-}
 TRACKER_PASSWORD=${TRACKER_PASSWORD:-}
 LOCATION_TRACKER_URL=${LOCATION_TRACKER_URL:-}
+DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
 
 # Validate critical environment variables
 echo "🔍 Validating environment variables..."
@@ -68,6 +71,7 @@ echo ""
 # Deploy all containers via SSH
 ssh -o StrictHostKeyChecking=no -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} \
     GIPHY_API_KEY="${GIPHY_API_KEY}" \
+    PEXELS_API_KEY="${PEXELS_API_KEY}" \
     OPENAI_API_KEY="${OPENAI_API_KEY}" \
     SPOTIFY_CLIENT_ID="${SPOTIFY_CLIENT_ID}" \
     SPOTIFY_CLIENT_SECRET="${SPOTIFY_CLIENT_SECRET}" \
@@ -77,6 +81,8 @@ ssh -o StrictHostKeyChecking=no -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} \
     PERPLEXITY_API_KEY="${PERPLEXITY_API_KEY}" \
     TRACKER_PASSWORD="${TRACKER_PASSWORD}" \
     LOCATION_TRACKER_URL="${LOCATION_TRACKER_URL}" \
+    DEEPSEEK_API_KEY="${DEEPSEEK_API_KEY}" \
+    ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
     bash << 'EOF'
     set -e
 
@@ -88,6 +94,7 @@ ssh -o StrictHostKeyChecking=no -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} \
     docker rmi -f 310829530225.dkr.ecr.us-east-1.amazonaws.com/slogan-server:latest 2>/dev/null || true
     docker rmi -f 310829530225.dkr.ecr.us-east-1.amazonaws.com/error-generator:latest 2>/dev/null || true
     docker rmi -f 310829530225.dkr.ecr.us-east-1.amazonaws.com/location-tracker:latest 2>/dev/null || true
+    docker rmi -f 310829530225.dkr.ecr.us-east-1.amazonaws.com/code-fix-generator:latest 2>/dev/null || true
 
     echo ""
     echo "📥 Pulling slogan-server image..."
@@ -102,6 +109,10 @@ ssh -o StrictHostKeyChecking=no -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} \
     docker pull 310829530225.dkr.ecr.us-east-1.amazonaws.com/location-tracker:latest
 
     echo ""
+    echo "📥 Pulling code-fix-generator image..."
+    docker pull 310829530225.dkr.ecr.us-east-1.amazonaws.com/code-fix-generator:latest
+
+    echo ""
     echo "🛑 Stopping existing containers (if any)..."
     docker stop slogan-server 2>/dev/null || true
     docker rm slogan-server 2>/dev/null || true
@@ -109,6 +120,8 @@ ssh -o StrictHostKeyChecking=no -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} \
     docker rm error-generator 2>/dev/null || true
     docker stop location-tracker 2>/dev/null || true
     docker rm location-tracker 2>/dev/null || true
+    docker stop code-fix-generator 2>/dev/null || true
+    docker rm code-fix-generator 2>/dev/null || true
 
     # Create Docker network if it doesn't exist
     echo ""
@@ -188,6 +201,34 @@ ssh -o StrictHostKeyChecking=no -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} \
     sleep 3
 
     echo ""
+    echo "🚀 Starting code-fix-generator..."
+
+    # Build code-fix-generator docker run command with optional DeepSeek API key
+    FIX_GEN_CMD="docker run -d \
+        --name code-fix-generator \
+        --restart unless-stopped \
+        --network ec2-test-network \
+        -p 7070:7070"
+
+    if [ ! -z "$DEEPSEEK_API_KEY" ]; then
+        echo "🤖 Using DeepSeek API for AI-generated satirical fixes"
+        FIX_GEN_CMD="$FIX_GEN_CMD -e DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}"
+    else
+        echo "⚠️  No DeepSeek API key provided, using fallback satirical fixes"
+    fi
+
+    FIX_GEN_CMD="$FIX_GEN_CMD 310829530225.dkr.ecr.us-east-1.amazonaws.com/code-fix-generator:latest"
+
+    eval $FIX_GEN_CMD
+
+    echo "✅ Code fix generator started!"
+    echo ""
+
+    # Wait for code-fix-generator to be ready
+    echo "⏳ Waiting for code-fix-generator to be ready..."
+    sleep 2
+
+    echo ""
     echo "🚀 Starting error-generator..."
 
     # Build docker run command with optional Giphy API key
@@ -197,6 +238,7 @@ ssh -o StrictHostKeyChecking=no -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} \
         --network ec2-test-network \
         -e SLOGAN_SERVER_URL=http://slogan-server:8080 \
         -e LOCATION_TRACKER_URL=https://location-tracker:8443 \
+        -e FIX_GENERATOR_URL=http://code-fix-generator:7070 \
         -e ERROR_INTERVAL_SECONDS=${ERROR_INTERVAL_SECONDS}"
 
     if [ ! -z "$GIPHY_API_KEY" ]; then
@@ -204,6 +246,13 @@ ssh -o StrictHostKeyChecking=no -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} \
         DOCKER_CMD="$DOCKER_CMD -e GIPHY_API_KEY=${GIPHY_API_KEY}"
     else
         echo "⚠️  No Giphy API key provided, using placeholder GIFs"
+    fi
+
+    if [ ! -z "$PEXELS_API_KEY" ]; then
+        echo "🍽️  Using Pexels API key for food blog images"
+        DOCKER_CMD="$DOCKER_CMD -e PEXELS_API_KEY=${PEXELS_API_KEY}"
+    else
+        echo "⚠️  No Pexels API key provided, using placeholder food images"
     fi
 
     if [ ! -z "$SPOTIFY_CLIENT_ID" ] && [ ! -z "$SPOTIFY_CLIENT_SECRET" ] && [ ! -z "$SPOTIFY_SEED_GENRES" ]; then
@@ -215,6 +264,13 @@ ssh -o StrictHostKeyChecking=no -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} \
         echo "⚠️  No Spotify credentials provided, using placeholder songs"
     fi
 
+    if [ ! -z "$ANTHROPIC_API_KEY" ]; then
+        echo "📚 Using Anthropic API for children's story generation"
+        DOCKER_CMD="$DOCKER_CMD -e ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}"
+    else
+        echo "⚠️  No Anthropic API key provided, children's stories will not be generated"
+    fi
+
     DOCKER_CMD="$DOCKER_CMD 310829530225.dkr.ecr.us-east-1.amazonaws.com/error-generator:latest"
 
     eval $DOCKER_CMD
@@ -223,7 +279,7 @@ ssh -o StrictHostKeyChecking=no -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} \
     echo ""
 
     echo "📊 Container status:"
-    docker ps --filter name=slogan-server --filter name=error-generator --filter name=location-tracker
+    docker ps --filter name=slogan-server --filter name=error-generator --filter name=location-tracker --filter name=code-fix-generator
 
     echo ""
     echo "📝 Recent logs from slogan-server:"
@@ -232,6 +288,10 @@ ssh -o StrictHostKeyChecking=no -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} \
     echo ""
     echo "📝 Recent logs from location-tracker:"
     docker logs --tail 10 location-tracker
+
+    echo ""
+    echo "📝 Recent logs from code-fix-generator:"
+    docker logs --tail 10 code-fix-generator
 
     echo ""
     echo "📝 Recent logs from error-generator:"
@@ -244,12 +304,20 @@ ssh -o StrictHostKeyChecking=no -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} \
     LOCATION_STATUS=$(docker inspect --format='{{.State.Status}}' location-tracker 2>/dev/null)
     ERROR_GEN_STATUS=$(docker inspect --format='{{.State.Status}}' error-generator 2>/dev/null)
     SLOGAN_STATUS=$(docker inspect --format='{{.State.Status}}' slogan-server 2>/dev/null)
+    FIX_GEN_STATUS=$(docker inspect --format='{{.State.Status}}' code-fix-generator 2>/dev/null)
 
     if [ "$LOCATION_STATUS" != "running" ]; then
         echo "⚠️  WARNING: location-tracker is not running (status: $LOCATION_STATUS)"
         echo "   Check logs with: docker logs location-tracker"
     else
         echo "✅ location-tracker is running"
+    fi
+
+    if [ "$FIX_GEN_STATUS" != "running" ]; then
+        echo "⚠️  WARNING: code-fix-generator is not running (status: $FIX_GEN_STATUS)"
+        echo "   Check logs with: docker logs code-fix-generator"
+    else
+        echo "✅ code-fix-generator is running"
     fi
 
     if [ "$ERROR_GEN_STATUS" != "running" ]; then
@@ -288,6 +356,7 @@ echo "🌐 Service URLs:"
 echo "   Slogan server:      http://${PUBLIC_DNS}:8080"
 echo "   Location tracker:   https://${PUBLIC_DNS}:8082 (HTTPS with self-signed cert)"
 echo "   Location tracker:   http://${PUBLIC_DNS}:8081 (HTTP for Twilio webhooks)"
+echo "   Fix generator:      http://${PUBLIC_DNS}:7070 (Satirical code fixes)"
 echo ""
 echo "📱 Twilio SMS Webhook URL:"
 echo "   http://${PUBLIC_DNS}:8081/api/twilio/sms"
@@ -295,6 +364,11 @@ echo ""
 echo "📊 To view logs:"
 echo "  ssh -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} 'docker logs -f slogan-server'"
 echo "  ssh -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} 'docker logs -f location-tracker'"
+echo "  ssh -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} 'docker logs -f code-fix-generator'"
 echo "  ssh -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} 'docker logs -f error-generator'"
+echo ""
+echo "🤖 Satirical Fix Generator:"
+echo "   All errors are now automatically enhanced with AI-generated satirical code fixes"
+echo "   Fixes are stored in DynamoDB and displayed in the location tracker UI"
 echo ""
 echo "📖 Troubleshooting: See DEPLOYMENT_TROUBLESHOOTING.md"

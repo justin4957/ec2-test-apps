@@ -44,9 +44,13 @@ type ErrorLog struct {
 	Message             string    `json:"message" dynamodbav:"message"`
 	GifURL              string    `json:"gif_url" dynamodbav:"gif_url"`
 	Slogan              string    `json:"slogan" dynamodbav:"slogan"`
+	SatiricalFix        string    `json:"satirical_fix,omitempty" dynamodbav:"satirical_fix"`
+	ChildrensStory      string    `json:"childrens_story,omitempty" dynamodbav:"childrens_story"`
 	SongTitle           string    `json:"song_title,omitempty" dynamodbav:"song_title"`
 	SongArtist          string    `json:"song_artist,omitempty" dynamodbav:"song_artist"`
 	SongURL             string    `json:"song_url,omitempty" dynamodbav:"song_url"`
+	FoodImageURL        string    `json:"food_image_url,omitempty" dynamodbav:"food_image_url"`
+	FoodImageAttr       string    `json:"food_image_attr,omitempty" dynamodbav:"food_image_attr"`
 	UserExperienceNote  string    `json:"user_experience_note,omitempty" dynamodbav:"user_experience_note"`
 	UserNoteKeywords    []string  `json:"user_note_keywords,omitempty" dynamodbav:"user_note_keywords"`
 	NearbyBusinesses    []string  `json:"nearby_businesses,omitempty" dynamodbav:"nearby_businesses"`
@@ -1104,66 +1108,119 @@ const indexHTML = `<!DOCTYPE html>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>📍 Location Tracker</title>
     <style>
+        /* Delphi Design System - Memphis × Swiss × 80s Pop */
+
+        /* Memphis Design Colors */
+        :root {
+            --memphis-pink: #ff6b9d;
+            --memphis-yellow: #feca57;
+            --memphis-blue: #48cae4;
+            --memphis-green: #06ffa5;
+            --memphis-purple: #a55eea;
+            --pop-electric-blue: #00f0ff;
+            --pop-hot-pink: #ff0080;
+            --pop-lime-green: #ccff00;
+            --pop-purple-neon: #b300ff;
+            --swiss-black: #000000;
+            --swiss-white: #ffffff;
+            --swiss-gray-100: #f8f9fa;
+            --swiss-gray-500: #6c757d;
+        }
+
         * { box-sizing: border-box; margin: 0; padding: 0; }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, var(--memphis-pink) 0%, var(--memphis-blue) 50%, var(--memphis-green) 100%);
             min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
             padding: 20px;
         }
+
         .container {
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            background: var(--swiss-white);
+            border-radius: 16px;
+            box-shadow: 8px 8px 0px rgba(0, 0, 0, 0.2), 0 20px 60px rgba(0,0,0,0.3);
             max-width: 600px;
             width: 100%;
             overflow: hidden;
         }
+
         .header {
-            background: #667eea;
-            color: white;
+            background: linear-gradient(135deg, var(--pop-electric-blue) 0%, var(--pop-hot-pink) 100%);
+            color: var(--swiss-white);
             padding: 30px;
             text-align: center;
+            border-bottom: 4px solid var(--swiss-black);
         }
-        .header h1 { font-size: 24px; margin-bottom: 5px; }
-        .header p { opacity: 0.9; font-size: 14px; }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 5px;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            text-shadow: 3px 3px 0px rgba(0, 0, 0, 0.2);
+        }
+
+        .header p {
+            opacity: 0.95;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            font-family: 'Courier New', monospace;
+        }
+
         .content { padding: 30px; }
 
         /* Login Form */
         #login input {
             width: 100%;
             padding: 15px;
-            border: 2px solid #e0e0e0;
+            border: 2px solid var(--swiss-black);
             border-radius: 8px;
             font-size: 16px;
             margin-bottom: 15px;
-            transition: border-color 0.3s;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            box-shadow: 3px 3px 0px rgba(0, 0, 0, 0.1);
         }
+
         #login input:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: var(--pop-electric-blue);
+            box-shadow: 0 0 20px rgba(0, 240, 255, 0.4), 3px 3px 0px rgba(0, 0, 0, 0.1);
         }
+
         button {
             width: 100%;
             padding: 15px;
-            background: #667eea;
-            color: white;
-            border: none;
+            background: linear-gradient(135deg, var(--memphis-pink) 0%, var(--memphis-blue) 100%);
+            color: var(--swiss-white);
+            border: 2px solid var(--swiss-black);
             border-radius: 8px;
             font-size: 16px;
-            font-weight: 600;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
             cursor: pointer;
-            transition: background 0.3s;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            box-shadow: 4px 4px 0px rgba(0, 0, 0, 0.2);
         }
-        button:hover { background: #5568d3; }
-        button:active { transform: scale(0.98); }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 6px 6px 0px rgba(0, 0, 0, 0.2), 0 0 25px rgba(255, 107, 157, 0.4);
+        }
+
+        button:active { transform: translateY(0px); }
+
         .error {
             background: #fee;
             color: #c33;
             padding: 12px;
+            border: 2px solid #c33;
             border-radius: 8px;
             margin-top: 15px;
             display: none;
@@ -1171,69 +1228,156 @@ const indexHTML = `<!DOCTYPE html>
 
         /* Tracker View */
         #tracker { display: none; }
+
         .actions {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 10px;
             margin-bottom: 20px;
         }
-        .btn-share { background: #10b981; }
-        .btn-share:hover { background: #059669; }
-        .btn-refresh { background: #6366f1; }
-        .btn-refresh:hover { background: #4f46e5; }
+
+        .btn-share {
+            background: linear-gradient(135deg, var(--memphis-green) 0%, var(--pop-lime-green) 100%);
+            color: var(--swiss-black);
+        }
+
+        .btn-share:hover {
+            box-shadow: 6px 6px 0px rgba(0, 0, 0, 0.2), 0 0 25px rgba(6, 255, 165, 0.4);
+        }
+
+        .btn-refresh {
+            background: linear-gradient(135deg, var(--memphis-purple) 0%, var(--pop-purple-neon) 100%);
+        }
+
+        .btn-refresh:hover {
+            box-shadow: 6px 6px 0px rgba(0, 0, 0, 0.2), 0 0 25px rgba(179, 0, 255, 0.4);
+        }
 
         .location-card {
-            background: #f9fafb;
-            border: 2px solid #e5e7eb;
-            border-radius: 8px;
+            background: var(--swiss-gray-100);
+            border: 2px solid var(--swiss-black);
+            border-radius: 12px;
             padding: 20px;
-            margin-bottom: 15px;
+            margin-bottom: 20px;
+            box-shadow: 4px 4px 0px rgba(0, 0, 0, 0.1);
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
+
+        .location-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 6px 6px 0px rgba(0, 0, 0, 0.15);
+        }
+
         .location-card h3 {
-            color: #667eea;
-            margin-bottom: 10px;
-            font-size: 16px;
+            color: var(--pop-hot-pink);
+            margin-bottom: 15px;
+            font-size: 18px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
         }
+
         .location-detail {
             display: flex;
             justify-content: space-between;
-            padding: 8px 0;
-            border-bottom: 1px solid #e5e7eb;
+            padding: 10px 0;
+            border-bottom: 1.5px solid rgba(0, 0, 0, 0.1);
         }
+
         .location-detail:last-child { border-bottom: none; }
-        .label { color: #6b7280; font-weight: 500; }
-        .value { color: #1f2937; font-family: monospace; }
+
+        .label {
+            color: var(--swiss-gray-500);
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 11px;
+            letter-spacing: 0.08em;
+        }
+
+        .value {
+            color: var(--swiss-black);
+            font-family: 'Courier New', monospace;
+            font-weight: 600;
+        }
+
         .map-link {
             display: inline-block;
             margin-top: 15px;
-            padding: 10px 20px;
-            background: #667eea;
-            color: white;
+            padding: 12px 24px;
+            background: linear-gradient(135deg, var(--pop-electric-blue) 0%, var(--memphis-blue) 100%);
+            color: var(--swiss-black);
             text-decoration: none;
-            border-radius: 6px;
-            font-size: 14px;
-            transition: background 0.3s;
+            border: 2px solid var(--swiss-black);
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            box-shadow: 3px 3px 0px rgba(0, 0, 0, 0.15);
         }
-        .map-link:hover { background: #5568d3; }
+
+        .map-link:hover {
+            transform: translateY(-2px);
+            box-shadow: 5px 5px 0px rgba(0, 0, 0, 0.15), 0 0 20px rgba(0, 240, 255, 0.4);
+        }
+
         .empty-state {
             text-align: center;
             padding: 60px 20px;
-            color: #6b7280;
+            color: var(--swiss-gray-500);
         }
+
         .empty-state svg {
             width: 80px;
             height: 80px;
             margin-bottom: 20px;
             opacity: 0.5;
         }
+
         .status {
             display: inline-block;
-            padding: 4px 12px;
-            border-radius: 12px;
-            font-size: 12px;
-            font-weight: 600;
-            background: #d1fae5;
-            color: #065f46;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 700;
+            background: var(--memphis-yellow);
+            color: var(--swiss-black);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            border: 1.5px solid var(--swiss-black);
+        }
+
+        /* Collapsible Sections */
+        .collapsible-header {
+            cursor: pointer;
+            user-select: none;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .collapsible-header:hover {
+            opacity: 0.8;
+        }
+
+        .collapsible-toggle {
+            display: inline-block;
+            margin-left: 8px;
+            transition: transform 0.3s ease;
+            font-size: 14px;
+        }
+
+        .collapsible-toggle.expanded {
+            transform: rotate(90deg);
+        }
+
+        .collapsible-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .collapsible-content.expanded {
+            max-height: 2000px;
         }
     </style>
 </head>
@@ -1462,6 +1606,9 @@ const indexHTML = `<!DOCTYPE html>
             }
         }
 
+        // Store expanded state of collapsibles (keyed by error timestamp)
+        const expandedCollapsibles = new Map();
+
         // Display error logs
         function displayErrorLogs(errorLogs) {
             const container = document.getElementById('errorlogs');
@@ -1478,6 +1625,29 @@ const indexHTML = `<!DOCTYPE html>
                 return;
             }
 
+            // Save current expanded state before re-rendering
+            const existingCards = container.querySelectorAll('.location-card');
+            existingCards.forEach((card, index) => {
+                const satiricalContent = card.querySelector('.collapsible-content.satirical-fix');
+                const storyContent = card.querySelector('.collapsible-content.story');
+
+                if (satiricalContent && satiricalContent.classList.contains('expanded')) {
+                    const timestamp = card.dataset.timestamp;
+                    if (!expandedCollapsibles.has(timestamp)) {
+                        expandedCollapsibles.set(timestamp, {});
+                    }
+                    expandedCollapsibles.get(timestamp).satirical = true;
+                }
+
+                if (storyContent && storyContent.classList.contains('expanded')) {
+                    const timestamp = card.dataset.timestamp;
+                    if (!expandedCollapsibles.has(timestamp)) {
+                        expandedCollapsibles.set(timestamp, {});
+                    }
+                    expandedCollapsibles.get(timestamp).story = true;
+                }
+            });
+
             container.innerHTML = '';
 
             // Show most recent errors first
@@ -1489,6 +1659,7 @@ const indexHTML = `<!DOCTYPE html>
                 const div = document.createElement('div');
                 div.className = 'location-card';
                 div.style.borderLeft = '4px solid #ef4444';
+                div.dataset.timestamp = errorLog.timestamp;
                 div.innerHTML = ` + "`" + `
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                         <h3 style="margin: 0; color: #ef4444; font-size: 14px;">🚬 Error Log</h3>
@@ -1514,6 +1685,32 @@ const indexHTML = `<!DOCTYPE html>
                             <span class="value" style="font-family: inherit; color: #065f46; font-weight: 500;">${errorLog.user_experience_note}</span>
                         </div>
                     ` + "`" + ` : ''}
+                    ${errorLog.satirical_fix ? ` + "`" + `
+                        <div style="margin-top: 20px; padding: 20px; background: linear-gradient(135deg, rgba(139, 92, 246, 0.08) 0%, rgba(124, 58, 237, 0.12) 100%); border: 3px solid rgba(139, 92, 246, 0.4); border-radius: 12px; box-shadow: 0 0 25px rgba(139, 92, 246, 0.25), 4px 4px 0px rgba(139, 92, 246, 0.15);">
+                            <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                                <span style="font-size: 24px;">🤖</span>
+                                <strong style="color: #8b5cf6; font-size: 16px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800;">Satirical Fix Generated</strong>
+                                <span class="collapsible-toggle">▶</span>
+                            </div>
+                            <div class="collapsible-content satirical-fix" style="margin-top: 15px;">
+                                <pre style="white-space: pre-wrap; font-family: 'Courier New', monospace; font-size: 12px; color: #374151; background: rgba(255, 255, 255, 0.8); padding: 16px; border-radius: 8px; overflow-x: auto; margin: 0; border: 2px solid rgba(139, 92, 246, 0.3);">${errorLog.satirical_fix}</pre>
+                            </div>
+                        </div>
+                    ` + "`" + ` : ''}
+                    ${errorLog.childrens_story ? ` + "`" + `
+                        <div style="margin-top: 20px; padding: 20px; background: linear-gradient(135deg, rgba(255, 107, 157, 0.08) 0%, rgba(72, 202, 228, 0.12) 100%); border: 3px solid rgba(255, 107, 157, 0.4); border-radius: 12px; box-shadow: 0 0 25px rgba(255, 107, 157, 0.25), 4px 4px 0px rgba(255, 107, 157, 0.15);">
+                            <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                                <span style="font-size: 24px;">📚</span>
+                                <strong style="background: linear-gradient(135deg, #ff6b9d 0%, #48cae4 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-size: 16px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800;">Investigative Comedy Story for Children</strong>
+                                <span class="collapsible-toggle">▶</span>
+                            </div>
+                            <div class="collapsible-content story" style="margin-top: 15px;">
+                                <div style="background: rgba(255, 255, 255, 0.8); padding: 20px; border-radius: 8px; border: 2px solid rgba(255, 107, 157, 0.3); font-family: 'Georgia', serif; line-height: 1.8; color: #1f2937; font-size: 14px;">
+                                    ${errorLog.childrens_story.replace(/\n/g, '<br>')}
+                                </div>
+                            </div>
+                        </div>
+                    ` + "`" + ` : ''}
                     ${errorLog.gif_url ? ` + "`" + `
                         <a href="${errorLog.gif_url}" target="_blank" class="map-link" style="background: #ef4444;">
                             🎬 View GIF
@@ -1524,8 +1721,41 @@ const indexHTML = `<!DOCTYPE html>
                             🎵 Play on Spotify
                         </a>
                     ` + "`" + ` : ''}
+                    ${errorLog.food_image_url ? ` + "`" + `
+                        <div style="margin-top: 20px; padding: 20px; background: linear-gradient(135deg, rgba(165, 94, 234, 0.08) 0%, rgba(179, 0, 255, 0.12) 100%); border: 3px solid rgba(165, 94, 234, 0.4); border-radius: 12px; box-shadow: 0 0 25px rgba(165, 94, 234, 0.25), 4px 4px 0px rgba(165, 94, 234, 0.15);">
+                            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
+                                <span style="font-size: 24px;">🍽️</span>
+                                <strong style="color: #a55eea; font-size: 16px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800;">Food Blog Imagery</strong>
+                            </div>
+                            <div style="border: 4px solid rgba(165, 94, 234, 0.5); border-radius: 12px; padding: 6px; background: rgba(255, 255, 255, 0.6); box-shadow: inset 0 0 20px rgba(165, 94, 234, 0.15);">
+                                <img src="${errorLog.food_image_url}" alt="Food blog image" style="width: 100%; max-width: 600px; border-radius: 8px; display: block; object-fit: cover;">
+                            </div>
+                            <p style="font-size: 11px; color: #6b46c1; font-style: italic; margin-top: 12px; font-family: 'Courier New', monospace; text-transform: uppercase; letter-spacing: 0.05em;">${errorLog.food_image_attr || 'Stock food photography'}</p>
+                        </div>
+                    ` + "`" + ` : ''}
                 ` + "`" + `;
                 container.appendChild(div);
+
+                // Restore expanded state if it was previously expanded
+                const savedState = expandedCollapsibles.get(errorLog.timestamp);
+                if (savedState) {
+                    if (savedState.satirical) {
+                        const satiricalContent = div.querySelector('.collapsible-content.satirical-fix');
+                        const satiricalToggle = div.querySelector('.collapsible-content.satirical-fix').previousElementSibling.querySelector('.collapsible-toggle');
+                        if (satiricalContent && satiricalToggle) {
+                            satiricalContent.classList.add('expanded');
+                            satiricalToggle.classList.add('expanded');
+                        }
+                    }
+                    if (savedState.story) {
+                        const storyContent = div.querySelector('.collapsible-content.story');
+                        const storyToggle = div.querySelector('.collapsible-content.story').previousElementSibling.querySelector('.collapsible-toggle');
+                        if (storyContent && storyToggle) {
+                            storyContent.classList.add('expanded');
+                            storyToggle.classList.add('expanded');
+                        }
+                    }
+                }
             }
         }
 
@@ -1596,6 +1826,20 @@ const indexHTML = `<!DOCTYPE html>
 
                 div.innerHTML = '<h3 style="margin-bottom: 15px; color: #8b5cf6; font-size: 16px;">🏢 ' + businessName + '</h3>' + bodiesHTML;
                 container.appendChild(div);
+            }
+        }
+
+        // Toggle collapsible sections
+        function toggleCollapsible(headerElement) {
+            const toggle = headerElement.querySelector('.collapsible-toggle');
+            const content = headerElement.nextElementSibling;
+
+            if (content.classList.contains('expanded')) {
+                content.classList.remove('expanded');
+                toggle.classList.remove('expanded');
+            } else {
+                content.classList.add('expanded');
+                toggle.classList.add('expanded');
             }
         }
     </script>
