@@ -33,12 +33,14 @@ import (
 
 // Location represents a device location with timestamp
 type Location struct {
-	Latitude  float64   `json:"latitude" dynamodbav:"latitude"`
-	Longitude float64   `json:"longitude" dynamodbav:"longitude"`
-	Accuracy  float64   `json:"accuracy" dynamodbav:"accuracy"`
-	Timestamp time.Time `json:"timestamp" dynamodbav:"timestamp"`
-	DeviceID  string    `json:"device_id" dynamodbav:"device_id"`
-	UserAgent string    `json:"user_agent" dynamodbav:"user_agent"`
+	Latitude     float64   `json:"latitude" dynamodbav:"latitude"`
+	Longitude    float64   `json:"longitude" dynamodbav:"longitude"`
+	Accuracy     float64   `json:"accuracy" dynamodbav:"accuracy"`
+	Timestamp    time.Time `json:"timestamp" dynamodbav:"timestamp"`
+	DeviceID     string    `json:"device_id" dynamodbav:"device_id"`
+	UserAgent    string    `json:"user_agent" dynamodbav:"user_agent"`
+	Simulated    bool      `json:"simulated,omitempty" dynamodbav:"simulated"`
+	LocationName string    `json:"location_name,omitempty" dynamodbav:"location_name"`
 }
 
 // ErrorLog represents an error message with timestamp
@@ -56,6 +58,7 @@ type ErrorLog struct {
 	SongURL             string    `json:"song_url,omitempty" dynamodbav:"song_url"`
 	FoodImageURL        string    `json:"food_image_url,omitempty" dynamodbav:"food_image_url"`
 	FoodImageAttr       string    `json:"food_image_attr,omitempty" dynamodbav:"food_image_attr"`
+	MemeURL             string    `json:"meme_url,omitempty" dynamodbav:"meme_url"` // AI-generated absurdist meme
 	UserExperienceNote  string    `json:"user_experience_note,omitempty" dynamodbav:"user_experience_note"`
 	UserNoteKeywords    []string  `json:"user_note_keywords,omitempty" dynamodbav:"user_note_keywords"`
 	NearbyBusinesses    []string  `json:"nearby_businesses,omitempty" dynamodbav:"nearby_businesses"`
@@ -85,12 +88,13 @@ type AnonymousTip struct {
 
 // CommercialRealEstate represents commercial real estate and associated businesses in an area
 type CommercialRealEstate struct {
-	ID           string                      `json:"id,omitempty" dynamodbav:"id"`
-	LocationName string                      `json:"location_name" dynamodbav:"location_name"`
-	QueryLat     float64                     `json:"query_lat" dynamodbav:"query_lat"`
-	QueryLng     float64                     `json:"query_lng" dynamodbav:"query_lng"`
-	Properties   []CommercialPropertyDetails `json:"properties" dynamodbav:"properties"`
-	Timestamp    time.Time                   `json:"timestamp" dynamodbav:"timestamp"`
+	ID              string                      `json:"id,omitempty" dynamodbav:"id"`
+	LocationName    string                      `json:"location_name" dynamodbav:"location_name"`
+	QueryLat        float64                     `json:"query_lat" dynamodbav:"query_lat"`
+	QueryLng        float64                     `json:"query_lng" dynamodbav:"query_lng"`
+	Properties      []CommercialPropertyDetails `json:"properties" dynamodbav:"properties"`
+	GoverningBodies []GoverningBody             `json:"governing_bodies,omitempty" dynamodbav:"governing_bodies"`
+	Timestamp       time.Time                   `json:"timestamp" dynamodbav:"timestamp"`
 }
 
 // CommercialPropertyDetails stores information about commercial real estate and businesses
@@ -105,6 +109,14 @@ type CommercialPropertyDetails struct {
 	Description      string                 `json:"description,omitempty" dynamodbav:"description"`
 	ContactInfo      map[string]interface{} `json:"contact_info,omitempty" dynamodbav:"contact_info"`
 	AdditionalInfo   map[string]interface{} `json:"additional_info,omitempty" dynamodbav:"additional_info"`
+}
+
+// GoverningBody stores information about local government authorities and civic organizations
+type GoverningBody struct {
+	Name         string `json:"name" dynamodbav:"name"`
+	Type         string `json:"type" dynamodbav:"type"`                     // "city_council", "planning", "zoning", "civic"
+	Jurisdiction string `json:"jurisdiction,omitempty" dynamodbav:"jurisdiction"` // City/county name
+	Contact      string `json:"contact,omitempty" dynamodbav:"contact"`           // Contact info
 }
 
 // PerplexityRequest represents a request to Perplexity API
@@ -181,7 +193,7 @@ var (
 	currentBusinessesMutex sync.RWMutex
 
 	// Commercial real estate cache (keyed by location name)
-	commercialRealEstateCache     = make(map[string][]CommercialPropertyDetails)
+	commercialRealEstateCache     = make(map[string]CommercialRealEstate)
 	commercialRealEstateCacheMutex sync.RWMutex
 
 	// Pending user experience note from Twilio SMS
@@ -293,6 +305,7 @@ func main() {
 	http.HandleFunc("/api/errorlogs", handleErrorLogs)
 	http.HandleFunc("/api/businesses", handleBusinesses)
 	http.HandleFunc("/api/keywords", handlePendingKeywords)
+	http.HandleFunc("/api/commercial-context", handleCommercialContext)
 	http.HandleFunc("/api/last-interaction-context", handleLastInteractionContext)
 	http.HandleFunc("/api/commercialrealestate", handleCommercialRealEstate)
 	http.HandleFunc("/api/health", handleHealth)
@@ -558,10 +571,10 @@ func generateRandomLocationInRadius(baseLat, baseLng, radiusMiles float64) (floa
 }
 
 // searchCommercialRealEstate uses Perplexity API to find commercial real estate and businesses in an area
-func searchCommercialRealEstate(baseLat, baseLng float64, userKeywords []string) ([]CommercialPropertyDetails, float64, float64, error) {
+func searchCommercialRealEstate(baseLat, baseLng float64, userKeywords []string) ([]CommercialPropertyDetails, []GoverningBody, float64, float64, error) {
 	if perplexityAPIKey == "" {
 		log.Println("⚠️  Perplexity API key not set, skipping commercial real estate search")
-		return []CommercialPropertyDetails{}, baseLat, baseLng, nil
+		return []CommercialPropertyDetails{}, []GoverningBody{}, baseLat, baseLng, nil
 	}
 
 	// Generate random location within 10 mile radius
@@ -574,37 +587,20 @@ func searchCommercialRealEstate(baseLat, baseLng float64, userKeywords []string)
 		keywordContext = fmt.Sprintf("\n\nContext keywords from user: %s. Feel free to incorporate these themes into the property descriptions.", strings.Join(userKeywords, ", "))
 	}
 
-	prompt := fmt.Sprintf(`Find open commercial real estate and associated businesses near coordinates (%.6f, %.6f).
+	prompt := fmt.Sprintf(`Find commercial properties, governing authorities, and businesses near (%.6f, %.6f).
 
-Focus on returning:
-1. Available commercial spaces (retail, office, industrial)
-2. Current businesses operating in commercial spaces
-3. Property details (square footage, price/rent if available)
-4. Contact information for properties or businesses
-5. Addresses and property types
+Return JSON with:
+1. Available commercial spaces (address, type, sqft, price)
+2. Current businesses (name, type, contact)
+3. Local governing bodies (city council, planning commission, zoning board, civic orgs)%s
 
-Return the information in this JSON format:
+JSON format:
 {
-  "properties": [
-    {
-      "address": "Street address",
-      "property_type": "retail" or "office" or "industrial" or "mixed_use",
-      "status": "available" or "leased" or "for_sale",
-      "square_footage": "Size if known",
-      "price_info": "Price or rent if available",
-      "current_business": "Business name if occupied",
-      "business_type": "Type of business if applicable",
-      "description": "Brief description",
-      "contact_info": {
-        "phone": "...",
-        "email": "...",
-        "website": "..."
-      }
-    }
-  ]
-}%s
+  "properties": [{"address": "...", "property_type": "retail|office|industrial", "status": "available|leased", "square_footage": "...", "price_info": "...", "current_business": "...", "business_type": "...", "description": "...", "contact_info": {"phone": "...", "email": "...", "website": "..."}}],
+  "governing_bodies": [{"name": "...", "type": "city_council|planning|zoning|civic", "jurisdiction": "...", "contact": "..."}]
+}
 
-Return ONLY valid JSON, no additional text.`, queryLat, queryLng, keywordContext)
+Return ONLY valid JSON.`, queryLat, queryLng, keywordContext)
 
 	reqBody := PerplexityRequest{
 		Model: "sonar",
@@ -618,12 +614,12 @@ Return ONLY valid JSON, no additional text.`, queryLat, queryLng, keywordContext
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
-		return nil, queryLat, queryLng, fmt.Errorf("failed to marshal perplexity request: %w", err)
+		return nil, nil, queryLat, queryLng, fmt.Errorf("failed to marshal perplexity request: %w", err)
 	}
 
 	req, err := http.NewRequest("POST", "https://api.perplexity.ai/chat/completions", bytes.NewBuffer(jsonData))
 	if err != nil {
-		return nil, queryLat, queryLng, fmt.Errorf("failed to create perplexity request: %w", err)
+		return nil, nil, queryLat, queryLng, fmt.Errorf("failed to create perplexity request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -632,26 +628,26 @@ Return ONLY valid JSON, no additional text.`, queryLat, queryLng, keywordContext
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, queryLat, queryLng, fmt.Errorf("failed to call perplexity API: %w", err)
+		return nil, nil, queryLat, queryLng, fmt.Errorf("failed to call perplexity API: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, queryLat, queryLng, fmt.Errorf("failed to read perplexity response: %w", err)
+		return nil, nil, queryLat, queryLng, fmt.Errorf("failed to read perplexity response: %w", err)
 	}
 
 	var perplexityResp PerplexityResponse
 	if err := json.Unmarshal(body, &perplexityResp); err != nil {
-		return nil, queryLat, queryLng, fmt.Errorf("failed to parse perplexity response: %w", err)
+		return nil, nil, queryLat, queryLng, fmt.Errorf("failed to parse perplexity response: %w", err)
 	}
 
 	if perplexityResp.Error != nil {
-		return nil, queryLat, queryLng, fmt.Errorf("perplexity API error: %s", perplexityResp.Error.Message)
+		return nil, nil, queryLat, queryLng, fmt.Errorf("perplexity API error: %s", perplexityResp.Error.Message)
 	}
 
 	if len(perplexityResp.Choices) == 0 {
-		return nil, queryLat, queryLng, fmt.Errorf("no choices in perplexity response")
+		return nil, nil, queryLat, queryLng, fmt.Errorf("no choices in perplexity response")
 	}
 
 	// Parse the JSON response from Perplexity
@@ -665,16 +661,19 @@ Return ONLY valid JSON, no additional text.`, queryLat, queryLng, keywordContext
 	}
 
 	var result struct {
-		Properties []CommercialPropertyDetails `json:"properties"`
+		Properties      []CommercialPropertyDetails `json:"properties"`
+		GoverningBodies []GoverningBody             `json:"governing_bodies"`
 	}
 
 	if err := json.Unmarshal([]byte(content), &result); err != nil {
 		log.Printf("⚠️  Failed to parse commercial real estate JSON, raw content: %s", content)
-		return []CommercialPropertyDetails{}, queryLat, queryLng, nil
+		return []CommercialPropertyDetails{}, []GoverningBody{}, queryLat, queryLng, nil
 	}
 
-	log.Printf("🏢 Found %d commercial properties near (%.6f, %.6f)", len(result.Properties), queryLat, queryLng)
-	return result.Properties, queryLat, queryLng, nil
+	log.Printf("🏢 Found %d commercial properties and %d governing bodies near (%.6f, %.6f)",
+		len(result.Properties), len(result.GoverningBodies), queryLat, queryLng)
+
+	return result.Properties, result.GoverningBodies, queryLat, queryLng, nil
 }
 
 // saveCommercialRealEstateToDynamoDB stores commercial real estate information in DynamoDB
@@ -1053,28 +1052,29 @@ func handleErrorLogs(w http.ResponseWriter, r *http.Request) {
 		// Search for commercial real estate near current location (asynchronously)
 		if currentLocation != nil {
 			go func(lat, lng float64, keywords []string) {
-				properties, queryLat, queryLng, err := searchCommercialRealEstate(lat, lng, keywords)
+				properties, governingBodies, queryLat, queryLng, err := searchCommercialRealEstate(lat, lng, keywords)
 				if err != nil {
 					log.Printf("⚠️  Error searching commercial real estate: %v", err)
 					return
 				}
 
-				if len(properties) > 0 {
+				if len(properties) > 0 || len(governingBodies) > 0 {
 					locationName := fmt.Sprintf("Area-%.4f-%.4f", queryLat, queryLng)
+
+					commercialRealEstateRecord := CommercialRealEstate{
+						ID:              fmt.Sprintf("%s-%d", locationName, time.Now().UnixNano()),
+						LocationName:    locationName,
+						QueryLat:        queryLat,
+						QueryLng:        queryLng,
+						Properties:      properties,
+						GoverningBodies: governingBodies,
+						Timestamp:       time.Now(),
+					}
 
 					// Cache the commercial real estate
 					commercialRealEstateCacheMutex.Lock()
-					commercialRealEstateCache[locationName] = properties
+					commercialRealEstateCache[locationName] = commercialRealEstateRecord
 					commercialRealEstateCacheMutex.Unlock()
-
-					commercialRealEstateRecord := CommercialRealEstate{
-						ID:           fmt.Sprintf("%s-%d", locationName, time.Now().UnixNano()),
-						LocationName: locationName,
-						QueryLat:     queryLat,
-						QueryLng:     queryLng,
-						Properties:   properties,
-						Timestamp:    time.Now(),
-					}
 
 					saveCommercialRealEstateToDynamoDB(commercialRealEstateRecord)
 
@@ -1090,6 +1090,11 @@ func handleErrorLogs(w http.ResponseWriter, r *http.Request) {
 							}
 						}
 						log.Printf("🏢 %s - %s (%s) - %s%s", prop.Address, prop.PropertyType, prop.Status, prop.Description, contactInfo)
+					}
+
+					// Log governing bodies
+					for _, body := range governingBodies {
+						log.Printf("🏛️  %s (%s) - %s - %s", body.Name, body.Type, body.Jurisdiction, body.Contact)
 					}
 				}
 			}(currentLocation.Latitude, currentLocation.Longitude, userKeywords)
@@ -1196,6 +1201,32 @@ func handleBusinesses(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"businesses": currentBusinesses,
 		"count":      len(currentBusinesses),
+	})
+}
+
+func handleCommercialContext(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// No auth required - error-generator needs to access this
+	commercialRealEstateCacheMutex.RLock()
+	defer commercialRealEstateCacheMutex.RUnlock()
+
+	// Flatten all commercial properties and governing bodies from cache
+	allProperties := make([]CommercialPropertyDetails, 0)
+	allGoverningBodies := make([]GoverningBody, 0)
+	for _, record := range commercialRealEstateCache {
+		allProperties = append(allProperties, record.Properties...)
+		allGoverningBodies = append(allGoverningBodies, record.GoverningBodies...)
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"properties":       allProperties,
+		"governing_bodies": allGoverningBodies,
 	})
 }
 
@@ -1560,7 +1591,10 @@ func cleanupOldLocations() {
 
 func serveHTML(w http.ResponseWriter, r *http.Request) {
 	tmpl := template.Must(template.New("index").Parse(indexHTML))
-	if err := tmpl.Execute(w, nil); err != nil {
+	data := map[string]interface{}{
+		"GoogleMapsAPIKey": googleMapsAPIKey,
+	}
+	if err := tmpl.Execute(w, data); err != nil {
 		log.Printf("❌ Error executing template: %v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
@@ -2383,6 +2417,7 @@ const indexHTML = `<!DOCTYPE html>
             color: #ffffff !important;
         }
     </style>
+    {{if .GoogleMapsAPIKey}}<script src="https://maps.googleapis.com/maps/api/js?key={{.GoogleMapsAPIKey}}&libraries=places"></script>{{end}}
 </head>
 <body>
     <div class="container">
@@ -2456,6 +2491,13 @@ const indexHTML = `<!DOCTYPE html>
                     <button class="btn-share" onclick="shareLocation()">📍 Share Location</button>
                     <button class="btn-refresh" onclick="refreshLocations()">🔄 Refresh</button>
                 </div>
+                {{if .GoogleMapsAPIKey}}
+                <div id="location-simulator" style="margin-top: 15px; padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px; border: 3px solid var(--swiss-black); box-shadow: 4px 4px 0px rgba(0, 0, 0, 0.2); display: none;">
+                    <h4 style="color: var(--swiss-white); margin-bottom: 10px; font-size: 14px; text-transform: uppercase;">🗺️ Simulate Location (Authenticated Users)</h4>
+                    <input type="text" id="location-autocomplete" placeholder="Search for a location..." style="width: 100%; padding: 12px; border: 2px solid var(--swiss-black); border-radius: 8px; font-size: 14px; margin-bottom: 10px; box-shadow: 2px 2px 0px rgba(0, 0, 0, 0.1);">
+                    <button onclick="shareSimulatedLocation()" style="width: 100%; background: linear-gradient(135deg, var(--pop-hot-pink) 0%, var(--memphis-pink) 100%);">📍 Share Simulated Location</button>
+                </div>
+                {{end}}
 
                 <!-- Anonymous Tip Submission Form -->
                 <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; border-radius: 12px; margin-top: 20px; border: 3px solid var(--swiss-black); box-shadow: 4px 4px 0px rgba(0, 0, 0, 0.2);">
@@ -2677,6 +2719,11 @@ const indexHTML = `<!DOCTYPE html>
                     document.getElementById('tracker').style.display = 'block';
                     refreshLocations();
                     refreshErrorLogs();
+                    // Show location simulator for authenticated users
+                    if (document.getElementById('location-simulator')) {
+                        document.getElementById('location-simulator').style.display = 'block';
+                        initLocationAutocomplete();
+                    }
                     // Auto-refresh every 10 seconds
                     setInterval(() => {
                         refreshLocations();
@@ -2749,6 +2796,70 @@ const indexHTML = `<!DOCTYPE html>
                 timeout: 10000,
                 maximumAge: 0
             });
+        }
+
+        // Google Maps location autocomplete
+        let selectedPlace = null;
+
+        function initLocationAutocomplete() {
+            if (typeof google === 'undefined' || !google.maps || !google.maps.places) {
+                console.log('Google Maps not loaded, skipping autocomplete');
+                return;
+            }
+
+            const input = document.getElementById('location-autocomplete');
+            const autocomplete = new google.maps.places.Autocomplete(input);
+
+            autocomplete.addListener('place_changed', () => {
+                selectedPlace = autocomplete.getPlace();
+                if (!selectedPlace.geometry) {
+                    alert('No location data available for this place');
+                    selectedPlace = null;
+                }
+            });
+        }
+
+        async function shareSimulatedLocation() {
+            if (!selectedPlace || !selectedPlace.geometry) {
+                alert('Please select a location from the autocomplete suggestions');
+                return;
+            }
+
+            const btn = event.target;
+            btn.textContent = '📡 Sharing simulated location...';
+            btn.disabled = true;
+
+            const location = {
+                latitude: selectedPlace.geometry.location.lat(),
+                longitude: selectedPlace.geometry.location.lng(),
+                accuracy: 0,
+                device_id: deviceID,
+                simulated: true,
+                location_name: selectedPlace.formatted_address || selectedPlace.name
+            };
+
+            try {
+                await fetch('/api/location', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(location)
+                });
+
+                btn.textContent = '✅ Simulated location shared!';
+                setTimeout(() => {
+                    btn.textContent = '📍 Share Simulated Location';
+                    btn.disabled = false;
+                }, 2000);
+
+                refreshLocations();
+                // Clear the input
+                document.getElementById('location-autocomplete').value = '';
+                selectedPlace = null;
+            } catch (e) {
+                alert('Error sharing simulated location: ' + e.message);
+                btn.textContent = '📍 Share Simulated Location';
+                btn.disabled = false;
+            }
         }
 
         // Submit anonymous tip
@@ -3046,9 +3157,12 @@ const indexHTML = `<!DOCTYPE html>
                     ` + "`" + ` : ''}
                     ${errorLog.satirical_fix ? ` + "`" + `
                         <div style="margin-top: 20px; padding: 20px; background: linear-gradient(135deg, rgba(139, 92, 246, 0.08) 0%, rgba(124, 58, 237, 0.12) 100%); border: 3px solid rgba(139, 92, 246, 0.4); border-radius: 12px; box-shadow: 0 0 25px rgba(139, 92, 246, 0.25), 4px 4px 0px rgba(139, 92, 246, 0.15);">
-                            <div class="collapsible-header" onclick="toggleCollapsible(this)">
-                                <span style="font-size: 24px;">🤖</span>
-                                <strong style="color: #8b5cf6; font-size: 16px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800;">Satirical Fix Generated</strong>
+                            <div class="collapsible-header" onclick="toggleCollapsible(this)" style="display: flex; justify-content: space-between; align-items: center;">
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <span style="font-size: 24px;">🤖</span>
+                                    <strong style="color: #8b5cf6; font-size: 16px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800;">Satirical Fix Generated</strong>
+                                    <span style="font-size: 9px; color: #999; font-weight: 600; letter-spacing: 0.05em;">POWERED BY DEEPSEEK</span>
+                                </div>
                                 <span class="collapsible-toggle">▶</span>
                             </div>
                             <div class="collapsible-content satirical-fix" style="margin-top: 15px;">
@@ -3058,15 +3172,32 @@ const indexHTML = `<!DOCTYPE html>
                     ` + "`" + ` : ''}
                     ${errorLog.childrens_story ? ` + "`" + `
                         <div style="margin-top: 20px; padding: 20px; background: linear-gradient(135deg, rgba(255, 107, 157, 0.08) 0%, rgba(72, 202, 228, 0.12) 100%); border: 3px solid rgba(255, 107, 157, 0.4); border-radius: 12px; box-shadow: 0 0 25px rgba(255, 107, 157, 0.25), 4px 4px 0px rgba(255, 107, 157, 0.15);">
-                            <div class="collapsible-header" onclick="toggleCollapsible(this)">
-                                <span style="font-size: 24px;">📚</span>
-                                <strong style="background: linear-gradient(135deg, #ff6b9d 0%, #48cae4 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-size: 16px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800;">Investigative Comedy Story for Children</strong>
+                            <div class="collapsible-header" onclick="toggleCollapsible(this)" style="display: flex; justify-content: space-between; align-items: center;">
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <span style="font-size: 24px;">📚</span>
+                                    <strong style="background: linear-gradient(135deg, #ff6b9d 0%, #48cae4 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-size: 16px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800;">Investigative Comedy Story for Children</strong>
+                                    <span style="font-size: 9px; color: #999; font-weight: 600; letter-spacing: 0.05em;">POWERED BY CLAUDE</span>
+                                </div>
                                 <span class="collapsible-toggle">▶</span>
                             </div>
                             <div class="collapsible-content story" style="margin-top: 15px;">
                                 <div style="background: rgba(255, 255, 255, 0.8); padding: 20px; border-radius: 8px; border: 2px solid rgba(255, 107, 157, 0.3); font-family: 'Georgia', serif; line-height: 1.8; color: #1f2937; font-size: 14px;">
                                     ${errorLog.childrens_story.replace(/\n/g, '<br>')}
                                 </div>
+                            </div>
+                        </div>
+                    ` + "`" + ` : ''}
+                    ${errorLog.meme_url ? ` + "`" + `
+                        <div style="margin-top: 20px; padding: 20px; background: linear-gradient(135deg, rgba(139, 92, 246, 0.08) 0%, rgba(236, 72, 153, 0.12) 100%); border: 3px solid rgba(139, 92, 246, 0.4); border-radius: 12px; box-shadow: 0 0 25px rgba(139, 92, 246, 0.25), 4px 4px 0px rgba(139, 92, 246, 0.15);">
+                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <span style="font-size: 24px;">🎨</span>
+                                    <strong style="background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-size: 16px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800;">Absurdist Meme</strong>
+                                </div>
+                                <span style="font-size: 9px; color: #999; font-weight: 600; letter-spacing: 0.05em;">BUILT WITH GEMINI + VERTEX AI</span>
+                            </div>
+                            <div style="background: rgba(255, 255, 255, 0.9); padding: 15px; border-radius: 8px; border: 2px solid rgba(139, 92, 246, 0.3); text-align: center;">
+                                <img src="${errorLog.meme_url}" alt="AI-Generated Absurdist Meme" style="max-width: 100%; height: auto; border-radius: 8px; border: 3px solid rgba(139, 92, 246, 0.3); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);">
                             </div>
                         </div>
                     ` + "`" + ` : ''}
@@ -3079,7 +3210,7 @@ const indexHTML = `<!DOCTYPE html>
                     const expandButtonID = 'gif-expand-btn-' + errorLog.id;
 
                     let gifHTML = '<div style="margin-top: 20px; padding: 20px; background: linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(220, 38, 38, 0.12) 100%); border: 3px solid rgba(239, 68, 68, 0.4); border-radius: 12px; box-shadow: 0 0 25px rgba(239, 68, 68, 0.25), 4px 4px 0px rgba(239, 68, 68, 0.15);">';
-                    gifHTML += '<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;"><span style="font-size: 24px;">🎬</span><strong style="color: #ef4444; font-size: 16px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800;">Animated Reaction GIF' + (gifURLs.length > 1 ? 'S (' + gifURLs.length + ')' : '') + '</strong></div>';
+                    gifHTML += '<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;"><div style="display: flex; align-items: center; gap: 10px;"><span style="font-size: 24px;">🎬</span><strong style="color: #ef4444; font-size: 16px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800;">Animated Reaction GIF' + (gifURLs.length > 1 ? 'S (' + gifURLs.length + ')' : '') + '</strong></div><span style="font-size: 10px; color: #999; font-weight: 600; letter-spacing: 0.05em;">POWERED BY GIPHY</span></div>';
                     gifHTML += '<div id="' + gifContainerID + '" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">';
 
                     // Display first 2 GIFs by default (no action endpoint trigger)
@@ -3108,7 +3239,7 @@ const indexHTML = `<!DOCTYPE html>
                 // Add Spotify if available
                 if (errorLog.song_url) {
                     const songTitleID = 'song-title-' + errorLog.id;
-                    let spotifyHTML = '<div style="margin-top: 20px; padding: 15px; background: linear-gradient(135deg, rgba(29, 185, 84, 0.08) 0%, rgba(30, 215, 96, 0.12) 100%); border: 3px solid rgba(29, 185, 84, 0.4); border-radius: 12px; box-shadow: 0 0 25px rgba(29, 185, 84, 0.25), 4px 4px 0px rgba(29, 185, 84, 0.15);"><div style="display: flex; align-items: center; justify-content: space-between;"><div><div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px;"><span style="font-size: 24px;">🎵</span><strong style="color: #1db954; font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800;">Recommended Track</strong></div>';
+                    let spotifyHTML = '<div style="margin-top: 20px; padding: 15px; background: linear-gradient(135deg, rgba(29, 185, 84, 0.08) 0%, rgba(30, 215, 96, 0.12) 100%); border: 3px solid rgba(29, 185, 84, 0.4); border-radius: 12px; box-shadow: 0 0 25px rgba(29, 185, 84, 0.25), 4px 4px 0px rgba(29, 185, 84, 0.15);"><div style="display: flex; align-items: center; justify-content: space-between;"><div><div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px;"><span style="font-size: 24px;">🎵</span><strong style="color: #1db954; font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800;">Recommended Track</strong><span style="font-size: 9px; color: #999; font-weight: 600; letter-spacing: 0.05em; margin-left: 10px;">POWERED BY SPOTIFY</span></div>';
                     if (errorLog.song_title && errorLog.song_artist) {
                         spotifyHTML += '<div style="margin-left: 34px;"><div id="' + songTitleID + '" style="font-size: 15px; font-weight: 600; color: #1a1a1a; cursor: pointer; user-select: none;">' + errorLog.song_title + '</div><div style="font-size: 13px; color: #666; margin-top: 2px;">' + errorLog.song_artist + '</div></div>';
                     }
@@ -3146,7 +3277,7 @@ const indexHTML = `<!DOCTYPE html>
                 // Add food image if available
                 if (errorLog.food_image_url) {
                     const foodAttr = errorLog.food_image_attr || 'Stock food photography';
-                    div.innerHTML += '<div style="margin-top: 20px; padding: 20px; background: linear-gradient(135deg, rgba(165, 94, 234, 0.08) 0%, rgba(179, 0, 255, 0.12) 100%); border: 3px solid rgba(165, 94, 234, 0.4); border-radius: 12px; box-shadow: 0 0 25px rgba(165, 94, 234, 0.25), 4px 4px 0px rgba(165, 94, 234, 0.15);"><div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;"><span style="font-size: 24px;">🍽️</span><strong style="color: #a55eea; font-size: 16px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800;">Food Blog Imagery</strong></div><div style="border: 4px solid rgba(165, 94, 234, 0.5); border-radius: 12px; padding: 6px; background: rgba(255, 255, 255, 0.6); box-shadow: inset 0 0 20px rgba(165, 94, 234, 0.15);"><img src="' + errorLog.food_image_url + '" alt="Food blog image" style="width: 100%; max-width: 600px; border-radius: 8px; display: block; object-fit: cover;"></div><p style="font-size: 11px; color: #6b46c1; font-style: italic; margin-top: 12px; font-family: \'Courier New\', monospace; text-transform: uppercase; letter-spacing: 0.05em;">' + foodAttr + '</p></div>';
+                    div.innerHTML += '<div style="margin-top: 20px; padding: 20px; background: linear-gradient(135deg, rgba(165, 94, 234, 0.08) 0%, rgba(179, 0, 255, 0.12) 100%); border: 3px solid rgba(165, 94, 234, 0.4); border-radius: 12px; box-shadow: 0 0 25px rgba(165, 94, 234, 0.25), 4px 4px 0px rgba(165, 94, 234, 0.15);"><div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;"><span style="font-size: 24px;">🍽️</span><strong style="color: #a55eea; font-size: 16px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800;">Food Blog Imagery</strong></div><span style="font-size: 9px; color: #999; font-weight: 600; letter-spacing: 0.05em;">POWERED BY PEXELS</span></div><div style="border: 4px solid rgba(165, 94, 234, 0.5); border-radius: 12px; padding: 6px; background: rgba(255, 255, 255, 0.6); box-shadow: inset 0 0 20px rgba(165, 94, 234, 0.15);"><img src="' + errorLog.food_image_url + '" alt="Food blog image" style="width: 100%; max-width: 600px; border-radius: 8px; display: block; object-fit: cover;"></div><p style="font-size: 11px; color: #6b46c1; font-style: italic; margin-top: 12px; font-family: \'Courier New\', monospace; text-transform: uppercase; letter-spacing: 0.05em;">' + foodAttr + '</p></div>';
                 }
 
                 // Add anonymous tips if available
@@ -3254,9 +3385,21 @@ const indexHTML = `<!DOCTYPE html>
 
         function displayCommercialRealEstate(commercialRealEstateMap) {
             const container = document.getElementById('commercialrealestate');
-            allBusinessesData = commercialRealEstateMap || {};
 
-            if (!commercialRealEstateMap || Object.keys(commercialRealEstateMap).length === 0) {
+            // Convert new format (map of CommercialRealEstate records) to old format for compatibility
+            allBusinessesData = {};
+            let allGoverningBodies = [];
+
+            for (const [locationName, record] of Object.entries(commercialRealEstateMap || {})) {
+                if (record.properties && record.properties.length > 0) {
+                    allBusinessesData[locationName] = record.properties;
+                }
+                if (record.governing_bodies && record.governing_bodies.length > 0) {
+                    allGoverningBodies = allGoverningBodies.concat(record.governing_bodies);
+                }
+            }
+
+            if (Object.keys(allBusinessesData).length === 0 && allGoverningBodies.length === 0) {
                 container.innerHTML = '<div class="empty-state" style="padding: 40px 20px;">' +
                     '<p style="color: #6b7280;">No commercial real estate data yet</p>' +
                     '<p style="font-size: 14px; margin-top: 10px; color: #9ca3af;">' +
@@ -3268,10 +3411,10 @@ const indexHTML = `<!DOCTYPE html>
             // Initial display - show first 11 businesses
             visibleBusinessCount = 0;
             container.innerHTML = '';
-            renderBusinesses(container);
+            renderBusinesses(container, allGoverningBodies);
         }
 
-        function renderBusinesses(container) {
+        function renderBusinesses(container, governingBodies = []) {
             let currentCount = 0;
 
             for (const [locationName, properties] of Object.entries(allBusinessesData)) {
@@ -3286,9 +3429,11 @@ const indexHTML = `<!DOCTYPE html>
                 }
             }
 
-            // Remove existing load more button
+            // Remove existing load more button and governing bodies section
             const existingBtn = container.querySelector('.load-more-btn');
             if (existingBtn) existingBtn.remove();
+            const existingGov = container.querySelector('.governing-bodies-section');
+            if (existingGov) existingGov.remove();
 
             // Add load more button if there are more businesses
             const totalBusinesses = Object.values(allBusinessesData).reduce((sum, props) => sum + props.length, 0);
@@ -3297,16 +3442,35 @@ const indexHTML = `<!DOCTYPE html>
                 loadMoreBtn.className = 'load-more-btn';
                 loadMoreBtn.textContent = '📄 Load More Businesses (' + (totalBusinesses - (visibleBusinessCount + BUSINESS_PAGE_SIZE)) + ' remaining)';
                 loadMoreBtn.style.cssText = 'width: 100%; margin-top: 15px; padding: 15px; background: linear-gradient(135deg, var(--memphis-purple) 0%, var(--pop-purple-neon) 100%); color: var(--swiss-white); border: 2px solid var(--swiss-black); border-radius: 8px; font-size: 14px; font-weight: 700; text-transform: uppercase; cursor: pointer; transition: all 0.3s; box-shadow: 4px 4px 0px rgba(0, 0, 0, 0.2);';
-                loadMoreBtn.onclick = loadMoreBusinesses;
+                loadMoreBtn.onclick = () => loadMoreBusinesses(governingBodies);
                 container.appendChild(loadMoreBtn);
+            }
+
+            // Display governing bodies at the bottom
+            if (governingBodies && governingBodies.length > 0) {
+                const govSection = document.createElement('div');
+                govSection.className = 'governing-bodies-section';
+                govSection.style.cssText = 'margin-top: 25px; padding-top: 20px; border-top: 2px solid #8b5cf6;';
+
+                const govHeader = document.createElement('h3');
+                govHeader.textContent = '🏛️  Local Governing Authorities';
+                govHeader.style.cssText = 'color: #8b5cf6; font-size: 16px; margin-bottom: 15px; font-weight: 700;';
+                govSection.appendChild(govHeader);
+
+                governingBodies.forEach(body => {
+                    const bodyCard = createGoverningBodyCard(body);
+                    govSection.appendChild(bodyCard);
+                });
+
+                container.appendChild(govSection);
             }
 
             visibleBusinessCount = currentCount;
         }
 
-        function loadMoreBusinesses() {
+        function loadMoreBusinesses(governingBodies) {
             const container = document.getElementById('commercialrealestate');
-            renderBusinesses(container);
+            renderBusinesses(container, governingBodies);
         }
 
         function createBusinessCard(locationName, prop) {
@@ -3355,6 +3519,41 @@ const indexHTML = `<!DOCTYPE html>
                 (prop.description ? '<div style="color: #6b7280; font-size: 13px; margin-bottom: 6px;">' + prop.description + '</div>' : '') +
                 detailsHTML +
                 contactHTML +
+                '</div>';
+
+            return div;
+        }
+
+        function createGoverningBodyCard(body) {
+            const typeColors = {
+                'city_council': '#3b82f6',
+                'planning': '#10b981',
+                'zoning': '#f59e0b',
+                'civic': '#8b5cf6'
+            };
+            const typeIcons = {
+                'city_council': '🏛️',
+                'planning': '📋',
+                'zoning': '🗺️',
+                'civic': '🤝'
+            };
+
+            const typeColor = typeColors[body.type] || '#6b7280';
+            const typeIcon = typeIcons[body.type] || '🏢';
+
+            const div = document.createElement('div');
+            div.className = 'location-card';
+            div.style.borderLeft = '4px solid ' + typeColor;
+            div.style.marginBottom = '15px';
+
+            div.innerHTML = '<div style="padding: 12px; background: #f9fafb; border-radius: 6px;">' +
+                '<div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">' +
+                '<span>' + typeIcon + '</span>' +
+                '<strong style="color: ' + typeColor + '; font-size: 14px;">' + body.name + '</strong>' +
+                '<span style="background: ' + typeColor + '20; color: ' + typeColor + '; padding: 2px 8px; border-radius: 4px; font-size: 11px; text-transform: uppercase;">' + body.type.replace('_', ' ') + '</span>' +
+                '</div>' +
+                (body.jurisdiction ? '<div style="color: #6b7280; font-size: 13px; margin-bottom: 6px;">📍 ' + body.jurisdiction + '</div>' : '') +
+                (body.contact ? '<div style="margin-top: 6px; font-size: 13px;">📞 ' + body.contact + '</div>' : '') +
                 '</div>';
 
             return div;

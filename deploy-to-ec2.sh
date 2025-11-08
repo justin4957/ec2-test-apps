@@ -6,7 +6,9 @@ set -e
 # Load environment variables from .env.ec2 if it exists
 if [ -f .env.ec2 ]; then
     echo "📋 Loading environment variables from .env.ec2..."
-    export $(cat .env.ec2 | grep -v '^#' | xargs)
+    set -a
+    source .env.ec2
+    set +a
 fi
 
 AWS_REGION=us-east-1
@@ -29,6 +31,10 @@ TRACKER_PASSWORD=${TRACKER_PASSWORD:-}
 LOCATION_TRACKER_URL=${LOCATION_TRACKER_URL:-}
 DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
 ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+GEMINI_API_KEY=${GEMINI_API_KEY:-}
+S3_MEME_BUCKET=${S3_MEME_BUCKET:-error-generator-memes}
+GCP_PROJECT_ID=${GCP_PROJECT_ID:-notspies}
+GCP_LOCATION=${GCP_LOCATION:-us-central1}
 
 # Validate critical environment variables
 echo "🔍 Validating environment variables..."
@@ -83,6 +89,10 @@ ssh -o StrictHostKeyChecking=no -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} \
     LOCATION_TRACKER_URL="${LOCATION_TRACKER_URL}" \
     DEEPSEEK_API_KEY="${DEEPSEEK_API_KEY}" \
     ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
+    GEMINI_API_KEY="${GEMINI_API_KEY}" \
+    S3_MEME_BUCKET="${S3_MEME_BUCKET}" \
+    GCP_PROJECT_ID="${GCP_PROJECT_ID}" \
+    GCP_LOCATION="${GCP_LOCATION}" \
     bash << 'EOF'
     set -e
 
@@ -276,6 +286,17 @@ ssh -o StrictHostKeyChecking=no -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} \
         DOCKER_CMD="$DOCKER_CMD -e ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}"
     else
         echo "⚠️  No Anthropic API key provided, children's stories will not be generated"
+    fi
+
+    if [ ! -z "$GEMINI_API_KEY" ]; then
+        echo "🎨 Using Vertex AI Imagen for absurdist meme generation"
+        DOCKER_CMD="$DOCKER_CMD -e GEMINI_API_KEY=${GEMINI_API_KEY}"
+        DOCKER_CMD="$DOCKER_CMD -e S3_MEME_BUCKET=${S3_MEME_BUCKET:-error-generator-memes}"
+        DOCKER_CMD="$DOCKER_CMD -e AWS_REGION=${AWS_REGION:-us-east-1}"
+        DOCKER_CMD="$DOCKER_CMD -e GCP_PROJECT_ID=${GCP_PROJECT_ID:-notspies}"
+        DOCKER_CMD="$DOCKER_CMD -e GCP_LOCATION=${GCP_LOCATION:-us-central1}"
+    else
+        echo "⚠️  No Gemini API key provided, memes will not be generated"
     fi
 
     DOCKER_CMD="$DOCKER_CMD 310829530225.dkr.ecr.us-east-1.amazonaws.com/error-generator:latest"

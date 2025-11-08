@@ -131,7 +131,11 @@ func fetchDailyBook(date string, rng *rand.Rand) (*Book, error) {
 	}
 
 	// Pick a search term based on the date
-	termIndex := int(hashDateToSeed(date) % int64(len(searchTerms)))
+	seed := hashDateToSeed(date)
+	if seed < 0 {
+		seed = -seed
+	}
+	termIndex := int(seed % int64(len(searchTerms)))
 	searchTerm := searchTerms[termIndex]
 
 	// Make API request
