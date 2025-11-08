@@ -202,8 +202,9 @@ type ErrorLogRequest struct {
 }
 
 type SloganResponse struct {
-	Emoji  string `json:"emoji"`
-	Slogan string `json:"slogan"`
+	Emoji       string `json:"emoji"`
+	Slogan      string `json:"slogan"`
+	VerboseDesc string `json:"verbose_desc"`
 }
 
 // AnthropicRequest represents the request structure for Anthropic's Messages API
@@ -251,6 +252,22 @@ type BusinessesResponse struct {
 type KeywordsResponse struct {
 	Keywords []string `json:"keywords"`
 	Note     string   `json:"note"`
+}
+
+// LastInteractionContext represents the seed event from the last user interaction
+// This influences all subsequent content generation for fractal continuity
+type LastInteractionContext struct {
+	HasContext      bool      `json:"has_context"`
+	InteractionType string    `json:"interaction_type"` // "location_share", "user_note", "tip_submission"
+	Timestamp       time.Time `json:"timestamp"`
+	Keywords        []string  `json:"keywords"`
+	LocationName    string    `json:"location_name"`
+	Latitude        float64   `json:"latitude"`
+	Longitude       float64   `json:"longitude"`
+	BusinessNames   []string  `json:"business_names"`
+	RawContent      string    `json:"raw_content"`
+	SourceID        string    `json:"source_id"`
+	Message         string    `json:"message,omitempty"` // If no context available
 }
 
 // RhythmTrigger represents a rhythm-driven error trigger from the rhythm service
@@ -302,6 +319,26 @@ var businessErrorTemplates = []string{
 	"StockLevelDesync: %s warehouse claiming negative inventory",
 	"BusinessHoursParsingError: %s schedule API returned malformed data",
 	"TaxCalculationBreach: %s payment system vs. local regulations conflict",
+	"OrganizationalDataBreach: %s member directory leaked to public CDN",
+	"FundraisingGoalMismatch: %s donation portal vs. %s accounting system discrepancy",
+	"VolunteerScheduleCorruption: %s event calendar double-booked all shifts",
+	"PermitComplianceFailure: %s inspection report rejected by municipal database",
+	"NonProfitTaxFilingError: %s 501(c)(3) status verification timeout",
+	"BoardMeetingNotificationFailure: %s email server vs. %s SMS gateway conflict",
+	"GrantApplicationDeadlock: %s proposal management system hung on attachment upload",
+	"MembershipRenewalLoopback: %s subscription processor stuck in infinite retry",
+	"CommunityOutreachAnalyticsCorruption: %s engagement metrics contradicting %s survey results",
+	"GovernanceVotingSystemHalt: %s ballot counter vs. %s audit log mismatch",
+	"PropertyAssessmentInconsistency: %s tax valuation vs. %s market data divergence",
+	"EducationalProgramEnrollmentOverflow: %s registration capacity exceeded by 247%%",
+	"HealthAndSafetyProtocolViolation: %s inspection checklist vs. %s compliance database conflict",
+	"ZoningRegulationParsingError: %s land use API returned malformed ordinance",
+	"CulturalEventTicketingCascade: %s box office vs. %s seating chart deadlock",
+	"PublicRecordsRequestTimeout: %s document retrieval system unresponsive for %s inquiry",
+	"InterfaithCoordinationFailure: %s calendar sync vs. %s facility booking collision",
+	"NeighborhoodAssociationDuesDesync: %s payment ledger missing %s homeowner records",
+	"HistoricalPreservationComplianceError: %s renovation permits vs. %s landmark registry mismatch",
+	"EmergencyResponseDispatchConflict: %s CAD system vs. %s resource allocation algorithm",
 }
 
 // Chaotic error messages - multi-layered, cascading failures (for bridge sections)
@@ -394,7 +431,17 @@ func newGifCache(apiKey string) *GifCache {
 }
 
 // extractGifKeywords extracts meaningful keywords from error messages for GIF searches
-func extractGifKeywords(errorMessage string) string {
+// If seedKeywords are provided from last user interaction, they take priority
+func extractGifKeywords(errorMessage string, seedKeywords []string) string {
+	// Priority 1: Use seed keywords from last interaction if available
+	if len(seedKeywords) > 0 {
+		// Randomly select one of the seed keywords for variety
+		selectedKeyword := seedKeywords[rand.Intn(len(seedKeywords))]
+		log.Printf("🧠 Using seed keyword for GIF search: '%s' (from last interaction)", selectedKeyword)
+		return selectedKeyword
+	}
+
+	// Priority 2: Extract from error message
 	// Convert to lowercase for processing
 	msg := strings.ToLower(errorMessage)
 
@@ -448,11 +495,17 @@ func extractGifKeywords(errorMessage string) string {
 		{regexp.MustCompile(`zombie|undead`), "zombie"},
 	}
 
-	// Check for interesting patterns
+	// Check for interesting patterns - collect ALL matches, then randomly select one
+	var matchedKeywords []string
 	for _, p := range interestingPatterns {
 		if p.pattern.MatchString(msg) {
-			return p.keyword
+			matchedKeywords = append(matchedKeywords, p.keyword)
 		}
+	}
+
+	// If we found matches, randomly select one for variety
+	if len(matchedKeywords) > 0 {
+		return matchedKeywords[rand.Intn(len(matchedKeywords))]
 	}
 
 	// Fallback: extract the error type or a key word
@@ -468,16 +521,26 @@ func extractGifKeywords(errorMessage string) string {
 			})
 			if len(words) > 0 {
 				lastWord := words[len(words)-1]
-				// Make it more interesting
+				// Make it more interesting - add variety with variations
 				if len(lastWord) > 3 {
-					return lastWord + " fail"
+					variations := []string{
+						lastWord + " fail",
+						lastWord + " error",
+						lastWord + " problem",
+						"unexpected " + lastWord,
+					}
+					return variations[rand.Intn(len(variations))]
 				}
 			}
 		}
 	}
 
-	// Final fallback: use generic fun terms
-	fallbackTerms := []string{"computer error", "software fail", "tech problems", "system crash", "digital chaos"}
+	// Final fallback: use generic fun terms with more variety
+	fallbackTerms := []string{
+		"computer error", "software fail", "tech problems", "system crash", "digital chaos",
+		"bug hunt", "code disaster", "malfunction", "technical difficulties", "error 404",
+		"stack overflow", "runtime panic", "syntax error", "compile fail", "broken code",
+	}
 	return fallbackTerms[rand.Intn(len(fallbackTerms))]
 }
 
@@ -506,9 +569,13 @@ func (gifCache *GifCache) loadGifsFromGiphy(searchTerm string) error {
 	// Store the search term for tracking
 	gifCache.lastSearchTerm = searchTerm
 
-	// URL-encode the search term
-	apiURL := fmt.Sprintf("https://api.giphy.com/v1/gifs/search?api_key=%s&q=%s&limit=25&rating=g",
-		gifCache.giphyAPIKey, url.QueryEscape(searchTerm))
+	// Add random offset (0-50) to introduce variety in GIF selection
+	// This prevents getting the same GIFs every time for the same search term
+	randomOffset := rand.Intn(51)
+
+	// URL-encode the search term with random offset for variety
+	apiURL := fmt.Sprintf("https://api.giphy.com/v1/gifs/search?api_key=%s&q=%s&limit=25&offset=%d&rating=g",
+		gifCache.giphyAPIKey, url.QueryEscape(searchTerm), randomOffset)
 
 	httpResponse, err := http.Get(apiURL)
 	if err != nil {
@@ -549,7 +616,7 @@ func (gifCache *GifCache) getNextGif(errorMessage string) string {
 	defer gifCache.mu.Unlock()
 
 	// Extract keywords from error message for dynamic GIF search
-	searchTerm := extractGifKeywords(errorMessage)
+	searchTerm := extractGifKeywords(errorMessage, []string{})
 
 	// If we need to refresh or the search term changed, load new GIFs
 	needsRefresh := gifCache.refreshNeeded || len(gifCache.gifURLs) == 0 || searchTerm != gifCache.lastSearchTerm
@@ -580,6 +647,46 @@ func (gifCache *GifCache) getNextGif(errorMessage string) string {
 	return gif
 }
 
+// getMultipleGifs returns up to 8 GIFs for an error, using keywords from user notes, tips, or error message
+func (gifCache *GifCache) getMultipleGifs(errorMessage string, userNotes string, tips []string) []string {
+	gifCache.mu.Lock()
+	defer gifCache.mu.Unlock()
+
+	// Priority: user notes > tips > error message
+	searchTerm := ""
+	if userNotes != "" {
+		searchTerm = extractGifKeywords(userNotes, []string{})
+	} else if len(tips) > 0 {
+		// Combine all tips for keyword extraction
+		combinedTips := strings.Join(tips, " ")
+		searchTerm = extractGifKeywords(combinedTips, []string{})
+	} else {
+		searchTerm = extractGifKeywords(errorMessage, []string{})
+	}
+
+	// Load GIFs with search term
+	if err := gifCache.loadGifsFromGiphy(searchTerm); err != nil {
+		log.Printf("Error loading multiple GIFs: %v", err)
+		// Return fallback GIFs
+		return []string{
+			"https://giphy.com/gifs/error-fallback-1",
+			"https://giphy.com/gifs/error-fallback-2",
+		}
+	}
+
+	// Return up to 8 GIFs
+	maxGifs := 8
+	if len(gifCache.gifURLs) < maxGifs {
+		maxGifs = len(gifCache.gifURLs)
+	}
+
+	if maxGifs == 0 {
+		return []string{"https://giphy.com/gifs/error-fallback"}
+	}
+
+	return gifCache.gifURLs[:maxGifs]
+}
+
 type FoodImage struct {
 	URL         string
 	Attribution string // Photographer name + link
@@ -604,7 +711,17 @@ func newFoodImageCache(apiKey string) *FoodImageCache {
 }
 
 // extractFoodKeywords extracts food-related keywords from error messages
-func extractFoodKeywords(errorMessage string) string {
+// If seedKeywords are provided from last user interaction, they take priority
+func extractFoodKeywords(errorMessage string, seedKeywords []string) string {
+	// Priority 1: Use seed keywords from last interaction if available
+	if len(seedKeywords) > 0 {
+		// Randomly select one of the seed keywords for variety
+		selectedKeyword := seedKeywords[rand.Intn(len(seedKeywords))]
+		log.Printf("🧠 Using seed keyword for food image search: '%s' (from last interaction)", selectedKeyword)
+		return selectedKeyword
+	}
+
+	// Priority 2: Extract from error message
 	msg := strings.ToLower(errorMessage)
 
 	// Map error concepts to food items for comedic effect
@@ -662,18 +779,27 @@ func extractFoodKeywords(errorMessage string) string {
 		{regexp.MustCompile(`delivery|shipping`), "food delivery"},
 	}
 
-	// Check for food patterns
+	// Check for food patterns - collect ALL matches, then randomly select one for variety
+	var matchedFoods []string
 	for _, p := range foodPatterns {
 		if p.pattern.MatchString(msg) {
-			return p.food
+			matchedFoods = append(matchedFoods, p.food)
 		}
 	}
 
-	// Fallback: use generic food blog terms
+	// If we found matches, randomly select one for variety
+	if len(matchedFoods) > 0 {
+		return matchedFoods[rand.Intn(len(matchedFoods))]
+	}
+
+	// Fallback: use generic food blog terms with more variety
 	fallbackFoods := []string{
 		"artisan bread", "farm to table", "rustic cooking", "comfort food",
 		"homemade pasta", "fresh ingredients", "seasonal vegetables",
-		"gourmet burger", "craft coffee", "organic salad",
+		"gourmet burger", "craft coffee", "organic salad", "sourdough",
+		"charcuterie", "truffle fries", "ramen bowl", "tapas",
+		"dim sum", "flatbread pizza", "fresh herbs", "grilled vegetables",
+		"seafood platter", "cheese board", "mediterranean food", "street food",
 	}
 	return fallbackFoods[rand.Intn(len(fallbackFoods))]
 }
@@ -700,10 +826,14 @@ func (cache *FoodImageCache) loadFoodImagesFromPexels(searchTerm string) error {
 
 	cache.lastSearchTerm = searchTerm
 
-	// Pexels API endpoint - landscape orientation for blog-style images
+	// Add random page number (1-10) to introduce variety in food image selection
+	// This prevents getting the same images every time for the same search term
+	randomPage := rand.Intn(10) + 1
+
+	// Pexels API endpoint - landscape orientation for blog-style images with pagination for variety
 	// URL-encode the search term to handle special characters and spaces
-	apiURL := fmt.Sprintf("https://api.pexels.com/v1/search?query=%s&per_page=20&orientation=landscape",
-		url.QueryEscape(searchTerm))
+	apiURL := fmt.Sprintf("https://api.pexels.com/v1/search?query=%s&per_page=20&page=%d&orientation=landscape",
+		url.QueryEscape(searchTerm), randomPage)
 
 	httpRequest, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {
@@ -750,7 +880,7 @@ func (cache *FoodImageCache) getNextFoodImage(errorMessage string) FoodImage {
 	defer cache.mu.Unlock()
 
 	// Extract food keywords from error message
-	searchTerm := extractFoodKeywords(errorMessage)
+	searchTerm := extractFoodKeywords(errorMessage, []string{})
 
 	// If we need to refresh or the search term changed, load new images
 	needsRefresh := cache.refreshNeeded || len(cache.foodImages) == 0 || searchTerm != cache.lastSearchTerm
@@ -947,10 +1077,27 @@ func (spotifyCache *SpotifyCache) loadSongsFromSpotify() error {
 
 	log.Printf("Loaded %d tracks from 'Silver Screen Static' playlist", len(spotifyCache.songs))
 
-	// If we got no valid tracks, use fallback playlist
+	// If we got no valid tracks, use fallback playlist with cult classics + originals
 	if len(spotifyCache.songs) == 0 {
-		log.Printf("⚠️  No valid tracks found, using fallback playlist")
+		log.Printf("⚠️  No valid tracks found, using cult classic soundtracks + originals")
 		spotifyCache.songs = []Song{
+			// Cult Classic Movie Soundtracks
+			{Title: "Mad World", Artist: "Gary Jules", URL: "https://open.spotify.com/track/3JOVTQ5h8HGFnDdp4VT3MP"}, // Donnie Darko
+			{Title: "Where Is My Mind?", Artist: "Pixies", URL: "https://open.spotify.com/track/5EWPGh7jbTNO2wakv8LjUI"}, // Fight Club
+			{Title: "Time Warp", Artist: "The Rocky Horror Picture Show Cast", URL: "https://open.spotify.com/track/3cFfpNVT9ckZwlRqPbYdV7"}, // Rocky Horror
+			{Title: "Stuck in the Middle with You", Artist: "Stealers Wheel", URL: "https://open.spotify.com/track/3jjujdWJ72nww5eGnfs2E7"}, // Reservoir Dogs
+			{Title: "Blue Velvet", Artist: "Bobby Vinton", URL: "https://open.spotify.com/track/7iauBW0ht4Y1IXOMuCjPNt"}, // Blue Velvet
+			{Title: "In Dreams", Artist: "Roy Orbison", URL: "https://open.spotify.com/track/7cmFJHPzGIiLfdPNXCxV0X"}, // Blue Velvet
+			{Title: "Hip to Be Square", Artist: "Huey Lewis & The News", URL: "https://open.spotify.com/track/5um68I6kOmPuFDfiVKcfcB"}, // American Psycho
+			{Title: "The End", Artist: "The Doors", URL: "https://open.spotify.com/track/0lQkjangqJ570VcTZPJPyB"}, // Apocalypse Now
+			{Title: "Girl, You'll Be a Woman Soon", Artist: "Urge Overkill", URL: "https://open.spotify.com/track/5i6HZqNLFMDBSdapfAqfib"}, // Pulp Fiction
+			{Title: "Misirlou", Artist: "Dick Dale & His Del-Tones", URL: "https://open.spotify.com/track/5VQB86qIhGgApIl1FXy2RC"}, // Pulp Fiction
+			{Title: "Tequila", Artist: "The Champs", URL: "https://open.spotify.com/track/5x8L2wNJcIV2kNwz0B1Uzk"}, // Pee-wee's Big Adventure
+			{Title: "Bohemian Rhapsody", Artist: "Queen", URL: "https://open.spotify.com/track/4u7EnebtmKWzUH433cf5Qv"}, // Wayne's World
+			{Title: "Don't You (Forget About Me)", Artist: "Simple Minds", URL: "https://open.spotify.com/track/4D7BCuvgdJCeGHEfx9g1B6"}, // The Breakfast Club
+			{Title: "Lust for Life", Artist: "Iggy Pop", URL: "https://open.spotify.com/track/78lgmZwycJ3nzsdgmPPGNx"}, // Trainspotting
+			{Title: "Born Slippy .NUXX", Artist: "Underworld", URL: "https://open.spotify.com/track/4f4VV6yRUt9EqJlDdU26Gg"}, // Trainspotting
+			// Original Fallback Songs
 			{Title: "Slow Burn", Artist: "Mountain Man", URL: "https://open.spotify.com/track/7wxpR27OE3OlkTWVjTlLIR"},
 			{Title: "Burning Down the House", Artist: "Talking Heads", URL: "https://open.spotify.com/track/2VNfJpwdEQBLyXajaa6LWT"},
 			{Title: "Hello Operator", Artist: "The White Stripes", URL: "https://open.spotify.com/track/7zPxIh1c3kJaNwmjdZ3GQX"},
@@ -971,9 +1118,24 @@ func (spotifyCache *SpotifyCache) getNextSong() Song {
 	// Refresh song pool every hour or if needed
 	if spotifyCache.refreshNeeded || len(spotifyCache.songs) == 0 || time.Since(spotifyCache.lastRefresh) > time.Hour {
 		if err := spotifyCache.loadSongsFromSpotify(); err != nil {
-			log.Printf("⚠️  Error loading songs: %v, using fallback playlist", err)
-			// Use fallback playlist on error
+			log.Printf("⚠️  Error loading songs: %v, using cult classic soundtracks + originals", err)
+			// Use cult classic soundtracks + originals on error
 			spotifyCache.songs = []Song{
+				{Title: "Mad World", Artist: "Gary Jules", URL: "https://open.spotify.com/track/3JOVTQ5h8HGFnDdp4VT3MP"}, // Donnie Darko
+				{Title: "Where Is My Mind?", Artist: "Pixies", URL: "https://open.spotify.com/track/5EWPGh7jbTNO2wakv8LjUI"}, // Fight Club
+				{Title: "Time Warp", Artist: "The Rocky Horror Picture Show Cast", URL: "https://open.spotify.com/track/3cFfpNVT9ckZwlRqPbYdV7"}, // Rocky Horror
+				{Title: "Stuck in the Middle with You", Artist: "Stealers Wheel", URL: "https://open.spotify.com/track/3jjujdWJ72nww5eGnfs2E7"}, // Reservoir Dogs
+				{Title: "Blue Velvet", Artist: "Bobby Vinton", URL: "https://open.spotify.com/track/7iauBW0ht4Y1IXOMuCjPNt"}, // Blue Velvet
+				{Title: "In Dreams", Artist: "Roy Orbison", URL: "https://open.spotify.com/track/7cmFJHPzGIiLfdPNXCxV0X"}, // Blue Velvet
+				{Title: "Hip to Be Square", Artist: "Huey Lewis & The News", URL: "https://open.spotify.com/track/5um68I6kOmPuFDfiVKcfcB"}, // American Psycho
+				{Title: "The End", Artist: "The Doors", URL: "https://open.spotify.com/track/0lQkjangqJ570VcTZPJPyB"}, // Apocalypse Now
+				{Title: "Girl, You'll Be a Woman Soon", Artist: "Urge Overkill", URL: "https://open.spotify.com/track/5i6HZqNLFMDBSdapfAqfib"}, // Pulp Fiction
+				{Title: "Misirlou", Artist: "Dick Dale & His Del-Tones", URL: "https://open.spotify.com/track/5VQB86qIhGgApIl1FXy2RC"}, // Pulp Fiction
+				{Title: "Tequila", Artist: "The Champs", URL: "https://open.spotify.com/track/5x8L2wNJcIV2kNwz0B1Uzk"}, // Pee-wee's Big Adventure
+				{Title: "Bohemian Rhapsody", Artist: "Queen", URL: "https://open.spotify.com/track/4u7EnebtmKWzUH433cf5Qv"}, // Wayne's World
+				{Title: "Don't You (Forget About Me)", Artist: "Simple Minds", URL: "https://open.spotify.com/track/4D7BCuvgdJCeGHEfx9g1B6"}, // The Breakfast Club
+				{Title: "Lust for Life", Artist: "Iggy Pop", URL: "https://open.spotify.com/track/78lgmZwycJ3nzsdgmPPGNx"}, // Trainspotting
+				{Title: "Born Slippy .NUXX", Artist: "Underworld", URL: "https://open.spotify.com/track/4f4VV6yRUt9EqJlDdU26Gg"}, // Trainspotting
 				{Title: "Slow Burn", Artist: "Mountain Man", URL: "https://open.spotify.com/track/7wxpR27OE3OlkTWVjTlLIR"},
 				{Title: "Burning Down the House", Artist: "Talking Heads", URL: "https://open.spotify.com/track/2VNfJpwdEQBLyXajaa6LWT"},
 				{Title: "Hello Operator", Artist: "The White Stripes", URL: "https://open.spotify.com/track/7zPxIh1c3kJaNwmjdZ3GQX"},
@@ -1079,6 +1241,35 @@ func fetchPendingKeywords(trackerURL string) ([]string, error) {
 	}
 
 	return keywordsResp.Keywords, nil
+}
+
+// fetchLastInteractionContext fetches the seed event context from location tracker
+// This provides the keywords and context that should influence all content generation
+func fetchLastInteractionContext(trackerURL string) (*LastInteractionContext, error) {
+	if trackerURL == "" {
+		return nil, nil
+	}
+
+	resp, err := locationTrackerHTTPClient.Get(trackerURL + "/api/last-interaction-context")
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch last interaction context: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("last-interaction-context endpoint returned status: %d", resp.StatusCode)
+	}
+
+	var context LastInteractionContext
+	if err := json.NewDecoder(resp.Body).Decode(&context); err != nil {
+		return nil, fmt.Errorf("failed to decode context response: %w", err)
+	}
+
+	if !context.HasContext {
+		return nil, nil
+	}
+
+	return &context, nil
 }
 
 func generateBusinessError(businesses []Business) string {
@@ -1245,11 +1436,12 @@ Write the story in a narrative style, not as instructions. Make it fun, clever, 
 	return anthropicResp.Content[0].Text, nil
 }
 
-func sendErrorLogToTracker(trackerURL string, message string, gifURL string, slogan string, songTitle string, songArtist string, songURL string, satiricalFix string, foodImageURL string, foodImageAttr string, childrensStory string) error {
-	errorLog := map[string]string{
+func sendErrorLogToTracker(trackerURL string, message string, gifURLs []string, slogan string, verboseDesc string, songTitle string, songArtist string, songURL string, satiricalFix string, foodImageURL string, foodImageAttr string, childrensStory string) error {
+	errorLog := map[string]interface{}{
 		"message":          message,
-		"gif_url":          gifURL,
+		"gif_urls":         gifURLs, // Now an array of GIF URLs
 		"slogan":           slogan,
+		"verbose_desc":     verboseDesc,
 		"song_title":       songTitle,
 		"song_artist":      songArtist,
 		"song_url":         songURL,
@@ -1318,6 +1510,19 @@ func handleHealthCheck(responseWriter http.ResponseWriter, request *http.Request
 func processRhythmTrigger(trigger RhythmTrigger) {
 	log.Printf("🎼 Processing %s trigger (beat %d)", trigger.ErrorType, trigger.Beat)
 
+	// Fetch last interaction context - the "seed event" that influences all content
+	var seedKeywords []string
+	if globalTrackerURL != "" {
+		context, err := fetchLastInteractionContext(globalTrackerURL)
+		if err != nil {
+			log.Printf("⚠️  Error fetching last interaction context: %v", err)
+		} else if context != nil {
+			seedKeywords = context.Keywords
+			log.Printf("🧠 Fetched seed context from last interaction: type=%s, keywords=%v",
+				context.InteractionType, context.Keywords)
+		}
+	}
+
 	// Fetch pending keywords from location tracker
 	var userKeywords []string
 	if globalTrackerURL != "" {
@@ -1359,14 +1564,34 @@ func processRhythmTrigger(trigger RhythmTrigger) {
 		errorMessage = errorMessages[rand.Intn(len(errorMessages))]
 	}
 
-	// Generate GIF and food image based on error message keywords
-	gifURL := globalGifCache.getNextGif(errorMessage)
+	// Generate multiple GIFs and food image based on SEED KEYWORDS from last interaction
+	// This creates fractal continuity where all content traces back to the last user interaction
+	gifSearchTerm := extractGifKeywords(errorMessage, seedKeywords)
+	foodSearchTerm := extractFoodKeywords(errorMessage, seedKeywords)
+
+	globalGifCache.mu.Lock()
+	globalGifCache.loadGifsFromGiphy(gifSearchTerm)
+	maxGifs := 8
+	if len(globalGifCache.gifURLs) < maxGifs {
+		maxGifs = len(globalGifCache.gifURLs)
+	}
+	gifURLs := make([]string, maxGifs)
+	copy(gifURLs, globalGifCache.gifURLs[:maxGifs])
+	globalGifCache.mu.Unlock()
+
+	globalFoodImageCache.mu.Lock()
+	globalFoodImageCache.loadFoodImagesFromPexels(foodSearchTerm)
+	foodImage := FoodImage{URL: "fallback", Attribution: "fallback"}
+	if len(globalFoodImageCache.foodImages) > 0 {
+		foodImage = globalFoodImageCache.foodImages[0]
+	}
+	globalFoodImageCache.mu.Unlock()
+
 	song := globalSpotifyCache.getNextSong()
-	foodImage := globalFoodImageCache.getNextFoodImage(errorMessage)
 
 	errorLogRequest := ErrorLogRequest{
 		Message:       errorMessage,
-		GifURL:        gifURL,
+		GifURL:        gifURLs[0], // Use first GIF for slogan server compatibility
 		SongTitle:     song.Title,
 		SongArtist:    song.Artist,
 		SongURL:       song.URL,
@@ -1415,9 +1640,9 @@ func processRhythmTrigger(trigger RhythmTrigger) {
 		}
 	}
 
-	// Send to location tracker if configured (includes satirical fix, food image, and children's story)
+	// Send to location tracker if configured (includes satirical fix, food image, children's story, and multiple GIFs)
 	if globalTrackerURL != "" {
-		if err := sendErrorLogToTracker(globalTrackerURL, errorMessage, gifURL, sloganResponse.Slogan, song.Title, song.Artist, song.URL, satiricalFix, foodImage.URL, foodImage.Attribution, childrensStory); err != nil {
+		if err := sendErrorLogToTracker(globalTrackerURL, errorMessage, gifURLs, sloganResponse.Slogan, sloganResponse.VerboseDesc, song.Title, song.Artist, song.URL, satiricalFix, foodImage.URL, foodImage.Attribution, childrensStory); err != nil {
 			log.Printf("Warning: Failed to send to location tracker: %v", err)
 		} else {
 			log.Printf("💾 Sent error log with satirical fix, food image, and children's story to DynamoDB via location tracker")
@@ -1533,6 +1758,21 @@ func main() {
 	defer ticker.Stop()
 
 	generateAndSendError := func() {
+		// Fetch last interaction context - the "seed event" that influences all content
+		var seedKeywords []string
+		var contextBusinessNames []string
+		if locationTrackerURL != "" {
+			context, err := fetchLastInteractionContext(locationTrackerURL)
+			if err != nil {
+				log.Printf("⚠️  Error fetching last interaction context: %v", err)
+			} else if context != nil {
+				seedKeywords = context.Keywords
+				contextBusinessNames = context.BusinessNames
+				log.Printf("🧠 Fetched seed context from last interaction: type=%s, timestamp=%v, keywords=%v, businesses=%v",
+					context.InteractionType, context.Timestamp, context.Keywords, context.BusinessNames)
+			}
+		}
+
 		// Fetch pending keywords from location tracker (for satirical purposes)
 		var userKeywords []string
 		if locationTrackerURL != "" {
@@ -1545,27 +1785,53 @@ func main() {
 			}
 		}
 
-		// Fetch current businesses from location tracker
+		// Fetch current businesses from location tracker and merge with context business names
 		var errorMessage string
 		businesses, err := fetchBusinesses(locationTrackerURL)
 		if err != nil {
 			log.Printf("⚠️  Error fetching businesses: %v", err)
-			errorMessage = errorMessages[rand.Intn(len(errorMessages))]
-		} else if len(businesses) > 0 {
+		}
+
+		// Convert context business names to Business structs and merge
+		for _, name := range contextBusinessNames {
+			businesses = append(businesses, Business{Name: name})
+		}
+
+		if len(businesses) > 0 {
 			errorMessage = generateBusinessError(businesses)
-			log.Printf("🏢 Using %d nearby businesses for error", len(businesses))
+			log.Printf("🏢 Using %d businesses for error (including %d from user context)", len(businesses), len(contextBusinessNames))
 		} else {
 			errorMessage = errorMessages[rand.Intn(len(errorMessages))]
 		}
 
-		// Generate GIF and food image based on error message keywords
-		gifURL := gifCache.getNextGif(errorMessage)
+		// Generate multiple GIFs and food image based on SEED KEYWORDS from last interaction
+		// This creates fractal continuity where all content traces back to the last user interaction
+		gifSearchTerm := extractGifKeywords(errorMessage, seedKeywords)
+		foodSearchTerm := extractFoodKeywords(errorMessage, seedKeywords)
+
+		gifCache.mu.Lock()
+		gifCache.loadGifsFromGiphy(gifSearchTerm)
+		maxGifs := 8
+		if len(gifCache.gifURLs) < maxGifs {
+			maxGifs = len(gifCache.gifURLs)
+		}
+		gifURLs := make([]string, maxGifs)
+		copy(gifURLs, gifCache.gifURLs[:maxGifs])
+		gifCache.mu.Unlock()
+
+		foodImageCache.mu.Lock()
+		foodImageCache.loadFoodImagesFromPexels(foodSearchTerm)
+		foodImage := FoodImage{URL: "fallback", Attribution: "fallback"}
+		if len(foodImageCache.foodImages) > 0 {
+			foodImage = foodImageCache.foodImages[0]
+		}
+		foodImageCache.mu.Unlock()
+
 		song := spotifyCache.getNextSong()
-		foodImage := foodImageCache.getNextFoodImage(errorMessage)
 
 		errorLogRequest := ErrorLogRequest{
 			Message:       errorMessage,
-			GifURL:        gifURL,
+			GifURL:        gifURLs[0], // Use first GIF for slogan server
 			SongTitle:     song.Title,
 			SongArtist:    song.Artist,
 			SongURL:       song.URL,
@@ -1575,7 +1841,7 @@ func main() {
 		}
 
 		log.Printf("Sending error: %s", errorMessage)
-		log.Printf("With GIF: %s", gifURL)
+		log.Printf("With %d GIFs (first: %s)", len(gifURLs), gifURLs[0])
 		log.Printf("With Song: %s by %s", song.Title, song.Artist)
 		log.Printf("With Food Image: %s", foodImage.URL)
 
@@ -1619,7 +1885,7 @@ func main() {
 
 		fmt.Printf("\n=== ERROR LOG ===\n")
 		fmt.Printf("Error: %s\n", errorMessage)
-		fmt.Printf("GIF: %s\n", gifURL)
+		fmt.Printf("GIFs: %d total (first: %s)\n", len(gifURLs), gifURLs[0])
 		fmt.Printf("Song: %s by %s\n", song.Title, song.Artist)
 		fmt.Printf("Song URL: %s\n", song.URL)
 		if len(userKeywords) > 0 {
@@ -1634,9 +1900,9 @@ func main() {
 		}
 		fmt.Printf("================\n\n")
 
-		// Send to location tracker if configured (includes satirical fix, food image, and children's story)
+		// Send to location tracker if configured (includes satirical fix, food image, children's story, and multiple GIFs)
 		if locationTrackerURL != "" {
-			if err := sendErrorLogToTracker(locationTrackerURL, errorMessage, gifURL, sloganResponse.Slogan, song.Title, song.Artist, song.URL, satiricalFix, foodImage.URL, foodImage.Attribution, childrensStory); err != nil {
+			if err := sendErrorLogToTracker(locationTrackerURL, errorMessage, gifURLs, sloganResponse.Slogan, sloganResponse.VerboseDesc, song.Title, song.Artist, song.URL, satiricalFix, foodImage.URL, foodImage.Attribution, childrensStory); err != nil {
 				log.Printf("Warning: Failed to send to location tracker: %v", err)
 			} else {
 				log.Printf("📍 Sent error log with satirical fix, food image, and children's story to location tracker")
