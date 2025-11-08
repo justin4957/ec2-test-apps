@@ -234,12 +234,6 @@ var (
 	// All subsequent generated content (errors, GIFs, songs, etc.) traces back to this seed event
 	lastInteractionContext     *LastInteractionContext
 	lastInteractionContextMutex sync.RWMutex
-
-	// Substack integration for posting error screenshots
-	substackAPIKey      = os.Getenv("SUBSTACK_API_KEY")
-	substackPublicationID = os.Getenv("SUBSTACK_PUBLICATION_ID")
-	pendingSubstackPost   = false
-	substackPostMutex     sync.RWMutex
 )
 
 // LastInteractionContext represents the last user-driven interaction that serves as the "seed event"
@@ -305,7 +299,6 @@ func main() {
 	http.HandleFunc("/api/twilio/sms", handleTwilioWebhook)
 	http.HandleFunc("/api/tips", handleTips)
 	http.HandleFunc("/api/tips/", handleTipByID)
-	http.HandleFunc("/api/substack-screenshot", handleSubstackScreenshot)
 
 	// Start cleanup goroutine (remove locations older than 24h)
 	go cleanupOldLocations()
@@ -1329,12 +1322,6 @@ func handleTwilioWebhook(w http.ResponseWriter, r *http.Request) {
 		messageBody,
 	)
 
-	// Set flag for Substack screenshot of next error
-	substackPostMutex.Lock()
-	pendingSubstackPost = true
-	substackPostMutex.Unlock()
-	log.Printf("📸 Substack screenshot queued for next error log")
-
 	// Respond with TwiML (Twilio expects XML response)
 	w.Header().Set("Content-Type", "application/xml")
 	w.WriteHeader(http.StatusOK)
@@ -1461,12 +1448,6 @@ func handleTips(w http.ResponseWriter, r *http.Request) {
 			[]Business{},
 			moderationResult.ModeratedText,
 		)
-
-		// Set flag for Substack screenshot of next error
-		substackPostMutex.Lock()
-		pendingSubstackPost = true
-		substackPostMutex.Unlock()
-		log.Printf("📸 Substack screenshot queued for next error log")
 
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"status":    "success",
