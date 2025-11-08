@@ -16,6 +16,12 @@ import (
 	"time"
 )
 
+// Global counter for tracking errors without memes
+var (
+	errorCounterMutex sync.Mutex
+	errorCounterNoMeme int = 0
+)
+
 type GiphyResponse struct {
 	Data []struct {
 		URL    string `json:"url"`    // Webpage URL (not used)
@@ -199,6 +205,7 @@ type ErrorLogRequest struct {
 	FoodImageURL   string   `json:"food_image_url,omitempty"`
 	FoodImageAttr  string   `json:"food_image_attr,omitempty"` // Attribution for photographer
 	ChildrensStory string   `json:"childrens_story,omitempty"`
+	MemeURL        string   `json:"meme_url,omitempty"` // AI-generated absurdist meme
 }
 
 type SloganResponse struct {
@@ -252,6 +259,30 @@ type BusinessesResponse struct {
 type KeywordsResponse struct {
 	Keywords []string `json:"keywords"`
 	Note     string   `json:"note"`
+}
+
+type CommercialPropertyDetails struct {
+	Address         string                 `json:"address"`
+	PropertyType    string                 `json:"property_type"`
+	Status          string                 `json:"status"`
+	SquareFootage   string                 `json:"square_footage,omitempty"`
+	PriceInfo       string                 `json:"price_info,omitempty"`
+	CurrentBusiness string                 `json:"current_business,omitempty"`
+	BusinessType    string                 `json:"business_type,omitempty"`
+	Description     string                 `json:"description,omitempty"`
+	ContactInfo     map[string]interface{} `json:"contact_info,omitempty"`
+}
+
+type GoverningBody struct {
+	Name         string `json:"name"`
+	Type         string `json:"type"`
+	Jurisdiction string `json:"jurisdiction,omitempty"`
+	Contact      string `json:"contact,omitempty"`
+}
+
+type CommercialContextResponse struct {
+	Properties      []CommercialPropertyDetails `json:"properties"`
+	GoverningBodies []GoverningBody             `json:"governing_bodies"`
 }
 
 // LastInteractionContext represents the seed event from the last user interaction
@@ -1220,6 +1251,29 @@ func fetchBusinesses(trackerURL string) ([]Business, error) {
 	return businessesResp.Businesses, nil
 }
 
+func fetchCommercialContext(trackerURL string) (*CommercialContextResponse, error) {
+	if trackerURL == "" {
+		return &CommercialContextResponse{}, nil
+	}
+
+	resp, err := locationTrackerHTTPClient.Get(trackerURL + "/api/commercial-context")
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch commercial context: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("commercial context endpoint returned status: %d", resp.StatusCode)
+	}
+
+	var contextResp CommercialContextResponse
+	if err := json.NewDecoder(resp.Body).Decode(&contextResp); err != nil {
+		return nil, fmt.Errorf("failed to decode commercial context response: %w", err)
+	}
+
+	return &contextResp, nil
+}
+
 func fetchPendingKeywords(trackerURL string) ([]string, error) {
 	if trackerURL == "" {
 		return []string{}, nil
@@ -1363,33 +1417,79 @@ func generateSatiricalFix(fixGenURL string, errorMessage string, slogan string, 
 	return fixResponse.Fix, nil
 }
 
-// generateChildrensStory generates a satirical investigative comedy children's story using Anthropic API
-func generateChildrensStory(anthropicAPIKey string, errorMessage string, slogan string, songTitle string, songArtist string, foodImageAttr string) (string, error) {
+// generateChildrensStory generates an interactive satirical investigative fiction for young adults using Anthropic API
+func generateChildrensStory(anthropicAPIKey string, errorMessage string, slogan string, songTitle string, songArtist string, foodImageAttr string, gifURLs []string, commercialContext *CommercialContextResponse) (string, error) {
 	if anthropicAPIKey == "" {
 		return "", fmt.Errorf("Anthropic API key not configured")
 	}
 
-	// Create the prompt for the children's story
-	prompt := fmt.Sprintf(`You are a creative writer crafting brief satirical investigative comedy stories for children (ages 8-12).
+	// Build context about commercial properties and governing bodies with actual URLs
+	propertiesContext := ""
+	if commercialContext != nil && len(commercialContext.Properties) > 0 {
+		propertiesContext = fmt.Sprintf("\nAvailable Commercial Spaces: %d properties found\n", len(commercialContext.Properties))
+		for i, prop := range commercialContext.Properties[:min(3, len(commercialContext.Properties))] {
+			website := "No website"
+			phone := "No phone"
+			if prop.ContactInfo != nil {
+				if w, ok := prop.ContactInfo["website"].(string); ok && w != "" {
+					website = w
+				}
+				if p, ok := prop.ContactInfo["phone"].(string); ok && p != "" {
+					phone = p
+				}
+			}
+			propertiesContext += fmt.Sprintf("  %d. %s - %s (%s, %s) - Website: %s, Phone: %s\n",
+				i+1, prop.Address, prop.PropertyType, prop.Status, prop.SquareFootage, website, phone)
+		}
+	}
 
-Based on this software error and its context, write a SHORT (max 200 words) investigative comedy story for children that:
-- Features child detective characters uncovering the "mystery" behind the error
-- Incorporates all the given elements in a playful, sardonic way
-- Uses simple language but maintains clever wordplay
-- Has a humorous twist ending
-- Feels like Encyclopedia Brown meets Douglas Adams
+	governingBodiesContext := ""
+	if commercialContext != nil && len(commercialContext.GoverningBodies) > 0 {
+		governingBodiesContext = fmt.Sprintf("\nLocal Governing Authorities: %d found\n", len(commercialContext.GoverningBodies))
+		for i, body := range commercialContext.GoverningBodies[:min(3, len(commercialContext.GoverningBodies))] {
+			governingBodiesContext += fmt.Sprintf("  %d. %s (%s) - %s - Contact: %s\n",
+				i+1, body.Name, body.Type, body.Jurisdiction, body.Contact)
+		}
+	}
 
-Error: %s
-Motivational Slogan: %s
-Background Music: "%s" by %s
-Food Scene: %s
+	// Create the prompt for interactive fiction
+	prompt := fmt.Sprintf(`You are a creative writer crafting INTERACTIVE FICTION for young adults (ages 16-25).
 
-Write the story in a narrative style, not as instructions. Make it fun, clever, and age-appropriate while being gently sardonic about the absurdity of software errors.`, errorMessage, slogan, songTitle, songArtist, foodImageAttr)
+Write a SHORT (max 250 words) investigative mystery story in HTML format that:
+- Features young adult characters investigating the software error
+- Use VARIED and DIVERSE character names (avoid common names like Maya, Alex, Sam) - be creative with culturally diverse names from different backgrounds (e.g., Zainab, Hiroshi, Thiago, Svetlana, Kofi, Priya, etc.)
+- Make each story feature different character names - never repeat the same names across stories
+- Makes collapsible <details> elements INLINE with the narrative text flow naturally
+- Use keywords that are part of the sentence as the <summary>, e.g.: "The <details><summary>mysterious warehouse</summary>turned out to be a data center disguised as a furniture store</details>"
+- Reference governing authorities and commercial properties with ACTUAL external links when mentioned
+- Use sardonic, clever tone - think Pynchon meets Douglas Adams
+- DO NOT include any images or GIFs
+- After the story, add a "References" section with:
+  * All governing bodies mentioned (with actual contact URLs if available)
+  * All commercial properties mentioned (with actual website URLs if available)
+
+Error Context: %s
+Slogan: %s
+Soundtrack: "%s" by %s
+Food Scene: %s%s%s
+
+Format example:
+<div class="interactive-story">
+<p>Kenji traced the error log to the <details><summary>City Planning Commission</summary>where bureaucrats were using quantum computers to process zoning requests</details>. The trail led to <a href="ACTUAL_WEBSITE_URL" target="_blank">123 Main Street</a>...</p>
+
+<h4>References</h4>
+<ul>
+<li><strong>Governing Bodies:</strong> <a href="CONTACT_URL" target="_blank">City Planning Commission</a></li>
+<li><strong>Commercial Properties:</strong> <a href="WEBSITE_URL" target="_blank">123 Main Street - Retail Space</a></li>
+</ul>
+</div>
+
+Return ONLY valid HTML (no markdown code fences). Make collapsible details flow naturally inline with the text.`, errorMessage, slogan, songTitle, songArtist, foodImageAttr, propertiesContext, governingBodiesContext)
 
 	// Create Anthropic API request
 	reqBody := AnthropicRequest{
 		Model:     "claude-sonnet-4-5-20250929",
-		MaxTokens: 500,
+		MaxTokens: 800,
 		Messages: []AnthropicMessage{
 			{
 				Role:    "user",
@@ -1436,7 +1536,7 @@ Write the story in a narrative style, not as instructions. Make it fun, clever, 
 	return anthropicResp.Content[0].Text, nil
 }
 
-func sendErrorLogToTracker(trackerURL string, message string, gifURLs []string, slogan string, verboseDesc string, songTitle string, songArtist string, songURL string, satiricalFix string, foodImageURL string, foodImageAttr string, childrensStory string) error {
+func sendErrorLogToTracker(trackerURL string, message string, gifURLs []string, slogan string, verboseDesc string, songTitle string, songArtist string, songURL string, satiricalFix string, foodImageURL string, foodImageAttr string, childrensStory string, memeURL string) error {
 	errorLog := map[string]interface{}{
 		"message":          message,
 		"gif_urls":         gifURLs, // Now an array of GIF URLs
@@ -1449,6 +1549,7 @@ func sendErrorLogToTracker(trackerURL string, message string, gifURLs []string, 
 		"food_image_url":   foodImageURL,
 		"food_image_attr":  foodImageAttr,
 		"childrens_story":  childrensStory,
+		"meme_url":         memeURL,
 	}
 
 	requestBody, err := json.Marshal(errorLog)
@@ -1625,24 +1726,69 @@ func processRhythmTrigger(trigger RhythmTrigger) {
 		}
 	}
 
+	// Fetch commercial context for interactive fiction
+	var commercialContext *CommercialContextResponse
+	if globalTrackerURL != "" {
+		ctx, err := fetchCommercialContext(globalTrackerURL)
+		if err != nil {
+			log.Printf("⚠️  Error fetching commercial context: %v", err)
+		} else {
+			commercialContext = ctx
+			log.Printf("🏢 Fetched %d properties and %d governing bodies for story context",
+				len(ctx.Properties), len(ctx.GoverningBodies))
+		}
+	}
+
 	// Generate children's story if Anthropic API key is configured
 	var childrensStory string
 	if globalAnthropicKey != "" {
-		story, err := generateChildrensStory(globalAnthropicKey, errorMessage, sloganResponse.Slogan, song.Title, song.Artist, foodImage.Attribution)
+		story, err := generateChildrensStory(globalAnthropicKey, errorMessage, sloganResponse.Slogan, song.Title, song.Artist, foodImage.Attribution, gifURLs, commercialContext)
 		if err != nil {
 			log.Printf("Warning: Failed to generate children's story: %v", err)
 		} else {
 			childrensStory = story
-			log.Printf("📚 CHILDREN'S STORY GENERATED:")
+			log.Printf("📚 INTERACTIVE FICTION GENERATED:")
 			log.Printf("─────────────────────────────────────────────────────────")
 			log.Printf("%s", story)
 			log.Printf("─────────────────────────────────────────────────────────")
 		}
 	}
 
-	// Send to location tracker if configured (includes satirical fix, food image, children's story, and multiple GIFs)
+	// Generate absurdist meme conditionally:
+	// 1. Always generate for errors with tips/SMS (when we add that functionality)
+	// 2. Generate every 8th error without a meme to maintain some meme generation
+	var memeURL string
+	shouldGenerateMeme := false
+
+	// Check if we should generate a meme
+	errorCounterMutex.Lock()
+	errorCounterNoMeme++
+	if errorCounterNoMeme >= 8 {
+		shouldGenerateMeme = true
+		errorCounterNoMeme = 0
+		log.Printf("🎲 Generating meme for 8th error without meme")
+	}
+	errorCounterMutex.Unlock()
+
+	// Generate meme if conditions are met
+	if shouldGenerateMeme && os.Getenv("GEMINI_API_KEY") != "" && os.Getenv("GEMINI_API_KEY") != "YOUR_GEMINI_API_KEY_HERE" {
+		meme, err := GenerateMemeForError(errorMessage, sloganResponse.Slogan, sloganResponse.VerboseDesc, childrensStory)
+		if err != nil {
+			log.Printf("Warning: Failed to generate meme: %v", err)
+		} else if meme != "" {
+			memeURL = meme
+			log.Printf("🎨 ABSURDIST MEME GENERATED:")
+			log.Printf("─────────────────────────────────────────────────────────")
+			log.Printf("Meme URL: %s", meme)
+			log.Printf("─────────────────────────────────────────────────────────")
+		}
+	} else if !shouldGenerateMeme {
+		log.Printf("⏭️  Skipping meme generation (counter: %d/8)", errorCounterNoMeme)
+	}
+
+	// Send to location tracker if configured (includes satirical fix, food image, children's story, meme, and multiple GIFs)
 	if globalTrackerURL != "" {
-		if err := sendErrorLogToTracker(globalTrackerURL, errorMessage, gifURLs, sloganResponse.Slogan, sloganResponse.VerboseDesc, song.Title, song.Artist, song.URL, satiricalFix, foodImage.URL, foodImage.Attribution, childrensStory); err != nil {
+		if err := sendErrorLogToTracker(globalTrackerURL, errorMessage, gifURLs, sloganResponse.Slogan, sloganResponse.VerboseDesc, song.Title, song.Artist, song.URL, satiricalFix, foodImage.URL, foodImage.Attribution, childrensStory, memeURL); err != nil {
 			log.Printf("Warning: Failed to send to location tracker: %v", err)
 		} else {
 			log.Printf("💾 Sent error log with satirical fix, food image, and children's story to DynamoDB via location tracker")
@@ -1868,21 +2014,66 @@ func main() {
 			}
 		}
 
+		// Fetch commercial context for interactive fiction
+		var commercialContext *CommercialContextResponse
+		if locationTrackerURL != "" {
+			ctx, err := fetchCommercialContext(locationTrackerURL)
+			if err != nil {
+				log.Printf("⚠️  Error fetching commercial context: %v", err)
+			} else {
+				commercialContext = ctx
+				log.Printf("🏢 Fetched %d properties and %d governing bodies for story context",
+					len(ctx.Properties), len(ctx.GoverningBodies))
+			}
+		}
+
 		// Generate children's story if Anthropic API key is configured
 		var childrensStory string
 		if anthropicAPIKey != "" {
-			story, err := generateChildrensStory(anthropicAPIKey, errorMessage, sloganResponse.Slogan, song.Title, song.Artist, foodImage.Attribution)
+			story, err := generateChildrensStory(anthropicAPIKey, errorMessage, sloganResponse.Slogan, song.Title, song.Artist, foodImage.Attribution, gifURLs, commercialContext)
 			if err != nil {
 				log.Printf("Warning: Failed to generate children's story: %v", err)
 			} else {
 				childrensStory = story
-				log.Printf("📚 CHILDREN'S STORY GENERATED:")
+				log.Printf("📚 INTERACTIVE FICTION GENERATED:")
 				log.Printf("─────────────────────────────────────────────────────────")
 				log.Printf("%s", story)
 				log.Printf("─────────────────────────────────────────────────────────")
 			}
 		}
 
+
+	// Generate absurdist meme conditionally:
+	// 1. Always generate for errors with tips/SMS (when we add that functionality)
+	// 2. Generate every 8th error without a meme to maintain some meme generation
+	var memeURL string
+	shouldGenerateMeme := false
+
+	// Check if we should generate a meme
+	errorCounterMutex.Lock()
+	errorCounterNoMeme++
+	if errorCounterNoMeme >= 8 {
+		shouldGenerateMeme = true
+		errorCounterNoMeme = 0
+		log.Printf("🎲 Generating meme for 8th error without meme")
+	}
+	errorCounterMutex.Unlock()
+
+	// Generate meme if conditions are met
+	if shouldGenerateMeme && os.Getenv("GEMINI_API_KEY") != "" && os.Getenv("GEMINI_API_KEY") != "YOUR_GEMINI_API_KEY_HERE" {
+		meme, err := GenerateMemeForError(errorMessage, sloganResponse.Slogan, sloganResponse.VerboseDesc, childrensStory)
+		if err != nil {
+			log.Printf("Warning: Failed to generate meme: %v", err)
+		} else if meme != "" {
+			memeURL = meme
+			log.Printf("🎨 ABSURDIST MEME GENERATED:")
+			log.Printf("─────────────────────────────────────────────────────────")
+			log.Printf("Meme URL: %s", meme)
+			log.Printf("─────────────────────────────────────────────────────────")
+		}
+	} else if !shouldGenerateMeme {
+		log.Printf("⏭️  Skipping meme generation (counter: %d/8)", errorCounterNoMeme)
+	}
 		fmt.Printf("\n=== ERROR LOG ===\n")
 		fmt.Printf("Error: %s\n", errorMessage)
 		fmt.Printf("GIFs: %d total (first: %s)\n", len(gifURLs), gifURLs[0])
@@ -1898,14 +2089,17 @@ func main() {
 		if childrensStory != "" {
 			fmt.Printf("Children's Story: Generated\n")
 		}
+		if memeURL != "" {
+			fmt.Printf("Absurdist Meme: %s\n", memeURL)
+		}
 		fmt.Printf("================\n\n")
 
 		// Send to location tracker if configured (includes satirical fix, food image, children's story, and multiple GIFs)
 		if locationTrackerURL != "" {
-			if err := sendErrorLogToTracker(locationTrackerURL, errorMessage, gifURLs, sloganResponse.Slogan, sloganResponse.VerboseDesc, song.Title, song.Artist, song.URL, satiricalFix, foodImage.URL, foodImage.Attribution, childrensStory); err != nil {
+			if err := sendErrorLogToTracker(locationTrackerURL, errorMessage, gifURLs, sloganResponse.Slogan, sloganResponse.VerboseDesc, song.Title, song.Artist, song.URL, satiricalFix, foodImage.URL, foodImage.Attribution, childrensStory, memeURL); err != nil {
 				log.Printf("Warning: Failed to send to location tracker: %v", err)
 			} else {
-				log.Printf("📍 Sent error log with satirical fix, food image, and children's story to location tracker")
+				log.Printf("📍 Sent error log with satirical fix, food image, children's story, and meme to location tracker")
 			}
 		}
 	}
