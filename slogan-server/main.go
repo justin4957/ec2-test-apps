@@ -23,8 +23,9 @@ type ErrorLogRequest struct {
 }
 
 type SloganResponse struct {
-	Emoji  string `json:"emoji"`
-	Slogan string `json:"slogan"`
+	Emoji       string `json:"emoji"`
+	Slogan      string `json:"slogan"`
+	VerboseDesc string `json:"verbose_desc"`
 }
 
 type OpenAIRequest struct {
@@ -172,55 +173,44 @@ var (
 	httpClient   = &http.Client{Timeout: 10 * time.Second}
 )
 
-func generateSloganWithOpenAI(errorMessage string, gifURL string, userKeywords []string) (string, error) {
+func generateSloganWithOpenAI(errorMessage string, gifURL string, userKeywords []string) (string, string, error) {
 	if openaiAPIKey == "" {
-		return "", fmt.Errorf("OpenAI API key not configured")
+		return "", "", fmt.Errorf("OpenAI API key not configured")
 	}
 
 	// Extract GIF context from URL if possible
 	gifContext := extractGifContext(gifURL)
 
-	// Build keyword context for satirical purposes
+	// Build keyword context for satirical purposes (these can include business names, governing bodies, etc.)
 	keywordContext := ""
 	if len(userKeywords) > 0 {
-		keywordContext = fmt.Sprintf("\n\nFor satirical purposes, incorporate these user-generated keywords if relevant: %s. Feel free to acknowledge the absurd irony.", strings.Join(userKeywords, ", "))
+		keywordContext = fmt.Sprintf("\n\nContext keywords (businesses, authorities, locations): %s", strings.Join(userKeywords, ", "))
 	}
 
-	// Build prompt - enhanced for business-related errors
-	var prompt string
-	if strings.Contains(errorMessage, "payment") || strings.Contains(errorMessage, "POS") ||
-	   strings.Contains(errorMessage, "checkout") || strings.Contains(errorMessage, "booking") ||
-	   strings.Contains(errorMessage, "inventory") || strings.Contains(errorMessage, "merchant") {
-		// Business-related error - create debate-style slogan
-		prompt = fmt.Sprintf(`Generate a sardonic, darkly humorous slogan about this business-tech error. The error involves a conflict between businesses and technology systems - treat it as an absurd corporate debate or philosophical disagreement between the business and the code.
+	// Build prompt - ALWAYS frame as intergovernmental/business conflict
+	prompt := fmt.Sprintf(`Generate a comedic error message with two parts: a short slogan and a verbose description.
 
 Error: %s
 %s%s
 
-Requirements:
+Part 1 - Short Slogan:
 - Maximum 15 words
-- Frame it as a convoluted debate or philosophical disagreement between the business and the technical system
-- Sardonic and darkly funny, highlighting the absurdity of the conflict
-- Examples: "APIRateLimitExceeded: When businesses and algorithms can't agree on throughput" or "PaymentGatewayTimeout: The eternal standoff between commerce and connectivity"
-- Make it sound like an absurdist corporate mediation session
+- Frame as if the error involves a diplomatic crisis, regulatory standoff, or corporate boardroom conflict
+- Use technical error terminology as metaphors for political/business disputes
+- Reference the context keywords if provided (treat them as warring factions, oversight committees, or corporate entities)
+- Make it sound like UN proceedings mixed with Silicon Valley boardroom drama
 
-Respond with ONLY the slogan, nothing else.`, errorMessage, gifContext, keywordContext)
-	} else {
-		// Regular technical error
-		prompt = fmt.Sprintf(`Generate a single sardonic, darkly humorous advertising slogan for this error message. The slogan should be in the style of an absurdist marketing campaign - treating errors as desirable features.
+Part 2 - Verbose Description:
+- Write in dry, technical language as if it's a verbose application crash warning
+- 2-4 sentences maximum
+- Maintain the intergovernmental/bureaucratic theme
+- Use appropriately comedic, deadpan technical jargon
+- Frame it like an official government or corporate incident report
+- Example tone: "FATAL: Cross-border data exchange protocol violated. The Client Embassy has unilaterally terminated negotiations due to SERVER_TIMEOUT exception. All pending transactions have been referred to the International Data Transfer Commission for arbitration. Please contact your regional diplomatic liaison for stack trace documentation."
 
-Error: %s
-%s%s
-
-Requirements:
-- Maximum 10 words
-- Sardonic and darkly funny
-- In the format "ErrorType: Witty phrase"
-- Similar to slogans like "Buffer overflow: Living life on the edge" or "Null pointer: The void stares back"
-- Reference the error context if relevant
-
-Respond with ONLY the slogan, nothing else.`, errorMessage, gifContext, keywordContext)
-	}
+Respond ONLY in this format:
+SLOGAN: [your slogan here]
+VERBOSE: [your verbose description here]`, errorMessage, gifContext, keywordContext)
 
 	reqBody := OpenAIRequest{
 		Model: "gpt-4o-mini",
@@ -230,18 +220,18 @@ Respond with ONLY the slogan, nothing else.`, errorMessage, gifContext, keywordC
 				Content: prompt,
 			},
 		},
-		MaxTokens:   50,
+		MaxTokens:   200,
 		Temperature: 0.9,
 	}
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal request: %w", err)
+		return "", "", fmt.Errorf("failed to marshal request: %w", err)
 	}
 
 	req, err := http.NewRequest("POST", "https://api.openai.com/v1/chat/completions", bytes.NewBuffer(jsonData))
 	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
+		return "", "", fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -249,33 +239,50 @@ Respond with ONLY the slogan, nothing else.`, errorMessage, gifContext, keywordC
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to call OpenAI API: %w", err)
+		return "", "", fmt.Errorf("failed to call OpenAI API: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("failed to read response: %w", err)
+		return "", "", fmt.Errorf("failed to read response: %w", err)
 	}
 
 	var openaiResp OpenAIResponse
 	if err := json.Unmarshal(body, &openaiResp); err != nil {
-		return "", fmt.Errorf("failed to parse response: %w", err)
+		return "", "", fmt.Errorf("failed to parse response: %w", err)
 	}
 
 	if openaiResp.Error != nil {
-		return "", fmt.Errorf("OpenAI API error: %s", openaiResp.Error.Message)
+		return "", "", fmt.Errorf("OpenAI API error: %s", openaiResp.Error.Message)
 	}
 
 	if len(openaiResp.Choices) == 0 {
-		return "", fmt.Errorf("no choices in OpenAI response")
+		return "", "", fmt.Errorf("no choices in OpenAI response")
 	}
 
-	slogan := strings.TrimSpace(openaiResp.Choices[0].Message.Content)
-	// Remove quotes if present
-	slogan = strings.Trim(slogan, "\"'")
+	content := strings.TrimSpace(openaiResp.Choices[0].Message.Content)
 
-	return slogan, nil
+	// Parse SLOGAN and VERBOSE from the response
+	var slogan, verboseDesc string
+	lines := strings.Split(content, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "SLOGAN:") {
+			slogan = strings.TrimSpace(strings.TrimPrefix(line, "SLOGAN:"))
+			slogan = strings.Trim(slogan, "\"'")
+		} else if strings.HasPrefix(line, "VERBOSE:") {
+			verboseDesc = strings.TrimSpace(strings.TrimPrefix(line, "VERBOSE:"))
+			verboseDesc = strings.Trim(verboseDesc, "\"'")
+		}
+	}
+
+	// If parsing failed, use the whole content as slogan and empty verbose
+	if slogan == "" {
+		slogan = strings.Trim(content, "\"'")
+	}
+
+	return slogan, verboseDesc, nil
 }
 
 func extractGifContext(gifURL string) string {
@@ -324,27 +331,32 @@ func handleErrorLog(responseWriter http.ResponseWriter, request *http.Request) {
 	}
 
 	var slogan string
+	var verboseDesc string
 	var sloganSource string
 
 	// Try OpenAI first
 	if openaiAPIKey != "" {
-		generatedSlogan, err := generateSloganWithOpenAI(errorLogRequest.Message, errorLogRequest.GifURL, errorLogRequest.UserKeywords)
+		generatedSlogan, generatedVerbose, err := generateSloganWithOpenAI(errorLogRequest.Message, errorLogRequest.GifURL, errorLogRequest.UserKeywords)
 		if err != nil {
 			log.Printf("OpenAI generation failed, using fallback: %v", err)
 			slogan = getFallbackSlogan()
+			verboseDesc = ""
 			sloganSource = "fallback"
 		} else {
 			slogan = generatedSlogan
+			verboseDesc = generatedVerbose
 			sloganSource = "openai"
 		}
 	} else {
 		slogan = getFallbackSlogan()
+		verboseDesc = ""
 		sloganSource = "fallback"
 	}
 
 	sloganResponse := SloganResponse{
-		Emoji:  "🚬",
-		Slogan: slogan,
+		Emoji:       "🚬",
+		Slogan:      slogan,
+		VerboseDesc: verboseDesc,
 	}
 
 	responseWriter.Header().Set("Content-Type", "application/json")

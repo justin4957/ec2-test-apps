@@ -3,8 +3,8 @@ FROM golang:1.21-alpine AS builder
 WORKDIR /app
 
 # Copy go module files and source
-COPY go.mod ./
-COPY main.go ./
+COPY go.mod go.sum* ./
+COPY *.go ./
 
 # Tidy dependencies and download
 RUN go mod tidy && go mod download
@@ -22,8 +22,8 @@ WORKDIR /root/
 # Copy binary from builder
 COPY --from=builder /app/location-tracker .
 
-# Expose port
-EXPOSE 8080
+# Expose ports
+EXPOSE 8080 8443
 
 # Run
 CMD ["./location-tracker"]

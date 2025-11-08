@@ -95,6 +95,7 @@ ssh -o StrictHostKeyChecking=no -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} \
     docker rmi -f 310829530225.dkr.ecr.us-east-1.amazonaws.com/error-generator:latest 2>/dev/null || true
     docker rmi -f 310829530225.dkr.ecr.us-east-1.amazonaws.com/location-tracker:latest 2>/dev/null || true
     docker rmi -f 310829530225.dkr.ecr.us-east-1.amazonaws.com/code-fix-generator:latest 2>/dev/null || true
+    docker rmi -f 310829530225.dkr.ecr.us-east-1.amazonaws.com/nginx-proxy:latest 2>/dev/null || true
 
     echo ""
     echo "📥 Pulling slogan-server image..."
@@ -113,7 +114,13 @@ ssh -o StrictHostKeyChecking=no -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} \
     docker pull 310829530225.dkr.ecr.us-east-1.amazonaws.com/code-fix-generator:latest
 
     echo ""
+    echo "📥 Pulling nginx-proxy image..."
+    docker pull 310829530225.dkr.ecr.us-east-1.amazonaws.com/nginx-proxy:latest
+
+    echo ""
     echo "🛑 Stopping existing containers (if any)..."
+    docker stop nginx-proxy 2>/dev/null || true
+    docker rm nginx-proxy 2>/dev/null || true
     docker stop slogan-server 2>/dev/null || true
     docker rm slogan-server 2>/dev/null || true
     docker stop error-generator 2>/dev/null || true
@@ -278,8 +285,20 @@ ssh -o StrictHostKeyChecking=no -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} \
     echo "✅ Error generator started!"
     echo ""
 
+    echo "🚀 Starting nginx reverse proxy..."
+    docker run -d \
+        --name nginx-proxy \
+        --restart unless-stopped \
+        --network ec2-test-network \
+        -p 80:80 \
+        -p 443:443 \
+        310829530225.dkr.ecr.us-east-1.amazonaws.com/nginx-proxy:latest
+
+    echo "✅ Nginx proxy started!"
+    echo ""
+
     echo "📊 Container status:"
-    docker ps --filter name=slogan-server --filter name=error-generator --filter name=location-tracker --filter name=code-fix-generator
+    docker ps --filter name=nginx-proxy --filter name=slogan-server --filter name=error-generator --filter name=location-tracker --filter name=code-fix-generator
 
     echo ""
     echo "📝 Recent logs from slogan-server:"
@@ -298,13 +317,25 @@ ssh -o StrictHostKeyChecking=no -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} \
     docker logs --tail 10 error-generator
 
     echo ""
+    echo "📝 Recent logs from nginx-proxy:"
+    docker logs --tail 10 nginx-proxy
+
+    echo ""
     echo "🔍 Validating deployment..."
 
     # Validate all containers are running (not restarting)
+    NGINX_STATUS=$(docker inspect --format='{{.State.Status}}' nginx-proxy 2>/dev/null)
     LOCATION_STATUS=$(docker inspect --format='{{.State.Status}}' location-tracker 2>/dev/null)
     ERROR_GEN_STATUS=$(docker inspect --format='{{.State.Status}}' error-generator 2>/dev/null)
     SLOGAN_STATUS=$(docker inspect --format='{{.State.Status}}' slogan-server 2>/dev/null)
     FIX_GEN_STATUS=$(docker inspect --format='{{.State.Status}}' code-fix-generator 2>/dev/null)
+
+    if [ "$NGINX_STATUS" != "running" ]; then
+        echo "⚠️  WARNING: nginx-proxy is not running (status: $NGINX_STATUS)"
+        echo "   Check logs with: docker logs nginx-proxy"
+    else
+        echo "✅ nginx-proxy is running"
+    fi
 
     if [ "$LOCATION_STATUS" != "running" ]; then
         echo "⚠️  WARNING: location-tracker is not running (status: $LOCATION_STATUS)"
@@ -353,15 +384,20 @@ echo ""
 echo "✅ Deployment complete!"
 echo ""
 echo "🌐 Service URLs:"
-echo "   Slogan server:      http://${PUBLIC_DNS}:8080"
-echo "   Location tracker:   https://${PUBLIC_DNS}:8082 (HTTPS with self-signed cert)"
-echo "   Location tracker:   http://${PUBLIC_DNS}:8081 (HTTP for Twilio webhooks)"
-echo "   Fix generator:      http://${PUBLIC_DNS}:7070 (Satirical code fixes)"
+echo "   🌍 Main site (via Nginx): https://notspies.org"
+echo "   🌍 Main site (via Nginx): http://notspies.org (redirects to HTTPS)"
+echo ""
+echo "   Direct service access (for debugging):"
+echo "   - Slogan server:      http://${PUBLIC_DNS}:8080"
+echo "   - Location tracker:   https://${PUBLIC_DNS}:8082 (HTTPS with self-signed cert)"
+echo "   - Location tracker:   http://${PUBLIC_DNS}:8081 (HTTP for Twilio webhooks)"
+echo "   - Fix generator:      http://${PUBLIC_DNS}:7070 (Satirical code fixes)"
 echo ""
 echo "📱 Twilio SMS Webhook URL:"
 echo "   http://${PUBLIC_DNS}:8081/api/twilio/sms"
 echo ""
 echo "📊 To view logs:"
+echo "  ssh -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} 'docker logs -f nginx-proxy'"
 echo "  ssh -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} 'docker logs -f slogan-server'"
 echo "  ssh -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} 'docker logs -f location-tracker'"
 echo "  ssh -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} 'docker logs -f code-fix-generator'"
@@ -370,5 +406,10 @@ echo ""
 echo "🤖 Satirical Fix Generator:"
 echo "   All errors are now automatically enhanced with AI-generated satirical code fixes"
 echo "   Fixes are stored in DynamoDB and displayed in the location tracker UI"
+echo ""
+echo "🌐 Nginx Reverse Proxy:"
+echo "   All traffic to notspies.org is now routed through Nginx"
+echo "   HTTP requests are automatically redirected to HTTPS"
+echo "   SSL/TLS termination handled by Nginx with self-signed certificates"
 echo ""
 echo "📖 Troubleshooting: See DEPLOYMENT_TROUBLESHOOTING.md"
