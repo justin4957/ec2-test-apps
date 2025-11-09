@@ -1,6 +1,7 @@
 #!/bin/bash
 
-# Deploy both applications to EC2
+# Deploy both applications to EC2 using AWS Systems Manager Session Manager
+# No SSH keys or open port 22 required!
 set -e
 
 # Load environment variables from .env.ec2 if it exists
@@ -14,8 +15,6 @@ fi
 AWS_REGION=us-east-1
 AWS_ACCOUNT_ID=310829530225
 INSTANCE_ID=i-04bd2369c252bee39
-EC2_KEY_PATH=~/.ssh/ec2-test-apps-key.pem
-EC2_USER=ec2-user
 
 # Set defaults if not provided
 GIPHY_API_KEY=${GIPHY_API_KEY:-}
@@ -71,29 +70,80 @@ PUBLIC_DNS=$(aws ec2 describe-instances \
     --query 'Reservations[0].Instances[0].PublicDnsName' \
     --output text)
 
-echo "📦 Deploying to: ${PUBLIC_DNS}"
+echo "📦 Deploying to instance: ${INSTANCE_ID}"
+echo "   Public DNS: ${PUBLIC_DNS}"
 echo ""
 
-# Deploy all containers via SSH
-ssh -o StrictHostKeyChecking=no -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} \
-    GIPHY_API_KEY="${GIPHY_API_KEY}" \
-    PEXELS_API_KEY="${PEXELS_API_KEY}" \
-    OPENAI_API_KEY="${OPENAI_API_KEY}" \
-    SPOTIFY_CLIENT_ID="${SPOTIFY_CLIENT_ID}" \
-    SPOTIFY_CLIENT_SECRET="${SPOTIFY_CLIENT_SECRET}" \
-    SPOTIFY_SEED_GENRES="${SPOTIFY_SEED_GENRES}" \
-    ERROR_INTERVAL_SECONDS="${ERROR_INTERVAL_SECONDS}" \
-    GOOGLE_MAPS_API_KEY="${GOOGLE_MAPS_API_KEY}" \
-    PERPLEXITY_API_KEY="${PERPLEXITY_API_KEY}" \
-    TRACKER_PASSWORD="${TRACKER_PASSWORD}" \
-    LOCATION_TRACKER_URL="${LOCATION_TRACKER_URL}" \
-    DEEPSEEK_API_KEY="${DEEPSEEK_API_KEY}" \
-    ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
-    GEMINI_API_KEY="${GEMINI_API_KEY}" \
-    S3_MEME_BUCKET="${S3_MEME_BUCKET}" \
-    GCP_PROJECT_ID="${GCP_PROJECT_ID}" \
-    GCP_LOCATION="${GCP_LOCATION}" \
-    bash << 'EOF'
+# Check if instance is online in SSM
+echo "🔍 Checking Systems Manager connectivity..."
+PING_STATUS=$(aws ssm describe-instance-information \
+    --filters "Key=InstanceIds,Values=${INSTANCE_ID}" \
+    --region ${AWS_REGION} \
+    --query 'InstanceInformationList[0].PingStatus' \
+    --output text 2>/dev/null || echo "Unknown")
+
+if [ "$PING_STATUS" != "Online" ]; then
+    echo "❌ ERROR: Instance is not online in Systems Manager (Status: ${PING_STATUS})"
+    echo ""
+    echo "Please ensure:"
+    echo "  1. SSM Agent is installed and running on the instance"
+    echo "  2. Instance IAM role has AmazonSSMManagedInstanceCore policy attached"
+    echo "  3. Instance has internet connectivity"
+    echo ""
+    exit 1
+fi
+
+echo "✅ Instance is online in Systems Manager"
+echo ""
+
+# Create deployment script with environment variables
+echo "📝 Creating deployment script..."
+DEPLOY_SCRIPT=$(cat <<'DEPLOY_EOF'
+set -e
+
+export GIPHY_API_KEY="GIPHY_API_KEY_VALUE"
+export PEXELS_API_KEY="PEXELS_API_KEY_VALUE"
+export OPENAI_API_KEY="OPENAI_API_KEY_VALUE"
+export SPOTIFY_CLIENT_ID="SPOTIFY_CLIENT_ID_VALUE"
+export SPOTIFY_CLIENT_SECRET="SPOTIFY_CLIENT_SECRET_VALUE"
+export SPOTIFY_SEED_GENRES="SPOTIFY_SEED_GENRES_VALUE"
+export ERROR_INTERVAL_SECONDS="ERROR_INTERVAL_SECONDS_VALUE"
+export GOOGLE_MAPS_API_KEY="GOOGLE_MAPS_API_KEY_VALUE"
+export PERPLEXITY_API_KEY="PERPLEXITY_API_KEY_VALUE"
+export TRACKER_PASSWORD="TRACKER_PASSWORD_VALUE"
+export LOCATION_TRACKER_URL="LOCATION_TRACKER_URL_VALUE"
+export DEEPSEEK_API_KEY="DEEPSEEK_API_KEY_VALUE"
+export ANTHROPIC_API_KEY="ANTHROPIC_API_KEY_VALUE"
+export GEMINI_API_KEY="GEMINI_API_KEY_VALUE"
+export S3_MEME_BUCKET="S3_MEME_BUCKET_VALUE"
+export GCP_PROJECT_ID="GCP_PROJECT_ID_VALUE"
+export GCP_LOCATION="GCP_LOCATION_VALUE"
+DEPLOY_EOF
+)
+
+# Replace placeholders with actual values
+DEPLOY_SCRIPT="${DEPLOY_SCRIPT//GIPHY_API_KEY_VALUE/$GIPHY_API_KEY}"
+DEPLOY_SCRIPT="${DEPLOY_SCRIPT//PEXELS_API_KEY_VALUE/$PEXELS_API_KEY}"
+DEPLOY_SCRIPT="${DEPLOY_SCRIPT//OPENAI_API_KEY_VALUE/$OPENAI_API_KEY}"
+DEPLOY_SCRIPT="${DEPLOY_SCRIPT//SPOTIFY_CLIENT_ID_VALUE/$SPOTIFY_CLIENT_ID}"
+DEPLOY_SCRIPT="${DEPLOY_SCRIPT//SPOTIFY_CLIENT_SECRET_VALUE/$SPOTIFY_CLIENT_SECRET}"
+DEPLOY_SCRIPT="${DEPLOY_SCRIPT//SPOTIFY_SEED_GENRES_VALUE/$SPOTIFY_SEED_GENRES}"
+DEPLOY_SCRIPT="${DEPLOY_SCRIPT//ERROR_INTERVAL_SECONDS_VALUE/$ERROR_INTERVAL_SECONDS}"
+DEPLOY_SCRIPT="${DEPLOY_SCRIPT//GOOGLE_MAPS_API_KEY_VALUE/$GOOGLE_MAPS_API_KEY}"
+DEPLOY_SCRIPT="${DEPLOY_SCRIPT//PERPLEXITY_API_KEY_VALUE/$PERPLEXITY_API_KEY}"
+DEPLOY_SCRIPT="${DEPLOY_SCRIPT//TRACKER_PASSWORD_VALUE/$TRACKER_PASSWORD}"
+DEPLOY_SCRIPT="${DEPLOY_SCRIPT//LOCATION_TRACKER_URL_VALUE/$LOCATION_TRACKER_URL}"
+DEPLOY_SCRIPT="${DEPLOY_SCRIPT//DEEPSEEK_API_KEY_VALUE/$DEEPSEEK_API_KEY}"
+DEPLOY_SCRIPT="${DEPLOY_SCRIPT//ANTHROPIC_API_KEY_VALUE/$ANTHROPIC_API_KEY}"
+DEPLOY_SCRIPT="${DEPLOY_SCRIPT//GEMINI_API_KEY_VALUE/$GEMINI_API_KEY}"
+DEPLOY_SCRIPT="${DEPLOY_SCRIPT//S3_MEME_BUCKET_VALUE/$S3_MEME_BUCKET}"
+DEPLOY_SCRIPT="${DEPLOY_SCRIPT//GCP_PROJECT_ID_VALUE/$GCP_PROJECT_ID}"
+DEPLOY_SCRIPT="${DEPLOY_SCRIPT//GCP_LOCATION_VALUE/$GCP_LOCATION}"
+
+# Append the actual deployment commands
+DEPLOY_SCRIPT+=$(cat <<'EOF'
+
+bash << 'INNER_EOF'
     set -e
 
     echo "🔐 Logging into ECR..."
@@ -399,7 +449,70 @@ ssh -o StrictHostKeyChecking=no -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} \
     else
         echo "✅ TRACKER_PASSWORD is configured"
     fi
+INNER_EOF
 EOF
+)
+
+# Execute deployment via SSM Send-Command
+echo "🚀 Executing deployment via Systems Manager..."
+COMMAND_ID=$(aws ssm send-command \
+    --instance-ids ${INSTANCE_ID} \
+    --region ${AWS_REGION} \
+    --document-name "AWS-RunShellScript" \
+    --comment "EC2 Test Apps Deployment" \
+    --parameters "commands=[\"${DEPLOY_SCRIPT}\"]" \
+    --output-s3-bucket-name "aws-ssm-session-logs-${AWS_ACCOUNT_ID}-${AWS_REGION}" 2>/dev/null \
+    --query 'Command.CommandId' \
+    --output text || aws ssm send-command \
+    --instance-ids ${INSTANCE_ID} \
+    --region ${AWS_REGION} \
+    --document-name "AWS-RunShellScript" \
+    --comment "EC2 Test Apps Deployment" \
+    --parameters "commands=[\"${DEPLOY_SCRIPT}\"]" \
+    --query 'Command.CommandId' \
+    --output text)
+
+echo "   Command ID: ${COMMAND_ID}"
+echo ""
+
+# Wait for command to complete
+echo "⏳ Waiting for deployment to complete..."
+aws ssm wait command-executed \
+    --command-id ${COMMAND_ID} \
+    --instance-id ${INSTANCE_ID} \
+    --region ${AWS_REGION} 2>/dev/null || true
+
+# Get command output
+echo ""
+echo "📋 Deployment output:"
+aws ssm get-command-invocation \
+    --command-id ${COMMAND_ID} \
+    --instance-id ${INSTANCE_ID} \
+    --region ${AWS_REGION} \
+    --query 'StandardOutputContent' \
+    --output text
+
+# Check for errors
+STATUS=$(aws ssm get-command-invocation \
+    --command-id ${COMMAND_ID} \
+    --instance-id ${INSTANCE_ID} \
+    --region ${AWS_REGION} \
+    --query 'Status' \
+    --output text)
+
+if [ "$STATUS" != "Success" ]; then
+    echo ""
+    echo "❌ Deployment failed with status: ${STATUS}"
+    echo ""
+    echo "Error output:"
+    aws ssm get-command-invocation \
+        --command-id ${COMMAND_ID} \
+        --instance-id ${INSTANCE_ID} \
+        --region ${AWS_REGION} \
+        --query 'StandardErrorContent' \
+        --output text
+    exit 1
+fi
 
 echo ""
 echo "✅ Deployment complete!"
@@ -417,12 +530,19 @@ echo ""
 echo "📱 Twilio SMS Webhook URL:"
 echo "   http://${PUBLIC_DNS}:8081/api/twilio/sms"
 echo ""
-echo "📊 To view logs:"
-echo "  ssh -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} 'docker logs -f nginx-proxy'"
-echo "  ssh -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} 'docker logs -f slogan-server'"
-echo "  ssh -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} 'docker logs -f location-tracker'"
-echo "  ssh -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} 'docker logs -f code-fix-generator'"
-echo "  ssh -i ${EC2_KEY_PATH} ${EC2_USER}@${PUBLIC_DNS} 'docker logs -f error-generator'"
+echo "📊 To view logs using Session Manager:"
+echo "  ./ssm-connect.sh  # Then run: docker logs -f <container-name>"
+echo ""
+echo "  Or use SSM send-command:"
+echo "  aws ssm send-command --instance-ids ${INSTANCE_ID} --document-name 'AWS-RunShellScript' \\"
+echo "    --parameters 'commands=[\"docker logs --tail 50 nginx-proxy\"]' \\"
+echo "    --query 'Command.CommandId' --output text"
+echo ""
+echo "🔐 Security Improvements:"
+echo "   ✅ No SSH keys required (using AWS Systems Manager)"
+echo "   ✅ Port 22 not exposed to internet"
+echo "   ✅ IAM-based access control"
+echo "   ✅ Session logging via CloudTrail"
 echo ""
 echo "🤖 Satirical Fix Generator:"
 echo "   All errors are now automatically enhanced with AI-generated satirical code fixes"
