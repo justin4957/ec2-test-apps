@@ -18,6 +18,7 @@ import (
 	mrand "math/rand"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -46,6 +47,7 @@ type Location struct {
 // ErrorLog represents an error message with timestamp
 type ErrorLog struct {
 	ID                  string    `json:"id,omitempty" dynamodbav:"id"`
+	URL                 string    `json:"url,omitempty" dynamodbav:"url"` // Retrievable URL for this error log
 	Message             string    `json:"message" dynamodbav:"message"`
 	GifURL              string    `json:"gif_url" dynamodbav:"gif_url"` // Kept for backward compatibility
 	GifURLs             []string  `json:"gif_urls,omitempty" dynamodbav:"gif_urls"` // Multiple GIFs
@@ -58,12 +60,14 @@ type ErrorLog struct {
 	SongURL             string    `json:"song_url,omitempty" dynamodbav:"song_url"`
 	FoodImageURL        string    `json:"food_image_url,omitempty" dynamodbav:"food_image_url"`
 	FoodImageAttr       string    `json:"food_image_attr,omitempty" dynamodbav:"food_image_attr"`
-	MemeURL             string    `json:"meme_url,omitempty" dynamodbav:"meme_url"` // AI-generated absurdist meme
-	UserExperienceNote  string    `json:"user_experience_note,omitempty" dynamodbav:"user_experience_note"`
-	UserNoteKeywords    []string  `json:"user_note_keywords,omitempty" dynamodbav:"user_note_keywords"`
-	NearbyBusinesses    []string  `json:"nearby_businesses,omitempty" dynamodbav:"nearby_businesses"`
-	AnonymousTips       []string  `json:"anonymous_tips,omitempty" dynamodbav:"anonymous_tips"`
-	Timestamp           time.Time `json:"timestamp" dynamodbav:"timestamp"`
+	MemeURL             string             `json:"meme_url,omitempty" dynamodbav:"meme_url"` // AI-generated absurdist meme
+	CSpanVideo          *CSpanVideo        `json:"cspan_video,omitempty" dynamodbav:"cspan_video,omitempty"`
+	CSpanLivestream     *YouTubeLivestream `json:"cspan_livestream,omitempty" dynamodbav:"cspan_livestream,omitempty"`
+	UserExperienceNote  string             `json:"user_experience_note,omitempty" dynamodbav:"user_experience_note"`
+	UserNoteKeywords    []string           `json:"user_note_keywords,omitempty" dynamodbav:"user_note_keywords"`
+	NearbyBusinesses    []string           `json:"nearby_businesses,omitempty" dynamodbav:"nearby_businesses"`
+	AnonymousTips       []string           `json:"anonymous_tips,omitempty" dynamodbav:"anonymous_tips"`
+	Timestamp           time.Time          `json:"timestamp" dynamodbav:"timestamp"`
 
 	// Traceability - links this error log back to the seed interaction that influenced its generation
 	SeedInteractionType      string    `json:"seed_interaction_type,omitempty" dynamodbav:"seed_interaction_type"`
@@ -84,6 +88,19 @@ type AnonymousTip struct {
 	Keywords         []string  `json:"keywords,omitempty" dynamodbav:"keywords"`
 	Timestamp        time.Time `json:"timestamp" dynamodbav:"timestamp"`
 	IPAddress        string    `json:"ip_address,omitempty" dynamodbav:"ip_address"`
+}
+
+// Donation represents a Stripe donation record
+type Donation struct {
+	ID                string    `json:"id" dynamodbav:"id"`
+	DonationType      string    `json:"donation_type" dynamodbav:"donation_type"` // "meme_disclaimer" or "church_committee"
+	Amount            int64     `json:"amount" dynamodbav:"amount"`               // Amount in cents
+	StripePaymentID   string    `json:"stripe_payment_id" dynamodbav:"stripe_payment_id"`
+	UserHash          string    `json:"user_hash,omitempty" dynamodbav:"user_hash"`
+	Timestamp         time.Time `json:"timestamp" dynamodbav:"timestamp"`
+	IPAddress         string    `json:"ip_address,omitempty" dynamodbav:"ip_address"`
+	Status            string    `json:"status" dynamodbav:"status"` // "pending", "succeeded", "failed"
+	BankRecordPurpose string    `json:"bank_record_purpose" dynamodbav:"bank_record_purpose"`
 }
 
 // CommercialRealEstate represents commercial real estate and associated businesses in an area
@@ -117,6 +134,24 @@ type GoverningBody struct {
 	Type         string `json:"type" dynamodbav:"type"`                     // "city_council", "planning", "zoning", "civic"
 	Jurisdiction string `json:"jurisdiction,omitempty" dynamodbav:"jurisdiction"` // City/county name
 	Contact      string `json:"contact,omitempty" dynamodbav:"contact"`           // Contact info
+}
+
+// CSpanVideo represents a C-SPAN video from search results
+type CSpanVideo struct {
+	Title       string `json:"title" dynamodbav:"title"`
+	URL         string `json:"url" dynamodbav:"url"`
+	EmbedCode   string `json:"embed_code,omitempty" dynamodbav:"embed_code"`
+	Description string `json:"description,omitempty" dynamodbav:"description"`
+	Date        string `json:"date,omitempty" dynamodbav:"date"`
+	Duration    string `json:"duration,omitempty" dynamodbav:"duration"`
+}
+
+// YouTubeLivestream represents a C-SPAN YouTube livestream
+type YouTubeLivestream struct {
+	Title     string `json:"title" dynamodbav:"title"`
+	VideoID   string `json:"video_id,omitempty" dynamodbav:"video_id"`
+	ChannelID string `json:"channel_id,omitempty" dynamodbav:"channel_id"`
+	IsLive    bool   `json:"is_live" dynamodbav:"is_live"`
 }
 
 // PerplexityRequest represents a request to Perplexity API
@@ -223,6 +258,7 @@ var (
 	commercialRealEstateTableName = "location-tracker-commercial-realestate"
 	anonymousTipsTableName        = "location-tracker-anonymous-tips"
 	bannedUsersTableName          = "location-tracker-banned-users"
+	donationsTableName            = "location-tracker-donations"
 
 	// Anonymous tips cache
 	anonymousTips      = make([]AnonymousTip, 0, 100)
@@ -299,9 +335,13 @@ func main() {
 	// Routes
 	http.HandleFunc("/", serveHTML)
 	http.HandleFunc("/api/login", handleLogin)
+	http.HandleFunc("/api/verify-turnstile", handleVerifyTurnstile)
+	http.HandleFunc("/api/create-payment-intent", handleCreatePaymentIntent)
+	http.HandleFunc("/api/webhook/stripe", handleStripeWebhook)
 	http.HandleFunc("/api/cryptogram", handleCryptogram)
 	http.HandleFunc("/api/cryptogram/info", handleCryptogramInfo)
 	http.HandleFunc("/api/location", handleLocation)
+	http.HandleFunc("/api/errorlogs/", handleErrorLogByID)
 	http.HandleFunc("/api/errorlogs", handleErrorLogs)
 	http.HandleFunc("/api/businesses", handleBusinesses)
 	http.HandleFunc("/api/keywords", handlePendingKeywords)
@@ -802,6 +842,270 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleVerifyTurnstile verifies Cloudflare Turnstile token and grants access
+func handleVerifyTurnstile(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Token      string `json:"token"`
+		ErrorLogID string `json:"error_log_id"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Invalid request",
+		})
+		return
+	}
+
+	// Verify the Turnstile token with Cloudflare
+	turnstileSecretKey := os.Getenv("TURNSTILE_SECRET_KEY")
+	if turnstileSecretKey == "" {
+		// Use Cloudflare's demo secret key if not configured
+		turnstileSecretKey = "1x0000000000000000000000000000000AA"
+	}
+
+	// Make verification request to Cloudflare
+	verifyURL := "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+	verifyData := map[string]string{
+		"secret":   turnstileSecretKey,
+		"response": req.Token,
+	}
+
+	verifyJSON, _ := json.Marshal(verifyData)
+	resp, err := http.Post(verifyURL, "application/json", bytes.NewBuffer(verifyJSON))
+	if err != nil {
+		log.Printf("❌ Turnstile verification error: %v", err)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Verification service unavailable",
+		})
+		return
+	}
+	defer resp.Body.Close()
+
+	var verifyResp struct {
+		Success bool `json:"success"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&verifyResp); err != nil {
+		log.Printf("❌ Failed to decode Turnstile response: %v", err)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Verification failed",
+		})
+		return
+	}
+
+	if verifyResp.Success {
+		// Set puzzle_solved cookie to grant access
+		http.SetCookie(w, &http.Cookie{
+			Name:     "auth",
+			Value:    "puzzle_solved",
+			HttpOnly: true,
+			Secure:   useHTTPS,
+			SameSite: http.SameSiteStrictMode,
+			MaxAge:   86400, // 24 hours
+			Path:     "/",
+		})
+
+		log.Printf("✅ Turnstile verification successful for error log: %s from %s", req.ErrorLogID, r.RemoteAddr)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+		})
+	} else {
+		log.Printf("⚠️  Turnstile verification failed from %s", r.RemoteAddr)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "You appear to be a spy. Verification failed.",
+		})
+	}
+}
+
+// handleCreatePaymentIntent creates a Stripe Payment Intent for donations
+func handleCreatePaymentIntent(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		DonationType string `json:"donation_type"` // "meme_disclaimer" or "church_committee"
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "Invalid request",
+		})
+		return
+	}
+
+	// Determine amount and description based on donation type
+	var amount int64
+	var description string
+	var bankRecordPurpose string
+
+	switch req.DonationType {
+	case "meme_disclaimer":
+		amount = 50 // 50 cents (Stripe minimum)
+		description = "Meme Disclaimer Record"
+		bankRecordPurpose = "Not associated with these memes/GIFs - Historical comedic reference"
+	case "church_committee":
+		amount = 75 // 75 cents
+		description = "Church Committee Historical Reference"
+		bankRecordPurpose = "Local government transparency concern - Numerical church committee reference"
+	default:
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "Invalid donation type",
+		})
+		return
+	}
+
+	stripeSecretKey := os.Getenv("STRIPE_SECRET_KEY")
+	if stripeSecretKey == "" {
+		log.Printf("⚠️  STRIPE_SECRET_KEY not configured")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "Payment system not configured",
+		})
+		return
+	}
+
+	// Create Stripe Payment Intent
+	paymentIntentURL := "https://api.stripe.com/v1/payment_intents"
+	data := url.Values{}
+	data.Set("amount", fmt.Sprintf("%d", amount))
+	data.Set("currency", "usd")
+	data.Set("description", description)
+	data.Set("metadata[donation_type]", req.DonationType)
+	data.Set("metadata[bank_purpose]", bankRecordPurpose)
+
+	stripeReq, _ := http.NewRequest("POST", paymentIntentURL, strings.NewReader(data.Encode()))
+	stripeReq.Header.Set("Authorization", "Bearer "+stripeSecretKey)
+	stripeReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	client := &http.Client{}
+	resp, err := client.Do(stripeReq)
+	if err != nil {
+		log.Printf("❌ Stripe API error: %v", err)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "Payment service unavailable",
+		})
+		return
+	}
+	defer resp.Body.Close()
+
+	var stripeResp map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&stripeResp); err != nil {
+		log.Printf("❌ Failed to decode Stripe response: %v", err)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "Payment processing error",
+		})
+		return
+	}
+
+	if resp.StatusCode != 200 {
+		log.Printf("❌ Stripe error response: %v", stripeResp)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "Payment creation failed",
+		})
+		return
+	}
+
+	// Store pending donation record
+	donationID := fmt.Sprintf("%d", time.Now().UnixNano())
+	donation := Donation{
+		ID:                donationID,
+		DonationType:      req.DonationType,
+		Amount:            amount,
+		StripePaymentID:   stripeResp["id"].(string),
+		Timestamp:         time.Now(),
+		IPAddress:         getClientIP(r),
+		Status:            "pending",
+		BankRecordPurpose: bankRecordPurpose,
+	}
+
+	if useDynamoDB {
+		go saveDonationToDynamoDB(donation)
+	}
+
+	log.Printf("💰 Payment intent created: %s for %s ($%.2f)", donation.StripePaymentID, req.DonationType, float64(amount)/100)
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"client_secret":      stripeResp["client_secret"],
+		"amount":             amount,
+		"description":        description,
+		"bank_record_purpose": bankRecordPurpose,
+	})
+}
+
+// handleStripeWebhook handles Stripe webhook events
+func handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Error reading request", http.StatusBadRequest)
+		return
+	}
+
+	// TODO: Verify webhook signature in production
+	// For now, just parse the event
+	var event map[string]interface{}
+	if err := json.Unmarshal(body, &event); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	eventType := event["type"].(string)
+	log.Printf("📨 Stripe webhook received: %s", eventType)
+
+	if eventType == "payment_intent.succeeded" {
+		data := event["data"].(map[string]interface{})
+		object := data["object"].(map[string]interface{})
+		paymentIntentID := object["id"].(string)
+
+		// Update donation status
+		log.Printf("✅ Payment succeeded: %s", paymentIntentID)
+		// TODO: Update DynamoDB record status to "succeeded"
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"received": true}`))
+}
+
+// saveDonationToDynamoDB saves donation record to DynamoDB
+func saveDonationToDynamoDB(donation Donation) {
+	ctx := context.Background()
+
+	item, err := attributevalue.MarshalMap(donation)
+	if err != nil {
+		log.Printf("❌ Failed to marshal donation: %v", err)
+		return
+	}
+
+	_, err = dynamoClient.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: aws.String(donationsTableName),
+		Item:      item,
+	})
+	if err != nil {
+		log.Printf("❌ Failed to save donation to DynamoDB: %v", err)
+		return
+	}
+
+	log.Printf("💾 Donation saved to DynamoDB: %s", donation.ID)
+}
+
 func handleCryptogram(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -996,6 +1300,16 @@ func handleErrorLogs(w http.ResponseWriter, r *http.Request) {
 		errorLog.Timestamp = time.Now()
 		errorLog.ID = fmt.Sprintf("%d", errorLog.Timestamp.UnixNano())
 
+		// Generate retrievable URL for this error log with ID and timestamp
+		baseURL := os.Getenv("BASE_URL")
+		if baseURL == "" {
+			baseURL = "https://notspies.org" // Default to production URL
+		}
+		// URL format: /api/errorlogs/{id}/{timestamp}
+		// Timestamp is URL-encoded to handle special characters
+		timestampStr := url.QueryEscape(errorLog.Timestamp.Format(time.RFC3339Nano))
+		errorLog.URL = fmt.Sprintf("%s/api/errorlogs/%s/%s", baseURL, errorLog.ID, timestampStr)
+
 		// Backward compatibility: if gif_urls is provided but gif_url is not, use first GIF
 		if errorLog.GifURL == "" && len(errorLog.GifURLs) > 0 {
 			errorLog.GifURL = errorLog.GifURLs[0]
@@ -1184,6 +1498,170 @@ func handleErrorLogs(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// handleErrorLogByID retrieves a single error log by its ID
+func handleErrorLogByID(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Extract ID and optional timestamp from URL path
+	// Format: /api/errorlogs/{id} or /api/errorlogs/{id}/{timestamp}
+	pathParts := strings.Split(r.URL.Path, "/")
+	if len(pathParts) < 4 {
+		http.Error(w, "Invalid URL path", http.StatusBadRequest)
+		return
+	}
+	errorLogID := pathParts[3]
+
+	if errorLogID == "" {
+		http.Error(w, "Error log ID is required", http.StatusBadRequest)
+		return
+	}
+
+	// Check if timestamp is provided (for new URL format)
+	var timestampStr string
+	hasTimestamp := len(pathParts) >= 5 && pathParts[4] != ""
+	if hasTimestamp {
+		// URL-decode the timestamp
+		timestampStr, _ = url.QueryUnescape(pathParts[4])
+	}
+
+	// Check if this is a browser request (Accept header contains text/html)
+	isBrowserRequest := strings.Contains(r.Header.Get("Accept"), "text/html")
+
+	// First check in-memory cache
+	errorLogMutex.RLock()
+	for _, log := range errorLogs {
+		if log.ID == errorLogID {
+			errorLogMutex.RUnlock()
+
+			// Determine access level and sanitize if needed
+			hasFullAccess := isAuthenticated(r)
+			hasPuzzleAccessOnly := !hasFullAccess && hasPuzzleAccess(r)
+
+			if !hasFullAccess && !hasPuzzleAccessOnly {
+				// If browser request, show authentication page
+				if isBrowserRequest {
+					serveTurnstileAuthPage(w, r, errorLogID)
+					return
+				}
+				// Otherwise return JSON error for API requests
+				w.Header().Set("Content-Type", "application/json")
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+
+			// Return JSON response for authenticated requests
+			w.Header().Set("Content-Type", "application/json")
+
+			// If user only has puzzle access, sanitize the log
+			if hasPuzzleAccessOnly {
+				sanitizedLog := log
+				sanitizedLog.NearbyBusinesses = nil
+				sanitizedLog.UserExperienceNote = ""
+				sanitizedLog.UserNoteKeywords = nil
+				json.NewEncoder(w).Encode(sanitizedLog)
+			} else {
+				json.NewEncoder(w).Encode(log)
+			}
+			return
+		}
+	}
+	errorLogMutex.RUnlock()
+
+	// Not found in memory, check DynamoDB if enabled
+	if useDynamoDB {
+		ctx := context.Background()
+		var errorLog ErrorLog
+		var err error
+
+		if hasTimestamp {
+			// Fast path: Use GetItem with both id and timestamp (composite key)
+			result, getErr := dynamoClient.GetItem(ctx, &dynamodb.GetItemInput{
+				TableName: aws.String(errorLogsTableName),
+				Key: map[string]types.AttributeValue{
+					"id":        &types.AttributeValueMemberS{Value: errorLogID},
+					"timestamp": &types.AttributeValueMemberS{Value: timestampStr},
+				},
+			})
+
+			if getErr != nil {
+				log.Printf("❌ Failed to retrieve error log from DynamoDB: %v", getErr)
+				http.Error(w, "Internal server error", http.StatusInternalServerError)
+				return
+			}
+
+			if result.Item == nil {
+				http.Error(w, "Error log not found", http.StatusNotFound)
+				return
+			}
+
+			err = attributevalue.UnmarshalMap(result.Item, &errorLog)
+		} else {
+			// Fallback: Query by id (partition key) - requires scanning through timestamps
+			queryResult, queryErr := dynamoClient.Query(ctx, &dynamodb.QueryInput{
+				TableName:              aws.String(errorLogsTableName),
+				KeyConditionExpression: aws.String("id = :id"),
+				ExpressionAttributeValues: map[string]types.AttributeValue{
+					":id": &types.AttributeValueMemberS{Value: errorLogID},
+				},
+				Limit: aws.Int32(1),
+			})
+
+			if queryErr != nil {
+				log.Printf("❌ Failed to query error log from DynamoDB: %v", queryErr)
+				http.Error(w, "Internal server error", http.StatusInternalServerError)
+				return
+			}
+
+			if len(queryResult.Items) == 0 {
+				http.Error(w, "Error log not found", http.StatusNotFound)
+				return
+			}
+
+			err = attributevalue.UnmarshalMap(queryResult.Items[0], &errorLog)
+		}
+		if err != nil {
+			log.Printf("❌ Failed to unmarshal error log: %v", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		// Determine access level and sanitize if needed
+		hasFullAccess := isAuthenticated(r)
+		hasPuzzleAccessOnly := !hasFullAccess && hasPuzzleAccess(r)
+
+		if !hasFullAccess && !hasPuzzleAccessOnly {
+			// If browser request, show authentication page
+			if isBrowserRequest {
+				serveTurnstileAuthPage(w, r, errorLogID)
+				return
+			}
+			// Otherwise return JSON error for API requests
+			w.Header().Set("Content-Type", "application/json")
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		// Return JSON response for authenticated requests
+		w.Header().Set("Content-Type", "application/json")
+
+		// If user only has puzzle access, sanitize the log
+		if hasPuzzleAccessOnly {
+			errorLog.NearbyBusinesses = nil
+			errorLog.UserExperienceNote = ""
+			errorLog.UserNoteKeywords = nil
+		}
+
+		json.NewEncoder(w).Encode(errorLog)
+		return
+	}
+
+	// Not found in memory and DynamoDB not enabled
+	http.Error(w, "Error log not found", http.StatusNotFound)
 }
 
 func handleBusinesses(w http.ResponseWriter, r *http.Request) {
@@ -1572,6 +2050,182 @@ func hasPuzzleAccess(r *http.Request) bool {
 	return cookie.Value == "puzzle_solved" || cookie.Value == "authenticated"
 }
 
+// serveTurnstileAuthPage serves an authentication page with Cloudflare Turnstile
+func serveTurnstileAuthPage(w http.ResponseWriter, r *http.Request, errorLogID string) {
+	w.Header().Set("Content-Type", "text/html")
+	w.WriteHeader(http.StatusUnauthorized)
+
+	turnstileSiteKey := os.Getenv("TURNSTILE_SITE_KEY")
+	if turnstileSiteKey == "" {
+		// Use Cloudflare's demo/test site key if not configured
+		turnstileSiteKey = "1x00000000000000000000AA"
+	}
+
+	html := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🕵️ Authentication Required</title>
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 500px;
+            width: 100%%;
+            padding: 40px;
+            text-align: center;
+        }
+
+        .spy-icon {
+            font-size: 72px;
+            margin-bottom: 20px;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%%, 100%% { transform: scale(1); }
+            50%% { transform: scale(1.1); }
+        }
+
+        h1 {
+            font-size: 28px;
+            color: #1a1a1a;
+            margin-bottom: 12px;
+            font-weight: 800;
+        }
+
+        .subtitle {
+            font-size: 16px;
+            color: #666;
+            margin-bottom: 30px;
+            line-height: 1.6;
+        }
+
+        .challenge-text {
+            font-size: 20px;
+            color: #667eea;
+            font-weight: 700;
+            margin-bottom: 30px;
+            padding: 15px;
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%%, rgba(118, 75, 162, 0.15) 100%%);
+            border-radius: 12px;
+            border: 2px solid rgba(102, 126, 234, 0.3);
+        }
+
+        .turnstile-container {
+            display: flex;
+            justify-content: center;
+            margin: 30px 0;
+        }
+
+        .error-id {
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            color: #999;
+            margin-top: 30px;
+            padding: 10px;
+            background: #f5f5f5;
+            border-radius: 6px;
+        }
+
+        #error-message {
+            display: none;
+            background: #fee;
+            color: #c33;
+            padding: 12px;
+            border: 2px solid #c33;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        .loading {
+            display: none;
+            margin-top: 20px;
+            color: #667eea;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="spy-icon">🕵️</div>
+        <h1>Authentication Required</h1>
+        <p class="subtitle">This error log is classified. You must verify your identity to proceed.</p>
+
+        <div class="challenge-text">
+            🔐 PROVE YOU ARE NOT A SPY
+        </div>
+
+        <div class="turnstile-container">
+            <div class="cf-turnstile"
+                 data-sitekey="%s"
+                 data-callback="onTurnstileSuccess"
+                 data-theme="light">
+            </div>
+        </div>
+
+        <div class="loading" id="loading">Verifying your identity...</div>
+        <div id="error-message"></div>
+
+        <div class="error-id">
+            Requested Error Log ID: %s
+        </div>
+    </div>
+
+    <script>
+        function onTurnstileSuccess(token) {
+            document.getElementById('loading').style.display = 'block';
+
+            // Send token to backend for verification
+            fetch('/api/verify-turnstile', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    token: token,
+                    error_log_id: '%s'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Redirect to the error log
+                    window.location.href = '/api/errorlogs/%s';
+                } else {
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('error-message').style.display = 'block';
+                    document.getElementById('error-message').textContent = 'Verification failed: ' + (data.error || 'Unknown error');
+                }
+            })
+            .catch(error => {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('error-message').style.display = 'block';
+                document.getElementById('error-message').textContent = 'Network error: ' + error.message;
+            });
+        }
+    </script>
+</body>
+</html>`, turnstileSiteKey, errorLogID, errorLogID, errorLogID)
+
+	w.Write([]byte(html))
+}
+
 func cleanupOldLocations() {
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
@@ -1591,8 +2245,10 @@ func cleanupOldLocations() {
 
 func serveHTML(w http.ResponseWriter, r *http.Request) {
 	tmpl := template.Must(template.New("index").Parse(indexHTML))
+	stripePublishableKey := os.Getenv("STRIPE_PUBLISHABLE_KEY")
 	data := map[string]interface{}{
-		"GoogleMapsAPIKey": googleMapsAPIKey,
+		"GoogleMapsAPIKey":       googleMapsAPIKey,
+		"StripePublishableKey":   stripePublishableKey,
 	}
 	if err := tmpl.Execute(w, data); err != nil {
 		log.Printf("❌ Error executing template: %v", err)
@@ -1866,6 +2522,7 @@ const indexHTML = `<!DOCTYPE html>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>📍 Location Tracker</title>
+    <script src="https://js.stripe.com/v3/"></script>
     <style>
         /* Delphi Design System - Memphis × Swiss × 80s Pop + Terminal Minimalist */
 
@@ -2487,6 +3144,22 @@ const indexHTML = `<!DOCTYPE html>
 
             <!-- Tracker View -->
             <div id="tracker">
+                <!-- Donation Section -->
+                <div id="donation-section" style="background: linear-gradient(135deg, #ffd700 0%, #ffa500 100%); padding: 20px; border-radius: 12px; margin-bottom: 20px; border: 3px solid var(--swiss-black); box-shadow: 4px 4px 0px rgba(0, 0, 0, 0.2);">
+                    <h3 style="color: #000; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.1em; font-size: 18px;">💰 Support This Project</h3>
+                    <p style="color: rgba(0,0,0,0.8); font-size: 13px; margin-bottom: 15px; font-family: 'Courier New', monospace; line-height: 1.5;">
+                        Help maintain this satirical educational project and create a memorable bank statement entry
+                    </p>
+                    <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                        <button onclick="openDonationModal('meme_disclaimer')" style="flex: 1; min-width: 200px; padding: 15px; background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%); color: white; border: 2px solid var(--swiss-black); border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; box-shadow: 3px 3px 0px rgba(0, 0, 0, 0.2); transition: all 0.2s;">
+                            💳 $0.50 - Meme Disclaimer Record
+                        </button>
+                        <button onclick="openDonationModal('church_committee')" style="flex: 1; min-width: 200px; padding: 15px; background: linear-gradient(135deg, #8b5cf6 0%, #a78bfa 100%); color: white; border: 2px solid var(--swiss-black); border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; box-shadow: 3px 3px 0px rgba(0, 0, 0, 0.2); transition: all 0.2s;">
+                            💳 $0.75 - Church Committee Reference
+                        </button>
+                    </div>
+                </div>
+
                 <div class="actions">
                     <button class="btn-share" onclick="shareLocation()">📍 Share Location</button>
                     <button class="btn-refresh" onclick="refreshLocations()">🔄 Refresh</button>
@@ -3126,6 +3799,42 @@ const indexHTML = `<!DOCTYPE html>
                 div.style.borderLeft = '4px solid #ef4444';
                 div.dataset.timestamp = errorLog.timestamp;
                 div.innerHTML = ` + "`" + `
+                    ${errorLog.cspan_video || errorLog.cspan_livestream ? ` + "`" + `
+                        <div style="margin-bottom: 20px; padding: 20px; background: linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, rgba(37, 99, 235, 0.12) 100%); border: 3px solid rgba(59, 130, 246, 0.4); border-radius: 12px; box-shadow: 0 0 25px rgba(59, 130, 246, 0.25), 4px 4px 0px rgba(59, 130, 246, 0.15);">
+                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <span style="font-size: 24px;">🏛️</span>
+                                    <strong style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-size: 16px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800;">C-SPAN Coverage</strong>
+                                </div>
+                                <span style="font-size: 9px; color: #999; font-weight: 600; letter-spacing: 0.05em;">RELATED GOVERNMENT PROCEEDINGS</span>
+                            </div>
+                            ${errorLog.cspan_video ? ` + "`" + `
+                                <div style="background: rgba(255, 255, 255, 0.9); padding: 15px; border-radius: 8px; border: 2px solid rgba(59, 130, 246, 0.3);">
+                                    <div style="margin-bottom: 12px;">
+                                        <div style="font-weight: 700; color: #1e40af; font-size: 15px; margin-bottom: 6px;">${errorLog.cspan_video.title || 'C-SPAN Video'}</div>
+                                        ${errorLog.cspan_video.description ? ` + "`" + `
+                                            <div style="font-size: 13px; color: #64748b; line-height: 1.5; margin-bottom: 8px;">${errorLog.cspan_video.description}</div>
+                                        ` + "`" + ` : ''}
+                                        <div style="display: flex; gap: 12px; font-size: 12px; color: #94a3b8;">
+                                            ${errorLog.cspan_video.date ? ` + "`" + `<span>📅 ${errorLog.cspan_video.date}</span>` + "`" + ` : ''}
+                                            ${errorLog.cspan_video.duration ? ` + "`" + `<span>⏱️ ${errorLog.cspan_video.duration}</span>` + "`" + ` : ''}
+                                        </div>
+                                    </div>
+                                    ${errorLog.cspan_video.url ? ` + "`" + `
+                                        <a href="${errorLog.cspan_video.url}" target="_blank" rel="noopener noreferrer" style="display: inline-block; padding: 10px 20px; background: #3b82f6; color: white; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 13px; transition: all 0.2s; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);">View on C-SPAN →</a>
+                                    ` + "`" + ` : ''}
+                                </div>
+                            ` + "`" + ` : ''}
+                            ${errorLog.cspan_livestream && errorLog.cspan_livestream.is_live ? ` + "`" + `
+                                <div style="background: rgba(239, 68, 68, 0.1); padding: 12px; border-radius: 8px; border: 2px solid rgba(239, 68, 68, 0.3); margin-top: 10px;">
+                                    <div style="display: flex; align-items: center; gap: 8px; color: #dc2626; font-weight: 700; font-size: 14px;">
+                                        <span style="display: inline-block; width: 8px; height: 8px; background: #dc2626; border-radius: 50%; animation: pulse 2s infinite;"></span>
+                                        LIVE NOW: ${errorLog.cspan_livestream.title || 'C-SPAN Live Coverage'}
+                                    </div>
+                                </div>
+                            ` + "`" + ` : ''}
+                        </div>
+                    ` + "`" + ` : ''}
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                         <h3 style="margin: 0; color: #ef4444; font-size: 14px;">🚬 Error Log</h3>
                         <span class="status" style="background: #fee2e2; color: #991b1b;">${age}</span>
@@ -3138,6 +3847,15 @@ const indexHTML = `<!DOCTYPE html>
                         <span class="label">Slogan:</span>
                         <span class="value" style="font-family: inherit; color: #667eea;">${errorLog.slogan}</span>
                     </div>
+                    ${errorLog.url ? ` + "`" + `
+                        <div class="location-detail" style="margin-top: 8px; padding: 10px; background: linear-gradient(135deg, rgba(59, 130, 246, 0.06) 0%, rgba(99, 102, 241, 0.08) 100%); border-left: 3px solid #3b82f6; border-radius: 6px;">
+                            <span class="label" style="color: #1e40af;">🔗 Share URL:</span>
+                            <div style="margin-top: 6px; display: flex; gap: 8px; align-items: center;">
+                                <input type="text" value="${errorLog.url}" readonly onclick="this.select()" style="flex: 1; padding: 6px 10px; font-family: 'Courier New', monospace; font-size: 11px; color: #1e40af; background: rgba(255, 255, 255, 0.8); border: 1px solid #60a5fa; border-radius: 4px; cursor: pointer;">
+                                <button onclick="navigator.clipboard.writeText('${errorLog.url}').then(() => { const btn = event.target; const originalText = btn.textContent; btn.textContent = '✓ Copied!'; btn.style.background = '#10b981'; setTimeout(() => { btn.textContent = originalText; btn.style.background = ''; }, 2000); })" style="padding: 6px 12px; background: #3b82f6; color: white; border: none; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: all 0.2s;">Copy</button>
+                            </div>
+                        </div>
+                    ` + "`" + ` : ''}
                     ${errorLog.verbose_desc ? ` + "`" + `
                         <div style="margin-top: 12px; padding: 12px; background: linear-gradient(135deg, rgba(102, 126, 234, 0.06) 0%, rgba(118, 75, 162, 0.08) 100%); border-left: 4px solid #667eea; border-radius: 6px; font-family: 'Courier New', monospace; font-size: 13px; color: #374151; line-height: 1.6;">
                             ${errorLog.verbose_desc}
@@ -3740,6 +4458,153 @@ const indexHTML = `<!DOCTYPE html>
 
             img.src = ciaImageURL;
         }
+
+        // ===== STRIPE DONATION FUNCTIONALITY =====
+        let stripe;
+        let elements;
+        let currentDonationType = '';
+
+        // Initialize Stripe (will be called on page load)
+        function initializeStripe() {
+            const stripePublishableKey = '{{.StripePublishableKey}}';
+            if (stripePublishableKey && stripePublishableKey !== '') {
+                stripe = Stripe(stripePublishableKey);
+            }
+        }
+
+        function openDonationModal(donationType) {
+            if (!stripe) {
+                alert('Stripe is not configured. Please contact the administrator.');
+                return;
+            }
+
+            currentDonationType = donationType;
+            const modal = document.getElementById('donation-modal');
+            const title = document.getElementById('donation-modal-title');
+            const description = document.getElementById('donation-modal-description');
+
+            if (donationType === 'meme_disclaimer') {
+                title.textContent = '$0.50 - Meme Disclaimer Record';
+                description.innerHTML = '<strong>Bank Statement Purpose:</strong><br>Create a record stating you are NOT associated with these memes/GIFs.<br><br><em style="color: #6b7280; font-size: 13px;">Note: This donation should technically be a dime, but apparently modern internet banking has a $0.50 minimum. The irony of bureaucratic minimums preventing symbolic gestures is not lost on us.</em><br><br>Perfect for future comedic purposes when someone questions your transaction history.';
+            } else {
+                title.textContent = '$0.75 - Church Committee Historical Reference';
+                description.innerHTML = '<strong>Bank Statement Purpose:</strong><br>Note a church committee historical numerical reference regarding local political transparency concerns.<br><br>A subtle nod to governmental accountability.';
+            }
+
+            modal.style.display = 'flex';
+            initializePaymentForm();
+        }
+
+        function closeDonationModal() {
+            document.getElementById('donation-modal').style.display = 'none';
+            document.getElementById('payment-form').reset();
+            document.getElementById('donation-result').innerHTML = '';
+            if (elements) {
+                elements = null;
+            }
+        }
+
+        async function initializePaymentForm() {
+            // Create payment intent
+            const response = await fetch('/api/create-payment-intent', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + localStorage.getItem('token')
+                },
+                body: JSON.stringify({
+                    donation_type: currentDonationType
+                })
+            });
+
+            const data = await response.json();
+
+            if (!data.client_secret) {
+                document.getElementById('donation-result').innerHTML = '<div style="color: #ef4444; padding: 12px; background: rgba(239, 68, 68, 0.1); border-radius: 8px;">Failed to initialize payment. Please try again.</div>';
+                return;
+            }
+
+            const clientSecret = data.client_secret;
+
+            // Create Stripe Elements
+            const appearance = {
+                theme: 'stripe',
+                variables: {
+                    colorPrimary: '#3b82f6',
+                    colorBackground: '#ffffff',
+                    colorText: '#000000',
+                    colorDanger: '#ef4444',
+                    fontFamily: 'Inter, system-ui, sans-serif',
+                    spacingUnit: '4px',
+                    borderRadius: '8px'
+                }
+            };
+
+            elements = stripe.elements({ appearance, clientSecret });
+            const paymentElement = elements.create('payment');
+            paymentElement.mount('#payment-element');
+        }
+
+        async function handleDonationSubmit(e) {
+            e.preventDefault();
+
+            const submitButton = document.getElementById('submit-donation');
+            const resultDiv = document.getElementById('donation-result');
+
+            submitButton.disabled = true;
+            submitButton.textContent = 'Processing...';
+            resultDiv.innerHTML = '';
+
+            const { error } = await stripe.confirmPayment({
+                elements,
+                confirmParams: {
+                    return_url: window.location.origin + '/donation-success',
+                },
+                redirect: 'if_required'
+            });
+
+            if (error) {
+                resultDiv.innerHTML = '<div style="color: #ef4444; padding: 12px; background: rgba(239, 68, 68, 0.1); border-radius: 8px; margin-top: 15px;">' + error.message + '</div>';
+                submitButton.disabled = false;
+                submitButton.textContent = 'Complete Payment';
+            } else {
+                // Payment succeeded
+                resultDiv.innerHTML = '<div style="color: #10b981; padding: 12px; background: rgba(16, 185, 129, 0.1); border-radius: 8px; margin-top: 15px;"><strong>✓ Payment Successful!</strong><br><br>Thank you for your support. Check your bank statement in a few days for the memorable entry.</div>';
+                submitButton.style.display = 'none';
+
+                setTimeout(() => {
+                    closeDonationModal();
+                    submitButton.style.display = 'block';
+                    submitButton.disabled = false;
+                    submitButton.textContent = 'Complete Payment';
+                }, 3000);
+            }
+        }
+
+        // Initialize Stripe when page loads
+        window.addEventListener('load', initializeStripe);
     </script>
+
+    <!-- Donation Modal -->
+    <div id="donation-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); z-index: 10000; align-items: center; justify-content: center; padding: 20px;">
+        <div style="background: white; border-radius: 16px; max-width: 500px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5); position: relative;">
+            <div style="padding: 25px; border-bottom: 2px solid #e5e7eb;">
+                <button onclick="closeDonationModal()" style="position: absolute; top: 15px; right: 15px; background: none; border: none; font-size: 24px; cursor: pointer; color: #6b7280; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 50%; transition: all 0.2s;">×</button>
+                <h2 id="donation-modal-title" style="color: #000; font-size: 20px; font-weight: 800; margin-bottom: 12px;">Donation</h2>
+                <div id="donation-modal-description" style="color: #4b5563; font-size: 14px; line-height: 1.6;"></div>
+            </div>
+
+            <form id="payment-form" onsubmit="handleDonationSubmit(event)" style="padding: 25px;">
+                <div id="payment-element" style="margin-bottom: 20px;"></div>
+                <button id="submit-donation" type="submit" style="width: 100%; padding: 15px; background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 6px rgba(59, 130, 246, 0.3); transition: all 0.2s;">
+                    Complete Payment
+                </button>
+                <div id="donation-result"></div>
+                <p style="color: #6b7280; font-size: 12px; margin-top: 15px; text-align: center; font-family: 'Courier New', monospace;">
+                    🔒 Secure payment processed by Stripe
+                </p>
+            </form>
+        </div>
+    </div>
 </body>
 </html>`

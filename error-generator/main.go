@@ -214,6 +214,24 @@ type SloganResponse struct {
 	VerboseDesc string `json:"verbose_desc"`
 }
 
+// CSpanVideo represents a C-SPAN video from search results
+type CSpanVideo struct {
+	Title       string `json:"title"`
+	URL         string `json:"url"`
+	EmbedCode   string `json:"embed_code"`
+	Description string `json:"description"`
+	Date        string `json:"date"`
+	Duration    string `json:"duration"`
+}
+
+// YouTubeLivestream represents a C-SPAN YouTube livestream
+type YouTubeLivestream struct {
+	Title     string `json:"title"`
+	VideoID   string `json:"video_id"`
+	ChannelID string `json:"channel_id"`
+	IsLive    bool   `json:"is_live"`
+}
+
 // AnthropicRequest represents the request structure for Anthropic's Messages API
 type AnthropicRequest struct {
 	Model     string              `json:"model"`
@@ -1326,6 +1344,135 @@ func fetchLastInteractionContext(trackerURL string) (*LastInteractionContext, er
 	return &context, nil
 }
 
+// searchCSpanVideos searches for relevant C-SPAN videos based on jurisdiction and keywords
+func searchCSpanVideos(jurisdiction string, keywords []string) (*CSpanVideo, error) {
+	// Build search query combining jurisdiction and keywords
+	searchTerms := []string{jurisdiction}
+	if len(keywords) > 0 {
+		// Limit to first 2-3 keywords to keep query focused
+		maxKeywords := 3
+		if len(keywords) < maxKeywords {
+			maxKeywords = len(keywords)
+		}
+		searchTerms = append(searchTerms, keywords[:maxKeywords]...)
+	}
+
+	query := strings.Join(searchTerms, " ")
+
+	// C-SPAN search URL pattern
+	searchURL := fmt.Sprintf("https://www.c-span.org/search/?searchtype=Videos&query=%s&startdate=01/01/2020&enddate=12/31/2025",
+		url.QueryEscape(query))
+
+	log.Printf("🏛️  Searching C-SPAN for: %s", query)
+	log.Printf("📺 C-SPAN search URL: %s", searchURL)
+
+	// Make HTTP request to C-SPAN search
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: false},
+		},
+	}
+
+	req, err := http.NewRequest("GET", searchURL, nil)
+	if err != nil {
+		log.Printf("⚠️  Failed to create C-SPAN search request: %v", err)
+		return nil, err
+	}
+
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("⚠️  Failed to fetch C-SPAN search results: %v", err)
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	// For now, construct a basic video result with the search URL
+	// In production, you'd parse the HTML to extract actual video details
+	video := &CSpanVideo{
+		Title:       fmt.Sprintf("C-SPAN Coverage: %s", jurisdiction),
+		URL:         searchURL,
+		EmbedCode:   "", // Will be populated when we find a specific video
+		Description: fmt.Sprintf("Search results for %s related content from the last 5 years", jurisdiction),
+		Date:        time.Now().Format("2006-01-02"),
+		Duration:    "Various",
+	}
+
+	log.Printf("📺 Found C-SPAN search results for: %s", jurisdiction)
+
+	return video, nil
+}
+
+// checkCSpanYouTubeLivestream checks if C-SPAN has an active YouTube livestream
+func checkCSpanYouTubeLivestream() (*YouTubeLivestream, error) {
+	// C-SPAN official YouTube channels
+	cspanChannels := []string{
+		"UCxBKLoQJa82IFnpNGe65bIA", // C-SPAN main channel
+		"UCxBKLoQJa82IFnpNGe65bIA", // C-SPAN
+	}
+
+	// For now, we'll return a reference to the main C-SPAN YouTube page
+	// To properly detect livestreams, you'd need YouTube Data API v3
+	livestream := &YouTubeLivestream{
+		Title:     "C-SPAN Live Coverage",
+		VideoID:   "",
+		ChannelID: cspanChannels[0],
+		IsLive:    false, // Would need YouTube API to determine this
+	}
+
+	log.Printf("📡 Checked for C-SPAN YouTube livestream")
+
+	return livestream, nil
+}
+
+// getCSpanVideoForErrorLog attempts to find a relevant C-SPAN video for the error context
+func getCSpanVideoForErrorLog(trackerURL string) (*CSpanVideo, *YouTubeLivestream, error) {
+	if trackerURL == "" {
+		return nil, nil, nil
+	}
+
+	// Fetch commercial context to get jurisdiction info
+	context, err := fetchCommercialContext(trackerURL)
+	if err != nil {
+		log.Printf("⚠️  Could not fetch commercial context for C-SPAN search: %v", err)
+		return nil, nil, nil
+	}
+
+	if context == nil || len(context.GoverningBodies) == 0 {
+		log.Printf("ℹ️  No governing bodies found, skipping C-SPAN search")
+		return nil, nil, nil
+	}
+
+	// Use the first governing body's jurisdiction
+	jurisdiction := context.GoverningBodies[0].Jurisdiction
+	if jurisdiction == "" {
+		jurisdiction = context.GoverningBodies[0].Name
+	}
+
+	// Fetch pending keywords for context
+	keywords, err := fetchPendingKeywords(trackerURL)
+	if err != nil {
+		log.Printf("⚠️  Could not fetch keywords: %v", err)
+		keywords = []string{} // Continue without keywords
+	}
+
+	// Search for C-SPAN videos
+	video, err := searchCSpanVideos(jurisdiction, keywords)
+	if err != nil {
+		log.Printf("⚠️  C-SPAN video search failed: %v", err)
+	}
+
+	// Check for YouTube livestream
+	livestream, err := checkCSpanYouTubeLivestream()
+	if err != nil {
+		log.Printf("⚠️  YouTube livestream check failed: %v", err)
+	}
+
+	return video, livestream, nil
+}
+
 func generateBusinessError(businesses []Business) string {
 	if len(businesses) == 0 {
 		// Fallback to regular error if no businesses available
@@ -1536,7 +1683,7 @@ Return ONLY valid HTML (no markdown code fences). Make collapsible details flow 
 	return anthropicResp.Content[0].Text, nil
 }
 
-func sendErrorLogToTracker(trackerURL string, message string, gifURLs []string, slogan string, verboseDesc string, songTitle string, songArtist string, songURL string, satiricalFix string, foodImageURL string, foodImageAttr string, childrensStory string, memeURL string) error {
+func sendErrorLogToTracker(trackerURL string, message string, gifURLs []string, slogan string, verboseDesc string, songTitle string, songArtist string, songURL string, satiricalFix string, foodImageURL string, foodImageAttr string, childrensStory string, memeURL string, cspanVideo *CSpanVideo, cspanLivestream *YouTubeLivestream) error {
 	errorLog := map[string]interface{}{
 		"message":          message,
 		"gif_urls":         gifURLs, // Now an array of GIF URLs
@@ -1550,6 +1697,8 @@ func sendErrorLogToTracker(trackerURL string, message string, gifURLs []string, 
 		"food_image_attr":  foodImageAttr,
 		"childrens_story":  childrensStory,
 		"meme_url":         memeURL,
+		"cspan_video":      cspanVideo,
+		"cspan_livestream": cspanLivestream,
 	}
 
 	requestBody, err := json.Marshal(errorLog)
@@ -1786,12 +1935,28 @@ func processRhythmTrigger(trigger RhythmTrigger) {
 		log.Printf("⏭️  Skipping meme generation (counter: %d/8)", errorCounterNoMeme)
 	}
 
-	// Send to location tracker if configured (includes satirical fix, food image, children's story, meme, and multiple GIFs)
+	// Get C-SPAN video if tracker is configured
+	var cspanVideo *CSpanVideo
+	var cspanLivestream *YouTubeLivestream
 	if globalTrackerURL != "" {
-		if err := sendErrorLogToTracker(globalTrackerURL, errorMessage, gifURLs, sloganResponse.Slogan, sloganResponse.VerboseDesc, song.Title, song.Artist, song.URL, satiricalFix, foodImage.URL, foodImage.Attribution, childrensStory, memeURL); err != nil {
+		cspanVid, cspanLive, err := getCSpanVideoForErrorLog(globalTrackerURL)
+		if err != nil {
+			log.Printf("⚠️  Failed to get C-SPAN video: %v", err)
+		} else {
+			cspanVideo = cspanVid
+			cspanLivestream = cspanLive
+			if cspanVideo != nil {
+				log.Printf("🏛️  Found C-SPAN content: %s", cspanVideo.Title)
+			}
+		}
+	}
+
+	// Send to location tracker if configured (includes satirical fix, food image, children's story, meme, C-SPAN video, and multiple GIFs)
+	if globalTrackerURL != "" {
+		if err := sendErrorLogToTracker(globalTrackerURL, errorMessage, gifURLs, sloganResponse.Slogan, sloganResponse.VerboseDesc, song.Title, song.Artist, song.URL, satiricalFix, foodImage.URL, foodImage.Attribution, childrensStory, memeURL, cspanVideo, cspanLivestream); err != nil {
 			log.Printf("Warning: Failed to send to location tracker: %v", err)
 		} else {
-			log.Printf("💾 Sent error log with satirical fix, food image, and children's story to DynamoDB via location tracker")
+			log.Printf("💾 Sent error log with satirical fix, food image, children's story, and C-SPAN content to DynamoDB via location tracker")
 		}
 	}
 }
@@ -2094,12 +2259,29 @@ func main() {
 		}
 		fmt.Printf("================\n\n")
 
-		// Send to location tracker if configured (includes satirical fix, food image, children's story, and multiple GIFs)
+		// Get C-SPAN video if tracker is configured
+		var cspanVideo *CSpanVideo
+		var cspanLivestream *YouTubeLivestream
 		if locationTrackerURL != "" {
-			if err := sendErrorLogToTracker(locationTrackerURL, errorMessage, gifURLs, sloganResponse.Slogan, sloganResponse.VerboseDesc, song.Title, song.Artist, song.URL, satiricalFix, foodImage.URL, foodImage.Attribution, childrensStory, memeURL); err != nil {
+			cspanVid, cspanLive, err := getCSpanVideoForErrorLog(locationTrackerURL)
+			if err != nil {
+				log.Printf("⚠️  Failed to get C-SPAN video: %v", err)
+			} else {
+				cspanVideo = cspanVid
+				cspanLivestream = cspanLive
+				if cspanVideo != nil {
+					log.Printf("🏛️  Found C-SPAN content: %s", cspanVideo.Title)
+					fmt.Printf("C-SPAN Video: %s\n", cspanVideo.Title)
+				}
+			}
+		}
+
+		// Send to location tracker if configured (includes satirical fix, food image, children's story, meme, C-SPAN video, and multiple GIFs)
+		if locationTrackerURL != "" {
+			if err := sendErrorLogToTracker(locationTrackerURL, errorMessage, gifURLs, sloganResponse.Slogan, sloganResponse.VerboseDesc, song.Title, song.Artist, song.URL, satiricalFix, foodImage.URL, foodImage.Attribution, childrensStory, memeURL, cspanVideo, cspanLivestream); err != nil {
 				log.Printf("Warning: Failed to send to location tracker: %v", err)
 			} else {
-				log.Printf("📍 Sent error log with satirical fix, food image, children's story, and meme to location tracker")
+				log.Printf("📍 Sent error log with satirical fix, food image, children's story, meme, and C-SPAN content to location tracker")
 			}
 		}
 	}
