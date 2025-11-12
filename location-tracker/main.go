@@ -63,11 +63,18 @@ type ErrorLog struct {
 	MemeURL             string             `json:"meme_url,omitempty" dynamodbav:"meme_url"` // AI-generated absurdist meme
 	CSpanVideo          *CSpanVideo        `json:"cspan_video,omitempty" dynamodbav:"cspan_video,omitempty"`
 	CSpanLivestream     *YouTubeLivestream `json:"cspan_livestream,omitempty" dynamodbav:"cspan_livestream,omitempty"`
+	TikTokVideo         *TikTokVideo       `json:"tiktok_video,omitempty" dynamodbav:"tiktok_video,omitempty"`
 	UserExperienceNote  string             `json:"user_experience_note,omitempty" dynamodbav:"user_experience_note"`
 	UserNoteKeywords    []string           `json:"user_note_keywords,omitempty" dynamodbav:"user_note_keywords"`
 	NearbyBusinesses    []string           `json:"nearby_businesses,omitempty" dynamodbav:"nearby_businesses"`
 	AnonymousTips       []string           `json:"anonymous_tips,omitempty" dynamodbav:"anonymous_tips"`
 	Timestamp           time.Time          `json:"timestamp" dynamodbav:"timestamp"`
+
+	// Rorschach test fields
+	RorschachImageNumber int    `json:"rorschach_image_number,omitempty" dynamodbav:"rorschach_image_number"` // 1-10
+	RorschachImageURL    string `json:"rorschach_image_url,omitempty" dynamodbav:"rorschach_image_url"`
+	RorschachAIResponse  string `json:"rorschach_ai_response,omitempty" dynamodbav:"rorschach_ai_response"`       // AI interpretation
+	RorschachUserResponse string `json:"rorschach_user_response,omitempty" dynamodbav:"rorschach_user_response"` // User's response
 
 	// Traceability - links this error log back to the seed interaction that influenced its generation
 	SeedInteractionType      string    `json:"seed_interaction_type,omitempty" dynamodbav:"seed_interaction_type"`
@@ -152,6 +159,19 @@ type YouTubeLivestream struct {
 	VideoID   string `json:"video_id,omitempty" dynamodbav:"video_id"`
 	ChannelID string `json:"channel_id,omitempty" dynamodbav:"channel_id"`
 	IsLive    bool   `json:"is_live" dynamodbav:"is_live"`
+}
+
+// TikTokVideo represents a TikTok video found via Google search
+type TikTokVideo struct {
+	VideoID     string   `json:"video_id" dynamodbav:"video_id"`           // TikTok video ID
+	URL         string   `json:"url" dynamodbav:"url"`                     // Full TikTok URL
+	EmbedURL    string   `json:"embed_url" dynamodbav:"embed_url"`         // oEmbed iframe URL
+	Title       string   `json:"title,omitempty" dynamodbav:"title"`       // Video title/description
+	Author      string   `json:"author,omitempty" dynamodbav:"author"`     // Creator username
+	AuthorURL   string   `json:"author_url,omitempty" dynamodbav:"author_url"` // Creator profile URL
+	Thumbnail   string   `json:"thumbnail,omitempty" dynamodbav:"thumbnail"`   // Video thumbnail
+	Tags        []string `json:"tags,omitempty" dynamodbav:"tags"`         // Hashtags used for matching
+	Description string   `json:"description,omitempty" dynamodbav:"description"` // Why this video was selected
 }
 
 // PerplexityRequest represents a request to Perplexity API
@@ -343,6 +363,11 @@ func main() {
 	http.HandleFunc("/api/location", handleLocation)
 	http.HandleFunc("/api/errorlogs/", handleErrorLogByID)
 	http.HandleFunc("/api/errorlogs", handleErrorLogs)
+	http.HandleFunc("/api/facebook-share/", handleFacebookShare)
+	http.HandleFunc("/api/share-image/", handleShareImage)
+	http.HandleFunc("/api/rorschach/interpret/", handleRorschachInterpret)
+	http.HandleFunc("/api/rorschach/respond/", handleRorschachUserResponse)
+	http.HandleFunc("/api/giphy/action/", handleGiphyAction)
 	http.HandleFunc("/api/businesses", handleBusinesses)
 	http.HandleFunc("/api/keywords", handlePendingKeywords)
 	http.HandleFunc("/api/commercial-context", handleCommercialContext)
@@ -610,7 +635,85 @@ func generateRandomLocationInRadius(baseLat, baseLng, radiusMiles float64) (floa
 	return baseLat + latOffset, baseLng + lngOffset
 }
 
+// getCachedCommercialRealEstate attempts to find cached commercial real estate data near a location
+func getCachedCommercialRealEstate(queryLat, queryLng float64, radiusMiles float64) (*CommercialRealEstate, error) {
+	if !useDynamoDB {
+		return nil, nil
+	}
+
+	ctx := context.Background()
+
+	// Scan the table for recent commercial real estate entries
+	// Note: In production, you'd want a GSI on timestamp for better performance
+	scanInput := &dynamodb.ScanInput{
+		TableName: aws.String(commercialRealEstateTableName),
+	}
+
+	result, err := dynamoClient.Scan(ctx, scanInput)
+	if err != nil {
+		log.Printf("⚠️  Failed to scan commercial real estate table: %v", err)
+		return nil, err
+	}
+
+	var records []CommercialRealEstate
+	err = attributevalue.UnmarshalListOfMaps(result.Items, &records)
+	if err != nil {
+		log.Printf("⚠️  Failed to unmarshal commercial real estate records: %v", err)
+		return nil, err
+	}
+
+	// Find a record within the specified radius and not too old (30 days)
+	cacheExpiryDuration := 30 * 24 * time.Hour
+	now := time.Now()
+
+	for i := range records {
+		record := &records[i]
+
+		// Check if record is not expired
+		if now.Sub(record.Timestamp) > cacheExpiryDuration {
+			continue
+		}
+
+		// Calculate distance between query point and cached record
+		distance := calculateDistance(queryLat, queryLng, record.QueryLat, record.QueryLng)
+
+		// If within radius, return this cached record
+		if distance <= radiusMiles {
+			log.Printf("💾 Cache HIT: Found cached commercial real estate data %.2f miles away (age: %v)",
+				distance, now.Sub(record.Timestamp).Round(time.Hour))
+			return record, nil
+		}
+	}
+
+	log.Printf("🔍 Cache MISS: No cached data found within %.1f miles", radiusMiles)
+	return nil, nil
+}
+
+// calculateDistance calculates the distance in miles between two lat/lng coordinates using Haversine formula
+func calculateDistance(lat1, lng1, lat2, lng2 float64) float64 {
+	const earthRadiusMiles = 3959.0
+
+	// Convert to radians
+	lat1Rad := lat1 * math.Pi / 180
+	lng1Rad := lng1 * math.Pi / 180
+	lat2Rad := lat2 * math.Pi / 180
+	lng2Rad := lng2 * math.Pi / 180
+
+	// Haversine formula
+	dlat := lat2Rad - lat1Rad
+	dlng := lng2Rad - lng1Rad
+
+	a := math.Sin(dlat/2)*math.Sin(dlat/2) +
+		math.Cos(lat1Rad)*math.Cos(lat2Rad)*
+			math.Sin(dlng/2)*math.Sin(dlng/2)
+
+	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+
+	return earthRadiusMiles * c
+}
+
 // searchCommercialRealEstate uses Perplexity API to find commercial real estate and businesses in an area
+// It first checks the cache to avoid unnecessary API calls
 func searchCommercialRealEstate(baseLat, baseLng float64, userKeywords []string) ([]CommercialPropertyDetails, []GoverningBody, float64, float64, error) {
 	if perplexityAPIKey == "" {
 		log.Println("⚠️  Perplexity API key not set, skipping commercial real estate search")
@@ -620,6 +723,13 @@ func searchCommercialRealEstate(baseLat, baseLng float64, userKeywords []string)
 	// Generate random location within 10 mile radius
 	queryLat, queryLng := generateRandomLocationInRadius(baseLat, baseLng, 10.0)
 	log.Printf("🎲 Searching for commercial real estate at random location: (%.6f, %.6f) within 10 miles of base", queryLat, queryLng)
+
+	// Try to find cached data within 5 miles of the query location
+	cached, err := getCachedCommercialRealEstate(queryLat, queryLng, 5.0)
+	if err == nil && cached != nil {
+		// Return cached data, using the cached query coordinates
+		return cached.Properties, cached.GoverningBodies, cached.QueryLat, cached.QueryLng, nil
+	}
 
 	// Build satirical prompt that references user keywords if available
 	keywordContext := ""
@@ -867,8 +977,8 @@ func handleVerifyTurnstile(w http.ResponseWriter, r *http.Request) {
 	// Verify the Turnstile token with Cloudflare
 	turnstileSecretKey := os.Getenv("TURNSTILE_SECRET_KEY")
 	if turnstileSecretKey == "" {
-		// Use Cloudflare's demo secret key if not configured
-		turnstileSecretKey = "1x0000000000000000000000000000000AA"
+		// Use Cloudflare's test secret key that forces interactive challenge
+		turnstileSecretKey = "2x0000000000000000000000000000000AA"
 	}
 
 	// Make verification request to Cloudflare
@@ -2057,12 +2167,58 @@ func serveTurnstileAuthPage(w http.ResponseWriter, r *http.Request, errorLogID s
 
 	turnstileSiteKey := os.Getenv("TURNSTILE_SITE_KEY")
 	if turnstileSiteKey == "" {
-		// Use Cloudflare's demo/test site key if not configured
-		turnstileSiteKey = "1x00000000000000000000AA"
+		// Use Cloudflare's test site key that forces interactive challenge
+		turnstileSiteKey = "2x00000000000000000000AB"
 	}
 
 	html := fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en">
+<!--
+═══════════════════════════════════════════════════════════════════════════════
+  🕵️  CLASSIFIED DOCUMENT - FOR YOUR EYES ONLY  🕵️
+═══════════════════════════════════════════════════════════════════════════════
+
+    ██████╗ ███████╗ ██████╗██████╗ ███████╗████████╗     ██████╗ ██╗   ██╗███████╗███████╗████████╗
+    ██╔══██╗██╔════╝██╔════╝██╔══██╗██╔════╝╚══██╔══╝    ██╔═══██╗██║   ██║██╔════╝██╔════╝╚══██╔══╝
+    ███████║█████╗  ██║     ██████╔╝█████╗     ██║       ██║   ██║██║   ██║█████╗  ███████╗   ██║
+    ██╔══██║██╔══╝  ██║     ██╔══██╗██╔══╝     ██║       ██║▄▄ ██║██║   ██║██╔══╝  ╚════██║   ██║
+    ██║  ██║███████╗╚██████╗██║  ██║███████╗   ██║       ╚██████╔╝╚██████╔╝███████╗███████║   ██║
+    ╚═╝  ╚═╝╚══════╝ ╚═════╝╚═╝  ╚═╝╚══════╝   ╚═╝        ╚══▀▀═╝  ╚═════╝ ╚══════╝╚══════╝   ╚═╝
+
+                    🔒 ENCRYPTED MESSAGE FOLLOWS 🔒
+
+    You've discovered a hidden layer of surveillance.
+
+    PUZZLE: Decode the following cipher to reveal the secret code word.
+
+    ROT13 Challenge:
+    ┌─────────────────────────────────────────────────────────────┐
+    │  PBATENGHYNGVBAF LBH SBHAQ GUR FRPERG                      │
+    │  GUR PBQR JBEQ VF: QRPELCGVBA                               │
+    │  RAGRE GUVF NG GUR YBTVA CEBZCG GB HAYBPX FCRPVNY NPPRFF   │
+    └─────────────────────────────────────────────────────────────┘
+
+    Hint: Caesar's favorite shift is 13 positions...
+
+    ⚠️  WARNING: This document is classified. Unauthorized access is monitored.
+
+    SURVEILLANCE NETWORK STATUS:
+    ┌──────────────────────────────────────────┐
+    │  [████████████████████████████] 100%%    │
+    │  All systems operational                 │
+    │  Error Log ID: %s                        │
+    │  Access Level: RESTRICTED                │
+    │  Your IP: [REDACTED]                     │
+    │  Geolocation: [TRACKING...]              │
+    └──────────────────────────────────────────┘
+
+    Did you really think this was just an error log?
+    Welcome to the panopticon. You're always being watched. 👁️
+
+    P.S. Check the JavaScript console for additional easter eggs...
+
+═══════════════════════════════════════════════════════════════════════════════
+-->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -2097,9 +2253,19 @@ func serveTurnstileAuthPage(w http.ResponseWriter, r *http.Request, errorLogID s
             animation: pulse 2s ease-in-out infinite;
         }
 
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
         @keyframes pulse {
             0%%, 100%% { transform: scale(1); }
             50%% { transform: scale(1.1); }
+        }
+
+        @keyframes spin {
+            0%% { transform: rotate(0deg); }
+            100%% { transform: rotate(360deg); }
         }
 
         h1 {
@@ -2219,9 +2385,67 @@ func serveTurnstileAuthPage(w http.ResponseWriter, r *http.Request, errorLogID s
                 document.getElementById('error-message').textContent = 'Network error: ' + error.message;
             });
         }
+
+        // Console Easter Egg
+        console.log('%%c🕵️ SECRET AGENT CONSOLE 🕵️', 'font-size: 24px; font-weight: bold; color: #667eea;');
+        console.log('%%c═══════════════════════════════════════════════════════════════', 'color: #764ba2;');
+        console.log('%%cWelcome to the surveillance matrix, agent.', 'font-size: 14px; color: #333;');
+        console.log('%%c', 'font-size: 12px;');
+        console.log('%%cYour access level: RESTRICTED', 'color: red; font-weight: bold;');
+        console.log('%%cError Log ID: %s', 'color: #666;');
+        console.log('%%c', 'font-size: 12px;');
+        console.log('%%c🎮 INTERACTIVE CHALLENGE:', 'font-size: 14px; font-weight: bold; color: #667eea;');
+        console.log('%%cType the following command to unlock a secret message:', 'color: #333;');
+        console.log('%%c    window.revealSecret()', 'background: #f0f0f0; padding: 8px; font-family: monospace; color: #d63384;');
+        console.log('%%c═══════════════════════════════════════════════════════════════', 'color: #764ba2;');
+
+        window.revealSecret = function() {
+            console.clear();
+            console.log('%%c', 'font-size: 20px;');
+            console.log('%%c    ███████╗███████╗ ██████╗██████╗ ███████╗████████╗', 'color: #667eea; font-family: monospace;');
+            console.log('%%c    ██╔════╝██╔════╝██╔════╝██╔══██╗██╔════╝╚══██╔══╝', 'color: #667eea; font-family: monospace;');
+            console.log('%%c    ███████╗█████╗  ██║     ██████╔╝█████╗     ██║   ', 'color: #667eea; font-family: monospace;');
+            console.log('%%c    ╚════██║██╔══╝  ██║     ██╔══██╗██╔══╝     ██║   ', 'color: #667eea; font-family: monospace;');
+            console.log('%%c    ███████║███████╗╚██████╗██║  ██║███████╗   ██║   ', 'color: #667eea; font-family: monospace;');
+            console.log('%%c    ╚══════╝╚══════╝ ╚═════╝╚═╝  ╚═╝╚══════╝   ╚═╝   ', 'color: #667eea; font-family: monospace;');
+            console.log('%%c', 'font-size: 20px;');
+            console.log('%%c🎉 CONGRATULATIONS! You found the hidden console puzzle!', 'font-size: 16px; color: green; font-weight: bold;');
+            console.log('%%c', 'font-size: 12px;');
+            console.log('%%c📜 SECRET MESSAGE:', 'font-size: 14px; font-weight: bold; color: #764ba2;');
+            console.log('%%c"The watchers are themselves watched. Every system of surveillance', 'color: #333; font-style: italic;');
+            console.log('%%ccontains within it the seeds of its own transparency. You have', 'color: #333; font-style: italic;');
+            console.log('%%cdemonstrated this by finding what was hidden in plain sight."', 'color: #333; font-style: italic;');
+            console.log('%%c', 'font-size: 12px;');
+            console.log('%%c🔑 ACHIEVEMENT UNLOCKED: "Console Spelunker"', 'background: gold; color: black; padding: 8px; font-weight: bold;');
+            console.log('%%c', 'font-size: 12px;');
+            console.log('%%c💡 Bonus Hint: Check the HTML source comments for another puzzle...', 'color: #666; font-style: italic;');
+            console.log('%%c', 'font-size: 12px;');
+            console.log('%%c👁️ Remember: You are not paranoid if they really are watching.', 'color: red; font-weight: bold;');
+            return '🕵️ Secret revealed! Welcome to the inner circle, agent.';
+        };
+
+        // Hidden function for extra curious developers
+        window.surveillance = {
+            status: 'ACTIVE',
+            targets: '[REDACTED]',
+            operators: Math.floor(Math.random() * 1000) + 100,
+            lastUpdate: new Date().toISOString(),
+            message: '👁️ The panopticon sees all. Type window.surveillance.bypass() to attempt escape.'
+        };
+
+        window.surveillance.bypass = function() {
+            console.log('%%c⚠️  ACCESS DENIED ⚠️', 'font-size: 20px; color: red; font-weight: bold;');
+            console.log('%%cNice try, agent. But you cannot simply walk out of the matrix.', 'color: red;');
+            console.log('%%cYour attempt has been logged and reported to the authorities.', 'color: red;');
+            console.log('%%c...', 'color: gray;');
+            setTimeout(() => {
+                console.log('%%cJust kidding! 😄 There is no escape, but we appreciate the effort.', 'color: green; font-weight: bold;');
+            }, 2000);
+            return '🚫 Escape impossible. Welcome to Hotel California.';
+        };
     </script>
 </body>
-</html>`, turnstileSiteKey, errorLogID, errorLogID, errorLogID)
+</html>`, turnstileSiteKey, errorLogID, errorLogID, errorLogID, errorLogID)
 
 	w.Write([]byte(html))
 }
@@ -2523,6 +2747,76 @@ const indexHTML = `<!DOCTYPE html>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>📍 Location Tracker</title>
     <script src="https://js.stripe.com/v3/"></script>
+    {{/* Hidden ASCII art puzzle for source code viewers */}}
+    <script type="text/plain" style="display:none">
+═══════════════════════════════════════════════════════════════════════════════
+  🕵️  CLASSIFIED DOCUMENT - FOR YOUR EYES ONLY  🕵️
+═══════════════════════════════════════════════════════════════════════════════
+
+    ██████╗ ███████╗ ██████╗██████╗ ███████╗████████╗     ██████╗ ██╗   ██╗███████╗███████╗████████╗
+    ██╔══██╗██╔════╝██╔════╝██╔══██╗██╔════╝╚══██╔══╝    ██╔═══██╗██║   ██║██╔════╝██╔════╝╚══██╔══╝
+    ███████║█████╗  ██║     ██████╔╝█████╗     ██║       ██║   ██║██║   ██║█████╗  ███████╗   ██║
+    ██╔══██║██╔══╝  ██║     ██╔══██╗██╔══╝     ██║       ██║▄▄ ██║██║   ██║██╔══╝  ╚════██║   ██║
+    ██║  ██║███████╗╚██████╗██║  ██║███████╗   ██║       ╚██████╔╝╚██████╔╝███████╗███████║   ██║
+    ╚═╝  ╚═╝╚══════╝ ╚═════╝╚═╝  ╚═╝╚══════╝   ╚═╝        ╚══▀▀═╝  ╚═════╝ ╚══════╝╚══════╝   ╚═╝
+
+                    🔒 ENCRYPTED MESSAGE FOLLOWS 🔒
+
+    You've discovered a hidden layer of surveillance.
+
+    PUZZLE: Decode the following cipher to reveal the secret code word.
+
+    ROT13 Challenge:
+    ┌─────────────────────────────────────────────────────────────┐
+    │  PBATENGHYNGVBAF LBH SBHAQ GUR FRPERG                      │
+    │  GUR PBQR JBEQ VF: QRPELCGVBA                               │
+    │  RAGRE GUVF NG GUR YBTVA CEBZCG GB HAYBPX FCRPVNY NPPRFF   │
+    └─────────────────────────────────────────────────────────────┘
+
+    Hint: Caesar's favorite shift is 13 positions...
+
+    ⚠️  WARNING: This document is classified. Unauthorized access is monitored.
+
+    SURVEILLANCE NETWORK STATUS:
+    ┌──────────────────────────────────────────┐
+    │  [████████████████████████████] 100%     │
+    │  All systems operational                 │
+    │  Active Monitors: 847                    │
+    │  Access Level: PUBLIC (MONITORED)        │
+    │  Your IP: [REDACTED]                     │
+    │  Geolocation: [TRACKING...]              │
+    │  Session Started: [LOGGED]               │
+    └──────────────────────────────────────────┘
+
+           🌐 WELCOME TO THE ERROR SURVEILLANCE NETWORK 🌐
+
+    Every error is tracked. Every access is logged. Every click is recorded.
+
+    But who watches the watchers?
+
+    Did you really think this was just a location tracker?
+    Welcome to the panopticon. You're always being watched. 👁️
+
+    ┌────────────────────────────────────────────────────────────┐
+    │  ASCII ART PUZZLE #1: The Maze                            │
+    │                                                            │
+    │  ╔═══════════════════════════════════════╗                │
+    │  ║ S → → ↓                               ║                │
+    │  ║       ↓   ╔═══╗   ╔═══════╗           ║                │
+    │  ║   ╔═══╝   ║   ║   ║       ↓           ║                │
+    │  ║   ↓       ║   ╚═══╝   ╔═══╝           ║                │
+    │  ║   ╚═══════════════════╝   → → → E     ║                │
+    │  ╚═══════════════════════════════════════╝                │
+    │                                                            │
+    │  Can you find the path from S to E?                       │
+    │  Hint: The path spells a word when decoded...             │
+    └────────────────────────────────────────────────────────────┘
+
+    P.S. Check the JavaScript console for additional easter eggs...
+          Type: window.revealSecret()
+
+═══════════════════════════════════════════════════════════════════════════════
+    </script>
     <style>
         /* Delphi Design System - Memphis × Swiss × 80s Pop + Terminal Minimalist */
 
@@ -3321,6 +3615,9 @@ const indexHTML = `<!DOCTYPE html>
         // Error filter state
         let filterErrorsWithNotesOnly = false;
         let allErrorLogs = []; // Store all error logs
+        let isLoggedIn = false; // Track authentication state
+        let pendingRorschachInterpretations = new Set(); // Track which interpretations are being generated
+        let displayedErrorIds = new Set(); // Track which error logs are already displayed to avoid reloading
 
         // Easter egg pattern detection for filter toggle
         let toggleClickTimes = [];
@@ -3371,7 +3668,8 @@ const indexHTML = `<!DOCTYPE html>
                 localStorage.setItem('errorFilter', 'all');
             }
 
-            // Re-display with filter
+            // Re-display with filter (clear tracking to force full re-render)
+            displayedErrorIds.clear();
             displayErrorLogs(allErrorLogs);
         }
 
@@ -3388,6 +3686,7 @@ const indexHTML = `<!DOCTYPE html>
                 });
 
                 if (res.ok) {
+                    isLoggedIn = true; // Set authentication state
                     document.getElementById('login').style.display = 'none';
                     document.getElementById('tracker').style.display = 'block';
                     refreshLocations();
@@ -3704,7 +4003,17 @@ const indexHTML = `<!DOCTYPE html>
                 }
 
                 const errorLogs = await res.json();
-                displayErrorLogs(errorLogs);
+
+                // Check if there are any new error logs
+                const newErrors = errorLogs.filter(log => !displayedErrorIds.has(log.id));
+
+                if (newErrors.length > 0) {
+                    // There are new errors, update the display
+                    displayErrorLogs(errorLogs);
+                } else {
+                    // No new errors, just update the allErrorLogs array for filtering
+                    allErrorLogs = errorLogs || [];
+                }
             } catch (e) {
                 console.error('Error fetching error logs:', e);
             }
@@ -3798,43 +4107,96 @@ const indexHTML = `<!DOCTYPE html>
                 div.className = 'location-card';
                 div.style.borderLeft = '4px solid #ef4444';
                 div.dataset.timestamp = errorLog.timestamp;
-                div.innerHTML = ` + "`" + `
-                    ${errorLog.cspan_video || errorLog.cspan_livestream ? ` + "`" + `
-                        <div style="margin-bottom: 20px; padding: 20px; background: linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, rgba(37, 99, 235, 0.12) 100%); border: 3px solid rgba(59, 130, 246, 0.4); border-radius: 12px; box-shadow: 0 0 25px rgba(59, 130, 246, 0.25), 4px 4px 0px rgba(59, 130, 246, 0.15);">
-                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">
-                                <div style="display: flex; align-items: center; gap: 10px;">
-                                    <span style="font-size: 24px;">🏛️</span>
-                                    <strong style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-size: 16px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800;">C-SPAN Coverage</strong>
-                                </div>
-                                <span style="font-size: 9px; color: #999; font-weight: 600; letter-spacing: 0.05em;">RELATED GOVERNMENT PROCEEDINGS</span>
-                            </div>
-                            ${errorLog.cspan_video ? ` + "`" + `
-                                <div style="background: rgba(255, 255, 255, 0.9); padding: 15px; border-radius: 8px; border: 2px solid rgba(59, 130, 246, 0.3);">
-                                    <div style="margin-bottom: 12px;">
-                                        <div style="font-weight: 700; color: #1e40af; font-size: 15px; margin-bottom: 6px;">${errorLog.cspan_video.title || 'C-SPAN Video'}</div>
-                                        ${errorLog.cspan_video.description ? ` + "`" + `
-                                            <div style="font-size: 13px; color: #64748b; line-height: 1.5; margin-bottom: 8px;">${errorLog.cspan_video.description}</div>
-                                        ` + "`" + ` : ''}
-                                        <div style="display: flex; gap: 12px; font-size: 12px; color: #94a3b8;">
-                                            ${errorLog.cspan_video.date ? ` + "`" + `<span>📅 ${errorLog.cspan_video.date}</span>` + "`" + ` : ''}
-                                            ${errorLog.cspan_video.duration ? ` + "`" + `<span>⏱️ ${errorLog.cspan_video.duration}</span>` + "`" + ` : ''}
-                                        </div>
-                                    </div>
-                                    ${errorLog.cspan_video.url ? ` + "`" + `
-                                        <a href="${errorLog.cspan_video.url}" target="_blank" rel="noopener noreferrer" style="display: inline-block; padding: 10px 20px; background: #3b82f6; color: white; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 13px; transition: all 0.2s; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);">View on C-SPAN →</a>
-                                    ` + "`" + ` : ''}
-                                </div>
-                            ` + "`" + ` : ''}
-                            ${errorLog.cspan_livestream && errorLog.cspan_livestream.is_live ? ` + "`" + `
-                                <div style="background: rgba(239, 68, 68, 0.1); padding: 12px; border-radius: 8px; border: 2px solid rgba(239, 68, 68, 0.3); margin-top: 10px;">
-                                    <div style="display: flex; align-items: center; gap: 8px; color: #dc2626; font-weight: 700; font-size: 14px;">
-                                        <span style="display: inline-block; width: 8px; height: 8px; background: #dc2626; border-radius: 50%; animation: pulse 2s infinite;"></span>
-                                        LIVE NOW: ${errorLog.cspan_livestream.title || 'C-SPAN Live Coverage'}
-                                    </div>
-                                </div>
-                            ` + "`" + ` : ''}
-                        </div>
-                    ` + "`" + ` : ''}
+
+                // Build C-SPAN section if present
+                let cspanHTML = '';
+                if (errorLog.cspan_video || errorLog.cspan_livestream) {
+                    cspanHTML += '<div style="margin-bottom: 20px; padding: 20px; background: linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, rgba(37, 99, 235, 0.12) 100%); border: 3px solid rgba(59, 130, 246, 0.4); border-radius: 12px; box-shadow: 0 0 25px rgba(59, 130, 246, 0.25), 4px 4px 0px rgba(59, 130, 246, 0.15);">';
+                    cspanHTML += '<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">';
+                    cspanHTML += '<div style="display: flex; align-items: center; gap: 10px;">';
+                    cspanHTML += '<span style="font-size: 24px;">🏛️</span>';
+                    cspanHTML += '<strong style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-size: 16px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800;">C-SPAN Coverage</strong>';
+                    cspanHTML += '</div>';
+                    cspanHTML += '<span style="font-size: 9px; color: #999; font-weight: 600; letter-spacing: 0.05em;">RELATED GOVERNMENT PROCEEDINGS</span>';
+                    cspanHTML += '</div>';
+
+                    if (errorLog.cspan_video) {
+                        cspanHTML += '<div style="background: rgba(255, 255, 255, 0.9); padding: 15px; border-radius: 8px; border: 2px solid rgba(59, 130, 246, 0.3);">';
+                        cspanHTML += '<div style="margin-bottom: 12px;">';
+                        cspanHTML += '<div style="font-weight: 700; color: #1e40af; font-size: 15px; margin-bottom: 6px;">' + (errorLog.cspan_video.title || 'C-SPAN Video') + '</div>';
+                        if (errorLog.cspan_video.description) {
+                            cspanHTML += '<div style="font-size: 13px; color: #64748b; line-height: 1.5; margin-bottom: 8px;">' + errorLog.cspan_video.description + '</div>';
+                        }
+                        cspanHTML += '<div style="display: flex; gap: 12px; font-size: 12px; color: #94a3b8;">';
+                        if (errorLog.cspan_video.date) {
+                            cspanHTML += '<span>📅 ' + errorLog.cspan_video.date + '</span>';
+                        }
+                        if (errorLog.cspan_video.duration) {
+                            cspanHTML += '<span>⏱️ ' + errorLog.cspan_video.duration + '</span>';
+                        }
+                        cspanHTML += '</div>';
+                        cspanHTML += '</div>';
+                        if (errorLog.cspan_video.url) {
+                            cspanHTML += '<a href="' + errorLog.cspan_video.url + '" target="_blank" rel="noopener noreferrer" style="display: inline-block; padding: 10px 20px; background: #3b82f6; color: white; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 13px; transition: all 0.2s; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);">View on C-SPAN →</a>';
+                        }
+                        cspanHTML += '</div>';
+                    }
+
+                    if (errorLog.cspan_livestream && errorLog.cspan_livestream.is_live) {
+                        cspanHTML += '<div style="background: rgba(239, 68, 68, 0.1); padding: 12px; border-radius: 8px; border: 2px solid rgba(239, 68, 68, 0.3); margin-top: 10px;">';
+                        cspanHTML += '<div style="display: flex; align-items: center; gap: 8px; color: #dc2626; font-weight: 700; font-size: 14px;">';
+                        cspanHTML += '<span style="display: inline-block; width: 8px; height: 8px; background: #dc2626; border-radius: 50%; animation: pulse 2s infinite;"></span>';
+                        cspanHTML += 'LIVE NOW: ' + (errorLog.cspan_livestream.title || 'C-SPAN Live Coverage');
+                        cspanHTML += '</div>';
+                        cspanHTML += '</div>';
+                    }
+
+                    cspanHTML += '</div>';
+                }
+
+                // Build TikTok section if present (collapsed by default, no iframe)
+                let tiktokHTML = '';
+                if (errorLog.tiktok_video) {
+                    tiktokHTML += '<details style="margin-bottom: 15px; padding: 12px; background: linear-gradient(135deg, rgba(236, 72, 153, 0.06) 0%, rgba(219, 39, 119, 0.09) 100%); border: 2px solid rgba(236, 72, 153, 0.25); border-radius: 8px; cursor: pointer;">';
+                    tiktokHTML += '<summary style="list-style: none; display: flex; align-items: center; justify-content: space-between; outline: none; user-select: none;">';
+                    tiktokHTML += '<div style="display: flex; align-items: center; gap: 8px;">';
+                    tiktokHTML += '<span style="font-size: 18px;">🎵</span>';
+                    tiktokHTML += '<strong style="background: linear-gradient(135deg, #ec4899 0%, #db2777 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800;">TikTok</strong>';
+                    if (errorLog.tiktok_video.title) {
+                        tiktokHTML += '<span style="font-size: 12px; color: #64748b; font-weight: 500; margin-left: 6px;">• ' + errorLog.tiktok_video.title + '</span>';
+                    }
+                    tiktokHTML += '</div>';
+                    tiktokHTML += '<span style="font-size: 9px; color: #94a3b8; font-weight: 600;">▶</span>';
+                    tiktokHTML += '</summary>';
+
+                    tiktokHTML += '<div style="background: rgba(255, 255, 255, 0.95); padding: 12px; border-radius: 6px; border: 1px solid rgba(236, 72, 153, 0.2); margin-top: 10px;">';
+
+                    if (errorLog.tiktok_video.author) {
+                        tiktokHTML += '<div style="font-size: 12px; color: #64748b; margin-bottom: 8px;">👤 @' + errorLog.tiktok_video.author + '</div>';
+                    }
+
+                    if (errorLog.tiktok_video.description) {
+                        tiktokHTML += '<div style="font-size: 11px; color: #94a3b8; font-style: italic; margin-bottom: 10px; padding: 8px; background: rgba(236, 72, 153, 0.04); border-radius: 4px;">' + errorLog.tiktok_video.description + '</div>';
+                    }
+
+                    // Tags
+                    if (errorLog.tiktok_video.tags && errorLog.tiktok_video.tags.length > 0) {
+                        tiktokHTML += '<div style="display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px;">';
+                        errorLog.tiktok_video.tags.forEach(tag => {
+                            tiktokHTML += '<span style="background: rgba(236, 72, 153, 0.12); color: #be185d; padding: 3px 8px; border-radius: 10px; font-size: 10px; font-weight: 600;">#' + tag + '</span>';
+                        });
+                        tiktokHTML += '</div>';
+                    }
+
+                    if (errorLog.tiktok_video.url) {
+                        tiktokHTML += '<a href="' + errorLog.tiktok_video.url + '" target="_blank" rel="noopener noreferrer" style="display: inline-block; padding: 8px 16px; background: linear-gradient(135deg, #ec4899 0%, #db2777 100%); color: white; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 12px; transition: all 0.2s; box-shadow: 0 2px 8px rgba(236, 72, 153, 0.3);">View on TikTok →</a>';
+                    }
+
+                    tiktokHTML += '</div>';
+                    tiktokHTML += '</details>';
+                }
+
+                div.innerHTML = cspanHTML + tiktokHTML + ` + "`" + `
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                         <h3 style="margin: 0; color: #ef4444; font-size: 14px;">🚬 Error Log</h3>
                         <span class="status" style="background: #fee2e2; color: #991b1b;">${age}</span>
@@ -3853,6 +4215,12 @@ const indexHTML = `<!DOCTYPE html>
                             <div style="margin-top: 6px; display: flex; gap: 8px; align-items: center;">
                                 <input type="text" value="${errorLog.url}" readonly onclick="this.select()" style="flex: 1; padding: 6px 10px; font-family: 'Courier New', monospace; font-size: 11px; color: #1e40af; background: rgba(255, 255, 255, 0.8); border: 1px solid #60a5fa; border-radius: 4px; cursor: pointer;">
                                 <button onclick="navigator.clipboard.writeText('${errorLog.url}').then(() => { const btn = event.target; const originalText = btn.textContent; btn.textContent = '✓ Copied!'; btn.style.background = '#10b981'; setTimeout(() => { btn.textContent = originalText; btn.style.background = ''; }, 2000); })" style="padding: 6px 12px; background: #3b82f6; color: white; border: none; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: all 0.2s;">Copy</button>
+                            </div>
+                            <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(59, 130, 246, 0.2);">
+                                <button onclick="shareFacebookCompilation('${errorLog.id}')" style="width: 100%; padding: 10px 16px; background: linear-gradient(135deg, #1877F2 0%, #4267B2 100%); color: white; border: none; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 12px rgba(24, 119, 242, 0.3); transition: all 0.3s; text-transform: uppercase; letter-spacing: 0.5px;" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 16px rgba(24, 119, 242, 0.4)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(24, 119, 242, 0.3)';">
+                                    <svg style="width: 18px; height: 18px;" fill="currentColor" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+                                    Share to Facebook
+                                </button>
                             </div>
                         </div>
                     ` + "`" + ` : ''}
@@ -3920,6 +4288,59 @@ const indexHTML = `<!DOCTYPE html>
                         </div>
                     ` + "`" + ` : ''}
                 ` + "`" + `;
+
+                // Add Rorschach test if available
+                if (errorLog.rorschach_image_number) {
+                    const rorschachHTML = ` + "`" + `
+                        <div style="margin-top: 20px; padding: 20px; background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(139, 92, 246, 0.12) 100%); border: 3px solid rgba(99, 102, 241, 0.4); border-radius: 12px; box-shadow: 0 0 25px rgba(99, 102, 241, 0.25), 4px 4px 0px rgba(99, 102, 241, 0.15);">
+                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <span style="font-size: 24px;">🎭</span>
+                                    <strong style="color: #6366f1; font-size: 16px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800;">Rorschach Test Card #${errorLog.rorschach_image_number}</strong>
+                                </div>
+                                <span style="font-size: 9px; color: #999; font-weight: 600; letter-spacing: 0.05em;">POWERED BY OPENAI</span>
+                            </div>
+                            <div style="background: white; padding: 20px; border-radius: 8px; border: 2px solid rgba(99, 102, 241, 0.3); text-align: center;">
+                                <img src="${errorLog.rorschach_image_url}" alt="Rorschach Test Card ${errorLog.rorschach_image_number}" style="max-width: 400px; width: 100%; height: auto; display: block; margin: 0 auto;">
+                            </div>
+                            <div id="rorschach-interpretation-${errorLog.id}" style="margin-top: 15px;">
+                                ${errorLog.rorschach_ai_response ? ` + "`" + `
+                                    <div style="background: rgba(255, 255, 255, 0.8); padding: 15px; border-radius: 8px; border: 2px solid rgba(99, 102, 241, 0.3); margin-bottom: 10px;">
+                                        <strong style="color: #6366f1; font-size: 14px;">💭 Patient Response:</strong>
+                                        <p style="margin-top: 8px; color: #374151; line-height: 1.6; font-size: 14px; font-style: italic;">${errorLog.rorschach_ai_response}</p>
+                                    </div>
+                                ` + "`" + ` : (pendingRorschachInterpretations.has(errorLog.id) ? ` + "`" + `
+                                    <button disabled id="interpret-btn-${errorLog.id}" style="width: 100%; padding: 12px 20px; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); color: white; border: none; border-radius: 8px; font-weight: 700; font-size: 14px; cursor: not-allowed; box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3); text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.7;">
+                                        <span style="display: inline-block; animation: spin 1s linear infinite;">🧠</span> Analyzing...
+                                    </button>
+                                ` + "`" + ` : ` + "`" + `
+                                    <button onclick="requestRorschachInterpretation('${errorLog.id}')" id="interpret-btn-${errorLog.id}" style="width: 100%; padding: 12px 20px; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); color: white; border: none; border-radius: 8px; font-weight: 700; font-size: 14px; cursor: pointer; box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3); transition: all 0.2s; text-transform: uppercase; letter-spacing: 0.5px;">
+                                        Generate Patient Response
+                                    </button>
+                                ` + "`" + `)}
+                                ${errorLog.rorschach_user_response ? ` + "`" + `
+                                    <div style="background: rgba(255, 255, 255, 0.8); padding: 15px; border-radius: 8px; border: 2px solid rgba(16, 185, 129, 0.3); margin-top: 10px;">
+                                        <strong style="color: #10b981; font-size: 14px;">💭 Your Response:</strong>
+                                        <p style="margin-top: 8px; color: #374151; line-height: 1.6; font-size: 14px;">${errorLog.rorschach_user_response}</p>
+                                    </div>
+                                ` + "`" + ` : (isLoggedIn ? ` + "`" + `
+                                    <button onclick="showRorschachResponseForm('${errorLog.id}')" id="respond-btn-${errorLog.id}" style="width: 100%; padding: 12px 20px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; border: none; border-radius: 8px; font-weight: 700; font-size: 14px; cursor: pointer; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); transition: all 0.2s; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 10px;">
+                                        Respond to Image
+                                    </button>
+                                    <div id="response-form-${errorLog.id}" style="display: none; margin-top: 10px;">
+                                        <textarea id="response-text-${errorLog.id}" placeholder="What do you see in this image?" style="width: 100%; padding: 12px; border: 2px solid rgba(16, 185, 129, 0.3); border-radius: 8px; font-size: 14px; font-family: inherit; resize: vertical; min-height: 100px;"></textarea>
+                                        <div style="display: flex; gap: 10px; margin-top: 10px;">
+                                            <button onclick="submitRorschachResponse('${errorLog.id}')" style="flex: 1; padding: 10px; background: #10b981; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;">Submit</button>
+                                            <button onclick="hideRorschachResponseForm('${errorLog.id}')" style="flex: 1; padding: 10px; background: #6b7280; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;">Cancel</button>
+                                        </div>
+                                    </div>
+                                ` + "`" + ` : '')}
+                            </div>
+                        </div>
+                    ` + "`" + `;
+
+                    div.innerHTML += rorschachHTML;
+                }
 
                 // Add GIFs if available (support both single and multiple GIFs)
                 const gifURLs = errorLog.gif_urls || (errorLog.gif_url ? [errorLog.gif_url] : []);
@@ -4004,6 +4425,9 @@ const indexHTML = `<!DOCTYPE html>
                 }
 
                 container.appendChild(div);
+
+                // Track this error as displayed
+                displayedErrorIds.add(errorLog.id);
 
                 // Fetch and display tip details if tips are present
                 if (errorLog.anonymous_tips && errorLog.anonymous_tips.length > 0) {
@@ -4291,6 +4715,162 @@ const indexHTML = `<!DOCTYPE html>
             }
         }
 
+        // Share error log to Facebook with compilation image
+        async function shareFacebookCompilation(errorID) {
+            const btn = event.target.closest('button');
+            const originalHTML = btn.innerHTML;
+
+            // Show loading state
+            btn.disabled = true;
+            btn.innerHTML = '<svg style="width: 18px; height: 18px; animation: spin 1s linear infinite;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="4" stroke-opacity="0.25"/><path d="M12 2a10 10 0 0 1 10 10" stroke-width="4" stroke-linecap="round"/></svg> Generating...';
+
+            try {
+                // Call the Facebook share API with just the error ID
+                const response = await fetch('/api/facebook-share/' + errorID);
+
+                if (!response.ok) {
+                    throw new Error('Failed to generate share image');
+                }
+
+                const data = await response.json();
+
+                // Success state
+                btn.innerHTML = '✓ Opening Facebook...';
+                btn.style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
+
+                // Open Facebook share dialog
+                window.open(data.direct_share_url, '_blank', 'width=600,height=400');
+
+                // Reset button after delay
+                setTimeout(() => {
+                    btn.disabled = false;
+                    btn.innerHTML = originalHTML;
+                    btn.style.background = '';
+                }, 3000);
+
+            } catch (error) {
+                console.error('Facebook share error:', error);
+                btn.innerHTML = '✗ Failed - Try Again';
+                btn.style.background = 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)';
+
+                setTimeout(() => {
+                    btn.disabled = false;
+                    btn.innerHTML = originalHTML;
+                    btn.style.background = '';
+                }, 3000);
+            }
+        }
+
+        // Request AI interpretation of Rorschach image
+        async function requestRorschachInterpretation(errorID) {
+            // Mark as pending so spinner persists across refreshes
+            pendingRorschachInterpretations.add(errorID);
+
+            const btn = document.getElementById('interpret-btn-' + errorID);
+            const originalHTML = btn.innerHTML;
+
+            btn.disabled = true;
+            btn.innerHTML = '<span style="display: inline-block; animation: spin 1s linear infinite;">🧠</span> Analyzing...';
+
+            try {
+                const response = await fetch('/api/rorschach/interpret/' + errorID, {
+                    method: 'POST',
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to generate interpretation');
+                }
+
+                const data = await response.json();
+
+                // Remove from pending set
+                pendingRorschachInterpretations.delete(errorID);
+
+                // Update UI with patient response
+                const interpretationDiv = document.getElementById('rorschach-interpretation-' + errorID);
+                interpretationDiv.innerHTML = ` + "`" + `
+                    <div style="background: rgba(255, 255, 255, 0.8); padding: 15px; border-radius: 8px; border: 2px solid rgba(99, 102, 241, 0.3); margin-bottom: 10px; animation: fadeIn 0.5s;">
+                        <strong style="color: #6366f1; font-size: 14px;">💭 Patient Response:</strong>
+                        <p style="margin-top: 8px; color: #374151; line-height: 1.6; font-size: 14px; font-style: italic;">${data.interpretation}</p>
+                    </div>
+                    ${isLoggedIn ? ` + "`" + `
+                        <button onclick="showRorschachResponseForm('${errorID}')" id="respond-btn-${errorID}" style="width: 100%; padding: 12px 20px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; border: none; border-radius: 8px; font-weight: 700; font-size: 14px; cursor: pointer; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); transition: all 0.2s; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 10px;">
+                            Respond to Image
+                        </button>
+                        <div id="response-form-${errorID}" style="display: none; margin-top: 10px;">
+                            <textarea id="response-text-${errorID}" placeholder="What do you see in this image?" style="width: 100%; padding: 12px; border: 2px solid rgba(16, 185, 129, 0.3); border-radius: 8px; font-size: 14px; font-family: inherit; resize: vertical; min-height: 100px;"></textarea>
+                            <div style="display: flex; gap: 10px; margin-top: 10px;">
+                                <button onclick="submitRorschachResponse('${errorID}')" style="flex: 1; padding: 10px; background: #10b981; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;">Submit</button>
+                                <button onclick="hideRorschachResponseForm('${errorID}')" style="flex: 1; padding: 10px; background: #6b7280; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;">Cancel</button>
+                            </div>
+                        </div>
+                    ` + "`" + ` : ''}
+                ` + "`" + `;
+
+            } catch (error) {
+                console.error('Rorschach interpretation error:', error);
+                pendingRorschachInterpretations.delete(errorID);
+                btn.disabled = false;
+                btn.innerHTML = '✗ Failed - Try Again';
+                setTimeout(() => {
+                    btn.innerHTML = originalHTML;
+                }, 3000);
+            }
+        }
+
+        // Show Rorschach response form
+        function showRorschachResponseForm(errorID) {
+            document.getElementById('respond-btn-' + errorID).style.display = 'none';
+            document.getElementById('response-form-' + errorID).style.display = 'block';
+        }
+
+        // Hide Rorschach response form
+        function hideRorschachResponseForm(errorID) {
+            document.getElementById('respond-btn-' + errorID).style.display = 'block';
+            document.getElementById('response-form-' + errorID).style.display = 'none';
+        }
+
+        // Submit user's Rorschach response
+        async function submitRorschachResponse(errorID) {
+            const textarea = document.getElementById('response-text-' + errorID);
+            const response = textarea.value.trim();
+
+            if (!response) {
+                alert('Please enter a response');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/rorschach/respond/' + errorID, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ response: response }),
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to submit response');
+                }
+
+                // Update UI with user response
+                const interpretationDiv = document.getElementById('rorschach-interpretation-' + errorID);
+                const existingInterpretation = interpretationDiv.querySelector('div').outerHTML;
+                interpretationDiv.innerHTML = existingInterpretation + ` + "`" + `
+                    <div style="background: rgba(255, 255, 255, 0.8); padding: 15px; border-radius: 8px; border: 2px solid rgba(16, 185, 129, 0.3); margin-top: 10px; animation: fadeIn 0.5s;">
+                        <strong style="color: #10b981; font-size: 14px;">💭 Your Response:</strong>
+                        <p style="margin-top: 8px; color: #374151; line-height: 1.6; font-size: 14px;">${response}</p>
+                    </div>
+                ` + "`" + `;
+
+                textarea.value = '';
+
+            } catch (error) {
+                console.error('Rorschach response error:', error);
+                alert('Failed to submit response. Please try again.');
+            }
+        }
+
         // Toggle GIF expansion (show/hide additional GIFs)
         function toggleGifExpansion(errorLogID, totalGifs) {
             const button = document.getElementById('gif-expand-btn-' + errorLogID);
@@ -4325,7 +4905,7 @@ const indexHTML = `<!DOCTYPE html>
             }
         }
 
-        // Trigger Giphy action endpoint for analytics
+        // Trigger Giphy action endpoint for analytics (proxied through backend)
         function triggerGiphyAction(gifURL) {
             // Extract GIF ID from URL (e.g., https://media.giphy.com/media/ABC123/giphy.gif -> ABC123)
             const gifIDMatch = gifURL.match(/\/media\/([^\/]+)\//);
@@ -4335,13 +4915,14 @@ const indexHTML = `<!DOCTYPE html>
 
             const gifID = gifIDMatch[1];
 
-            // Call Giphy action endpoint (async, no need to wait for response)
-            fetch('https://api.giphy.com/v1/gifs/' + gifID + '/actions', {
+            // Call our backend proxy endpoint (async, no need to wait for response)
+            fetch('/api/giphy/action/' + gifID, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
+                    gif_id: gifID,
                     action_type: 'VIEW',
                     random_id: Math.random().toString(36).substring(7)
                 })
@@ -4459,130 +5040,100 @@ const indexHTML = `<!DOCTYPE html>
             img.src = ciaImageURL;
         }
 
-        // ===== STRIPE DONATION FUNCTIONALITY =====
-        let stripe;
-        let elements;
-        let currentDonationType = '';
+        // ═══════════════════════════════════════════════════════════════
+        // 🕵️ CONSOLE EASTER EGGS - HIDDEN INTERACTIVE PUZZLES
+        // ═══════════════════════════════════════════════════════════════
 
-        // Initialize Stripe (will be called on page load)
-        function initializeStripe() {
-            const stripePublishableKey = '{{.StripePublishableKey}}';
-            if (stripePublishableKey && stripePublishableKey !== '') {
-                stripe = Stripe(stripePublishableKey);
-            }
-        }
+        console.log('%c🕵️ SECRET AGENT CONSOLE 🕵️', 'font-size: 24px; font-weight: bold; color: #667eea;');
+        console.log('%c═══════════════════════════════════════════════════════════════', 'color: #764ba2;');
+        console.log('%cWelcome to the surveillance matrix, agent.', 'font-size: 14px; color: #333;');
+        console.log('%c', 'font-size: 12px;');
+        console.log('%cYour access level: PUBLIC (MONITORED)', 'color: red; font-weight: bold;');
+        console.log('%cActive surveillance nodes: 847', 'color: #666;');
+        console.log('%c', 'font-size: 12px;');
+        console.log('%c🎮 INTERACTIVE CHALLENGE:', 'font-size: 14px; font-weight: bold; color: #667eea;');
+        console.log('%cType the following command to unlock a secret message:', 'color: #333;');
+        console.log('%c    window.revealSecret()', 'background: #f0f0f0; padding: 8px; font-family: monospace; color: #d63384;');
+        console.log('%c', 'font-size: 12px;');
+        console.log('%c💡 Bonus: Check the HTML source (View Page Source) for an encrypted puzzle!', 'color: #666; font-style: italic;');
+        console.log('%c═══════════════════════════════════════════════════════════════', 'color: #764ba2;');
 
-        function openDonationModal(donationType) {
-            if (!stripe) {
-                alert('Stripe is not configured. Please contact the administrator.');
-                return;
-            }
+        window.revealSecret = function() {
+            console.clear();
+            console.log('%c', 'font-size: 20px;');
+            console.log('%c    ███████╗███████╗ ██████╗██████╗ ███████╗████████╗', 'color: #667eea; font-family: monospace;');
+            console.log('%c    ██╔════╝██╔════╝██╔════╝██╔══██╗██╔════╝╚══██╔══╝', 'color: #667eea; font-family: monospace;');
+            console.log('%c    ███████╗█████╗  ██║     ██████╔╝█████╗     ██║   ', 'color: #667eea; font-family: monospace;');
+            console.log('%c    ╚════██║██╔══╝  ██║     ██╔══██╗██╔══╝     ██║   ', 'color: #667eea; font-family: monospace;');
+            console.log('%c    ███████║███████╗╚██████╗██║  ██║███████╗   ██║   ', 'color: #667eea; font-family: monospace;');
+            console.log('%c    ╚══════╝╚══════╝ ╚═════╝╚═╝  ╚═╝╚══════╝   ╚═╝   ', 'color: #667eea; font-family: monospace;');
+            console.log('%c', 'font-size: 20px;');
+            console.log('%c🎉 CONGRATULATIONS! You found the hidden console puzzle!', 'font-size: 16px; color: green; font-weight: bold;');
+            console.log('%c', 'font-size: 12px;');
+            console.log('%c📜 SECRET MESSAGE:', 'font-size: 14px; font-weight: bold; color: #764ba2;');
+            console.log('%c"The watchers are themselves watched. Every system of surveillance', 'color: #333; font-style: italic;');
+            console.log('%ccontains within it the seeds of its own transparency. You have', 'color: #333; font-style: italic;');
+            console.log('%cdemonstrated this by finding what was hidden in plain sight."', 'color: #333; font-style: italic;');
+            console.log('%c', 'font-size: 12px;');
+            console.log('%c🔑 ACHIEVEMENT UNLOCKED: "Console Spelunker"', 'background: gold; color: black; padding: 8px; font-weight: bold;');
+            console.log('%c', 'font-size: 12px;');
+            console.log('%c💡 Bonus Hint: Check the HTML source comments for another puzzle...', 'color: #666; font-style: italic;');
+            console.log('%cTry the ROT13 cipher! Also check out window.surveillance', 'color: #666; font-style: italic;');
+            console.log('%c', 'font-size: 12px;');
+            console.log('%c👁️ Remember: You are not paranoid if they really are watching.', 'color: red; font-weight: bold;');
+            return '🕵️ Secret revealed! Welcome to the inner circle, agent.';
+        };
 
-            currentDonationType = donationType;
-            const modal = document.getElementById('donation-modal');
-            const title = document.getElementById('donation-modal-title');
-            const description = document.getElementById('donation-modal-description');
+        // Hidden function for extra curious developers
+        window.surveillance = {
+            status: 'ACTIVE',
+            targets: '[REDACTED]',
+            errorLogsMonitored: Math.floor(Math.random() * 10000) + 1000,
+            activeNodes: 847,
+            dataCollected: '∞ petabytes',
+            yourSession: {
+                tracked: true,
+                anonymized: false,
+                dataShared: 'With partners',
+                optOut: 'Not available'
+            },
+            lastUpdate: new Date().toISOString(),
+            message: '👁️ The panopticon sees all. Type window.surveillance.bypass() to attempt escape.'
+        };
 
-            if (donationType === 'meme_disclaimer') {
-                title.textContent = '$0.50 - Meme Disclaimer Record';
-                description.innerHTML = '<strong>Bank Statement Purpose:</strong><br>Create a record stating you are NOT associated with these memes/GIFs.<br><br><em style="color: #6b7280; font-size: 13px;">Note: This donation should technically be a dime, but apparently modern internet banking has a $0.50 minimum. The irony of bureaucratic minimums preventing symbolic gestures is not lost on us.</em><br><br>Perfect for future comedic purposes when someone questions your transaction history.';
-            } else {
-                title.textContent = '$0.75 - Church Committee Historical Reference';
-                description.innerHTML = '<strong>Bank Statement Purpose:</strong><br>Note a church committee historical numerical reference regarding local political transparency concerns.<br><br>A subtle nod to governmental accountability.';
-            }
+        window.surveillance.bypass = function() {
+            console.log('%c⚠️  ACCESS DENIED ⚠️', 'font-size: 20px; color: red; font-weight: bold;');
+            console.log('%cNice try, agent. But you cannot simply walk out of the matrix.', 'color: red;');
+            console.log('%cYour attempt has been logged and reported to the authorities.', 'color: red;');
+            console.log('%c...', 'color: gray;');
+            setTimeout(() => {
+                console.log('%cJust kidding! 😄 There is no escape, but we appreciate the effort.', 'color: green; font-weight: bold;');
+                console.log('%c', 'font-size: 12px;');
+                console.log('%c"You can check out any time you like, but you can never leave."', 'color: #666; font-style: italic;');
+                console.log('%c   - Hotel California (Eagles, 1976)', 'color: #999; font-style: italic; font-size: 11px;');
+            }, 2000);
+            return '🚫 Escape impossible. Welcome to Hotel California.';
+        };
 
-            modal.style.display = 'flex';
-            initializePaymentForm();
-        }
-
-        function closeDonationModal() {
-            document.getElementById('donation-modal').style.display = 'none';
-            document.getElementById('payment-form').reset();
-            document.getElementById('donation-result').innerHTML = '';
-            if (elements) {
-                elements = null;
-            }
-        }
-
-        async function initializePaymentForm() {
-            // Create payment intent
-            const response = await fetch('/api/create-payment-intent', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': 'Bearer ' + localStorage.getItem('token')
-                },
-                body: JSON.stringify({
-                    donation_type: currentDonationType
-                })
-            });
-
-            const data = await response.json();
-
-            if (!data.client_secret) {
-                document.getElementById('donation-result').innerHTML = '<div style="color: #ef4444; padding: 12px; background: rgba(239, 68, 68, 0.1); border-radius: 8px;">Failed to initialize payment. Please try again.</div>';
-                return;
-            }
-
-            const clientSecret = data.client_secret;
-
-            // Create Stripe Elements
-            const appearance = {
-                theme: 'stripe',
-                variables: {
-                    colorPrimary: '#3b82f6',
-                    colorBackground: '#ffffff',
-                    colorText: '#000000',
-                    colorDanger: '#ef4444',
-                    fontFamily: 'Inter, system-ui, sans-serif',
-                    spacingUnit: '4px',
-                    borderRadius: '8px'
+        // Hidden konami code easter egg
+        let konamiCode = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a'];
+        let konamiPosition = 0;
+        document.addEventListener('keydown', function(e) {
+            if (e.key === konamiCode[konamiPosition]) {
+                konamiPosition++;
+                if (konamiPosition === konamiCode.length) {
+                    console.log('%c🎮 KONAMI CODE ACTIVATED! 🎮', 'font-size: 20px; color: gold; font-weight: bold;');
+                    console.log('%cYou have unlocked: ULTIMATE SURVEILLANCE MODE', 'color: red; font-weight: bold;');
+                    console.log('%cJust kidding. But nice work, retro gamer! 👾', 'color: green;');
+                    konamiPosition = 0;
                 }
-            };
-
-            elements = stripe.elements({ appearance, clientSecret });
-            const paymentElement = elements.create('payment');
-            paymentElement.mount('#payment-element');
-        }
-
-        async function handleDonationSubmit(e) {
-            e.preventDefault();
-
-            const submitButton = document.getElementById('submit-donation');
-            const resultDiv = document.getElementById('donation-result');
-
-            submitButton.disabled = true;
-            submitButton.textContent = 'Processing...';
-            resultDiv.innerHTML = '';
-
-            const { error } = await stripe.confirmPayment({
-                elements,
-                confirmParams: {
-                    return_url: window.location.origin + '/donation-success',
-                },
-                redirect: 'if_required'
-            });
-
-            if (error) {
-                resultDiv.innerHTML = '<div style="color: #ef4444; padding: 12px; background: rgba(239, 68, 68, 0.1); border-radius: 8px; margin-top: 15px;">' + error.message + '</div>';
-                submitButton.disabled = false;
-                submitButton.textContent = 'Complete Payment';
             } else {
-                // Payment succeeded
-                resultDiv.innerHTML = '<div style="color: #10b981; padding: 12px; background: rgba(16, 185, 129, 0.1); border-radius: 8px; margin-top: 15px;"><strong>✓ Payment Successful!</strong><br><br>Thank you for your support. Check your bank statement in a few days for the memorable entry.</div>';
-                submitButton.style.display = 'none';
-
-                setTimeout(() => {
-                    closeDonationModal();
-                    submitButton.style.display = 'block';
-                    submitButton.disabled = false;
-                    submitButton.textContent = 'Complete Payment';
-                }, 3000);
+                konamiPosition = 0;
             }
-        }
+        });
 
-        // Initialize Stripe when page loads
-        window.addEventListener('load', initializeStripe);
+        console.log('%c', 'font-size: 12px;');
+        console.log('%c🎯 Pro tip: Try the Konami Code (↑↑↓↓←→←→BA)', 'color: #666; font-style: italic; font-size: 11px;');
     </script>
 
     <!-- Donation Modal -->

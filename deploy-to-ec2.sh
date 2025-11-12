@@ -118,6 +118,8 @@ export GEMINI_API_KEY="GEMINI_API_KEY_VALUE"
 export S3_MEME_BUCKET="S3_MEME_BUCKET_VALUE"
 export GCP_PROJECT_ID="GCP_PROJECT_ID_VALUE"
 export GCP_LOCATION="GCP_LOCATION_VALUE"
+export STRIPE_SECRET_KEY="STRIPE_SECRET_KEY_VALUE"
+export STRIPE_PUBLISHABLE_KEY="STRIPE_PUBLISHABLE_KEY_VALUE"
 DEPLOY_EOF
 )
 
@@ -139,6 +141,8 @@ DEPLOY_SCRIPT="${DEPLOY_SCRIPT//GEMINI_API_KEY_VALUE/$GEMINI_API_KEY}"
 DEPLOY_SCRIPT="${DEPLOY_SCRIPT//S3_MEME_BUCKET_VALUE/$S3_MEME_BUCKET}"
 DEPLOY_SCRIPT="${DEPLOY_SCRIPT//GCP_PROJECT_ID_VALUE/$GCP_PROJECT_ID}"
 DEPLOY_SCRIPT="${DEPLOY_SCRIPT//GCP_LOCATION_VALUE/$GCP_LOCATION}"
+DEPLOY_SCRIPT="${DEPLOY_SCRIPT//STRIPE_SECRET_KEY_VALUE/$STRIPE_SECRET_KEY}"
+DEPLOY_SCRIPT="${DEPLOY_SCRIPT//STRIPE_PUBLISHABLE_KEY_VALUE/$STRIPE_PUBLISHABLE_KEY}"
 
 # Append the actual deployment commands
 DEPLOY_SCRIPT+=$(cat <<'EOF'
@@ -254,6 +258,21 @@ bash << 'INNER_EOF'
         TRACKER_CMD="$TRACKER_CMD -e TRACKER_PASSWORD=${TRACKER_PASSWORD}"
     fi
 
+    if [ ! -z "$STRIPE_SECRET_KEY" ]; then
+        echo "💳 Using Stripe API for donation feature"
+        TRACKER_CMD="$TRACKER_CMD -e STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}"
+        TRACKER_CMD="$TRACKER_CMD -e STRIPE_PUBLISHABLE_KEY=${STRIPE_PUBLISHABLE_KEY}"
+    else
+        echo "⚠️  No Stripe API keys provided, donation feature will be disabled"
+    fi
+
+    if [ ! -z "$OPENAI_API_KEY" ]; then
+        echo "🧠 Using OpenAI API for Rorschach interpretations"
+        TRACKER_CMD="$TRACKER_CMD -e OPENAI_API_KEY=${OPENAI_API_KEY}"
+    else
+        echo "⚠️  No OpenAI API key provided, Rorschach interpretations will be disabled"
+    fi
+
     echo "🔒 Enabling HTTPS for location sharing"
 
     TRACKER_CMD="$TRACKER_CMD 310829530225.dkr.ecr.us-east-1.amazonaws.com/location-tracker:latest"
@@ -363,6 +382,7 @@ bash << 'INNER_EOF'
         --network ec2-test-network \
         -p 80:80 \
         -p 443:443 \
+        -v /var/www/static:/var/www/static:ro \
         310829530225.dkr.ecr.us-east-1.amazonaws.com/nginx-proxy:latest
 
     echo "✅ Nginx proxy started!"
@@ -455,12 +475,35 @@ EOF
 
 # Execute deployment via SSM Send-Command
 echo "🚀 Executing deployment via Systems Manager..."
+
+# Base64 encode the script to avoid JSON escaping issues
+ENCODED_SCRIPT=$(echo "${DEPLOY_SCRIPT}" | base64)
+
+# Step 1: Write the deployment script to the EC2 instance
+echo "📝 Uploading deployment script to EC2..."
+UPLOAD_CMD_ID=$(aws ssm send-command \
+    --instance-ids ${INSTANCE_ID} \
+    --region ${AWS_REGION} \
+    --document-name "AWS-RunShellScript" \
+    --comment "Upload deployment script" \
+    --parameters "commands=[\"echo '${ENCODED_SCRIPT}' | base64 -d > /tmp/deploy-apps.sh\",\"chmod +x /tmp/deploy-apps.sh\"]" \
+    --query 'Command.CommandId' \
+    --output text)
+
+# Wait for upload to complete
+aws ssm wait command-executed \
+    --command-id ${UPLOAD_CMD_ID} \
+    --instance-id ${INSTANCE_ID} \
+    --region ${AWS_REGION} 2>/dev/null || true
+
+# Step 2: Execute the deployment script
+echo "🚀 Executing deployment script..."
 COMMAND_ID=$(aws ssm send-command \
     --instance-ids ${INSTANCE_ID} \
     --region ${AWS_REGION} \
     --document-name "AWS-RunShellScript" \
     --comment "EC2 Test Apps Deployment" \
-    --parameters "commands=[\"${DEPLOY_SCRIPT}\"]" \
+    --parameters 'commands=["bash /tmp/deploy-apps.sh"]' \
     --output-s3-bucket-name "aws-ssm-session-logs-${AWS_ACCOUNT_ID}-${AWS_REGION}" 2>/dev/null \
     --query 'Command.CommandId' \
     --output text || aws ssm send-command \
@@ -468,7 +511,7 @@ COMMAND_ID=$(aws ssm send-command \
     --region ${AWS_REGION} \
     --document-name "AWS-RunShellScript" \
     --comment "EC2 Test Apps Deployment" \
-    --parameters "commands=[\"${DEPLOY_SCRIPT}\"]" \
+    --parameters 'commands=["bash /tmp/deploy-apps.sh"]' \
     --query 'Command.CommandId' \
     --output text)
 
