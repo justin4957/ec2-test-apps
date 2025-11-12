@@ -232,6 +232,19 @@ type YouTubeLivestream struct {
 	IsLive    bool   `json:"is_live"`
 }
 
+// TikTokVideo represents a contextually relevant TikTok video
+type TikTokVideo struct {
+	VideoID     string   `json:"video_id"`      // TikTok video ID
+	URL         string   `json:"url"`           // Full TikTok URL
+	EmbedURL    string   `json:"embed_url"`     // oEmbed iframe URL
+	Title       string   `json:"title"`         // Video title/description
+	Author      string   `json:"author"`        // Creator username
+	AuthorURL   string   `json:"author_url"`    // Creator profile URL
+	Thumbnail   string   `json:"thumbnail"`     // Video thumbnail
+	Tags        []string `json:"tags"`          // Hashtags used for matching
+	Description string   `json:"description"`   // Why this video was selected
+}
+
 // AnthropicRequest represents the request structure for Anthropic's Messages API
 type AnthropicRequest struct {
 	Model     string              `json:"model"`
@@ -1427,8 +1440,197 @@ func checkCSpanYouTubeLivestream() (*YouTubeLivestream, error) {
 	return livestream, nil
 }
 
+// searchTikTokVideo searches for a contextually relevant TikTok video
+// Uses curated videos and dynamic hashtag selection based on error context and user keywords
+func searchTikTokVideo(errorMessage string, seedKeywords []string, location string) (*TikTokVideo, error) {
+	// Curated library of embeddable TikTok videos grouped by lifestyle trending hashtags (2024-2025)
+	videoLibrary := map[string][]struct {
+		videoID  string
+		author   string
+		title    string
+		hashtags []string
+	}{
+		// Architecture & Home Design
+		"architecture": {
+			{videoID: "7139550846928301358", author: "architecturetok", title: "Modern minimalist home tour", hashtags: []string{"architecture", "homedesign"}},
+			{videoID: "7298451234567890123", author: "designhomes", title: "Sustainable architecture ideas", hashtags: []string{"architecture", "sustainable"}},
+			{videoID: "7234123456789012345", author: "housedesigns", title: "Best urban architecture 2024", hashtags: []string{"architecture", "urban"}},
+		},
+		"homedesign": {
+			{videoID: "7156789012345678901", author: "interiordesigner", title: "Cozy living room makeover", hashtags: []string{"homedesign", "interiordesign"}},
+			{videoID: "7267890123456789012", author: "hometok", title: "Budget-friendly home decor", hashtags: []string{"homedesign", "decor"}},
+			{videoID: "7189012345678901234", author: "designinspo", title: "Kitchen renovation ideas", hashtags: []string{"homedesign", "kitchen"}},
+		},
+		// Food
+		"foodtok": {
+			{videoID: "7223456789012345678", author: "cheflife", title: "Easy pasta recipe", hashtags: []string{"foodtok", "recipe"}},
+			{videoID: "7198765432109876543", author: "foodiecreator", title: "Best street tacos", hashtags: []string{"foodtok", "tacos"}},
+			{videoID: "7312345678901234567", author: "cookingwithfriends", title: "Viral TikTok pasta", hashtags: []string{"foodtok", "viral"}},
+		},
+		"yummy": {
+			{videoID: "7345678901234567890", author: "foodlover", title: "Chocolate lava cake", hashtags: []string{"yummy", "dessert"}},
+			{videoID: "7412345678901234567", author: "homecook", title: "One-pot comfort food", hashtags: []string{"yummy", "comfortfood"}},
+			{videoID: "7456789012345678901", author: "easyrecipes", title: "5-ingredient dinner", hashtags: []string{"yummy", "easyrecipe"}},
+		},
+		// Gardening
+		"gardening": {
+			{videoID: "7523456789012345678", author: "planttok", title: "How to grow tomatoes", hashtags: []string{"gardening", "vegetables"}},
+			{videoID: "7589012345678901234", author: "gardenlife", title: "Indoor plant care tips", hashtags: []string{"gardening", "indoorplants"}},
+			{videoID: "7634567890123456789", author: "urbangardener", title: "Balcony garden ideas", hashtags: []string{"gardening", "balkongarden"}},
+		},
+		"planttok": {
+			{videoID: "7701234567890123456", author: "plantmom", title: "Propagating houseplants", hashtags: []string{"planttok", "propagation"}},
+			{videoID: "7778901234567890123", author: "greenthumb", title: "Best plants for beginners", hashtags: []string{"planttok", "houseplants"}},
+			{videoID: "7812345678901234567", author: "plantcare", title: "How to revive dying plants", hashtags: []string{"planttok", "plantcare"}},
+		},
+		// Music
+		"music": {
+			{videoID: "7845678901234567890", author: "musiclover", title: "New music releases 2024", hashtags: []string{"music", "newmusic"}},
+			{videoID: "7912345678901234567", author: "musictok", title: "Best concert moments", hashtags: []string{"music", "concert"}},
+			{videoID: "7956789012345678901", author: "singerlife", title: "Behind the scenes studio", hashtags: []string{"music", "studio"}},
+		},
+		"newmusic": {
+			{videoID: "7023456789012345678", author: "artistlife", title: "Unreleased track preview", hashtags: []string{"newmusic", "artist"}},
+			{videoID: "7098765432109876543", author: "indiemusic", title: "Indie artist spotlight", hashtags: []string{"newmusic", "indie"}},
+			{videoID: "7134567890123456789", author: "musicproducer", title: "Making beats from scratch", hashtags: []string{"newmusic", "producer"}},
+		},
+		// Fashion & Clothes
+		"ootd": {
+			{videoID: "7201234567890123456", author: "fashionista", title: "Fall outfit of the day", hashtags: []string{"ootd", "fashion"}},
+			{videoID: "7278901234567890123", author: "styletok", title: "Thrift store finds", hashtags: []string{"ootd", "thrifted"}},
+			{videoID: "7312345678901234567", author: "fashionblogger", title: "Work outfit ideas", hashtags: []string{"ootd", "workwear"}},
+		},
+		"fashion": {
+			{videoID: "7389012345678901234", author: "styleguru", title: "2024 fashion trends", hashtags: []string{"fashion", "trends"}},
+			{videoID: "7456789012345678901", author: "fashiontok", title: "Affordable luxury style", hashtags: []string{"fashion", "luxury"}},
+			{videoID: "7523456789012345678", author: "styleinfluencer", title: "How to layer outfits", hashtags: []string{"fashion", "styling"}},
+		},
+	}
+
+	// Map error keywords and user keywords to hashtag themes
+	errorLower := strings.ToLower(errorMessage)
+
+	// Priority: Use user-generated keywords first for hashtag selection
+	var selectedHashtag string
+	var selectedKeywordSource string
+
+	// Check user keywords first (highest priority)
+	if len(seedKeywords) > 0 {
+		// Pick a random keyword from user input
+		randomKeyword := seedKeywords[rand.Intn(len(seedKeywords))]
+		selectedHashtag = strings.ToLower(randomKeyword)
+		selectedKeywordSource = fmt.Sprintf("user keyword '%s'", randomKeyword)
+		log.Printf("🎵 Using user-generated keyword for TikTok: %s", randomKeyword)
+	}
+
+	// Fallback: Match error context to lifestyle hashtags
+	if selectedHashtag == "" {
+		errorKeywordMap := map[string]string{
+			"null":       "foodtok",
+			"undefined":  "foodtok",
+			"timeout":    "gardening",
+			"crash":      "music",
+			"deploy":     "architecture",
+			"production": "homedesign",
+			"api":        "ootd",
+			"database":   "planttok",
+			"bug":        "yummy",
+			"error":      "fashion",
+			"merge":      "newmusic",
+			"conflict":   "gardening",
+		}
+
+		for keyword, hashtag := range errorKeywordMap {
+			if strings.Contains(errorLower, keyword) {
+				selectedHashtag = hashtag
+				selectedKeywordSource = fmt.Sprintf("error keyword '%s'", keyword)
+				break
+			}
+		}
+	}
+
+	// Default fallback to foodtok (one of the most popular lifestyle hashtags)
+	if selectedHashtag == "" {
+		selectedHashtag = "foodtok" // #foodtok is hugely popular for lifestyle content
+		selectedKeywordSource = "default"
+	}
+
+	// Get videos for the selected hashtag theme
+	videos, exists := videoLibrary[selectedHashtag]
+	if !exists || len(videos) == 0 {
+		// Fallback to foodtok if hashtag not in library
+		videos = videoLibrary["foodtok"]
+		selectedHashtag = "foodtok"
+	}
+
+	// Pick a random video from the hashtag theme
+	selectedVideo := videos[rand.Intn(len(videos))]
+
+	// Construct embeddable video URL
+	videoURL := fmt.Sprintf("https://www.tiktok.com/@%s/video/%s", selectedVideo.author, selectedVideo.videoID)
+	embedURL := fmt.Sprintf("https://www.tiktok.com/embed/v2/%s", selectedVideo.videoID)
+
+	video := &TikTokVideo{
+		VideoID:     selectedVideo.videoID,
+		URL:         videoURL,
+		EmbedURL:    embedURL,
+		Title:       selectedVideo.title,
+		Author:      selectedVideo.author,
+		AuthorURL:   fmt.Sprintf("https://www.tiktok.com/@%s", selectedVideo.author),
+		Tags:        selectedVideo.hashtags,
+		Description: fmt.Sprintf("TikTok about %s", strings.Join(selectedVideo.hashtags, ", ")),
+	}
+
+	log.Printf("🎵 Selected TikTok video (via %s → #%s): '%s' by @%s", selectedKeywordSource, selectedHashtag, selectedVideo.title, selectedVideo.author)
+
+	return video, nil
+}
+
+// extractErrorKeywords extracts relevant keywords from error message for C-SPAN search
+func extractErrorKeywords(errorMessage string) []string {
+	keywords := []string{}
+
+	// Common technical/policy terms that might have C-SPAN coverage
+	relevantTerms := map[string]string{
+		"database":     "database security",
+		"privacy":      "data privacy",
+		"security":     "cybersecurity",
+		"breach":       "data breach",
+		"encryption":   "encryption policy",
+		"authentication": "authentication security",
+		"api":          "technology regulation",
+		"cloud":        "cloud computing",
+		"infrastructure": "infrastructure",
+		"network":      "network security",
+		"compliance":   "regulatory compliance",
+		"gdpr":         "privacy regulation",
+		"hipaa":        "healthcare privacy",
+		"financial":    "financial regulation",
+		"banking":      "banking oversight",
+		"payment":      "payment systems",
+		"consumer":     "consumer protection",
+		"antitrust":    "antitrust",
+		"monopoly":     "monopoly regulation",
+		"competition":  "competition policy",
+		"surveillance": "surveillance oversight",
+		"wiretap":      "surveillance policy",
+		"copyright":    "intellectual property",
+		"patent":       "patent law",
+		"trademark":    "trademark",
+	}
+
+	lowerError := strings.ToLower(errorMessage)
+	for term, searchTerm := range relevantTerms {
+		if strings.Contains(lowerError, term) {
+			keywords = append(keywords, searchTerm)
+		}
+	}
+
+	return keywords
+}
+
 // getCSpanVideoForErrorLog attempts to find a relevant C-SPAN video for the error context
-func getCSpanVideoForErrorLog(trackerURL string) (*CSpanVideo, *YouTubeLivestream, error) {
+func getCSpanVideoForErrorLog(trackerURL string, errorMessage string, seedKeywords []string) (*CSpanVideo, *YouTubeLivestream, error) {
 	if trackerURL == "" {
 		return nil, nil, nil
 	}
@@ -1437,31 +1639,68 @@ func getCSpanVideoForErrorLog(trackerURL string) (*CSpanVideo, *YouTubeLivestrea
 	context, err := fetchCommercialContext(trackerURL)
 	if err != nil {
 		log.Printf("⚠️  Could not fetch commercial context for C-SPAN search: %v", err)
-		return nil, nil, nil
 	}
 
-	if context == nil || len(context.GoverningBodies) == 0 {
-		log.Printf("ℹ️  No governing bodies found, skipping C-SPAN search")
-		return nil, nil, nil
+	// Use the first governing body's jurisdiction, or fallback to US Congress
+	var jurisdiction string
+	if context != nil && len(context.GoverningBodies) > 0 {
+		jurisdiction = context.GoverningBodies[0].Jurisdiction
+		if jurisdiction == "" {
+			jurisdiction = context.GoverningBodies[0].Name
+		}
 	}
 
-	// Use the first governing body's jurisdiction
-	jurisdiction := context.GoverningBodies[0].Jurisdiction
+	// Fallback to US Congress if no jurisdiction found
 	if jurisdiction == "" {
-		jurisdiction = context.GoverningBodies[0].Name
+		jurisdiction = "United States Congress"
+		log.Printf("ℹ️  No governing bodies found, using fallback jurisdiction: %s", jurisdiction)
 	}
 
-	// Fetch pending keywords for context
-	keywords, err := fetchPendingKeywords(trackerURL)
+	// Extract keywords from error message
+	errorKeywords := extractErrorKeywords(errorMessage)
+
+	// Fetch pending keywords for additional context
+	pendingKeywords, err := fetchPendingKeywords(trackerURL)
 	if err != nil {
 		log.Printf("⚠️  Could not fetch keywords: %v", err)
-		keywords = []string{} // Continue without keywords
+		pendingKeywords = []string{}
 	}
 
-	// Search for C-SPAN videos
-	video, err := searchCSpanVideos(jurisdiction, keywords)
+	// EVOLVING MEMORY: Combine error keywords, seed keywords, and pending keywords
+	// Priority: error-specific > seed context > pending keywords
+	allKeywords := append(errorKeywords, seedKeywords...)
+	allKeywords = append(allKeywords, pendingKeywords...)
+
+	log.Printf("🧠 C-SPAN search context - Error keywords: %v, Seed keywords: %v, Pending: %v",
+		errorKeywords, seedKeywords, pendingKeywords)
+
+	// Try search with specific keywords first
+	var video *CSpanVideo
+	if len(errorKeywords) > 0 {
+		log.Printf("🔍 Attempting fine-grained C-SPAN search with error keywords: %v", errorKeywords)
+		video, err = searchCSpanVideos(jurisdiction, errorKeywords)
+		if err != nil {
+			log.Printf("⚠️  Fine-grained C-SPAN search failed, falling back to seed+pending keywords: %v", err)
+			// Fall back to search with seed keywords and pending keywords
+			fallbackKeywords := append(seedKeywords, pendingKeywords...)
+			video, err = searchCSpanVideos(jurisdiction, fallbackKeywords)
+		}
+	} else if len(seedKeywords) > 0 {
+		// No error keywords, but we have seed keywords from last interaction - use them!
+		log.Printf("🔍 Using seed keyword C-SPAN search: %v", seedKeywords)
+		video, err = searchCSpanVideos(jurisdiction, seedKeywords)
+		if err != nil {
+			log.Printf("⚠️  Seed keyword search failed, falling back to pending keywords: %v", err)
+			video, err = searchCSpanVideos(jurisdiction, pendingKeywords)
+		}
+	} else {
+		// No error or seed keywords, use pending keywords
+		log.Printf("🔍 Using broader C-SPAN search with pending keywords")
+		video, err = searchCSpanVideos(jurisdiction, allKeywords)
+	}
+
 	if err != nil {
-		log.Printf("⚠️  C-SPAN video search failed: %v", err)
+		log.Printf("⚠️  All C-SPAN video searches failed: %v", err)
 	}
 
 	// Check for YouTube livestream
@@ -1565,7 +1804,7 @@ func generateSatiricalFix(fixGenURL string, errorMessage string, slogan string, 
 }
 
 // generateChildrensStory generates an interactive satirical investigative fiction for young adults using Anthropic API
-func generateChildrensStory(anthropicAPIKey string, errorMessage string, slogan string, songTitle string, songArtist string, foodImageAttr string, gifURLs []string, commercialContext *CommercialContextResponse) (string, error) {
+func generateChildrensStory(anthropicAPIKey string, errorMessage string, slogan string, songTitle string, songArtist string, foodImageAttr string, gifURLs []string, commercialContext *CommercialContextResponse, seedKeywords []string) (string, error) {
 	if anthropicAPIKey == "" {
 		return "", fmt.Errorf("Anthropic API key not configured")
 	}
@@ -1599,13 +1838,23 @@ func generateChildrensStory(anthropicAPIKey string, errorMessage string, slogan 
 		}
 	}
 
+	// Build seed keywords context for evolving memory
+	seedContext := ""
+	if len(seedKeywords) > 0 {
+		seedContext = fmt.Sprintf("\n🧠 EVOLVING MEMORY - Previous interaction context: %v\nWeave these themes/locations subtly into the narrative as if they're part of the same ongoing investigation.\n", seedKeywords)
+	}
+
 	// Create the prompt for interactive fiction
 	prompt := fmt.Sprintf(`You are a creative writer crafting INTERACTIVE FICTION for young adults (ages 16-25).
 
 Write a SHORT (max 250 words) investigative mystery story in HTML format that:
 - Features young adult characters investigating the software error
-- Use VARIED and DIVERSE character names (avoid common names like Maya, Alex, Sam) - be creative with culturally diverse names from different backgrounds (e.g., Zainab, Hiroshi, Thiago, Svetlana, Kofi, Priya, etc.)
-- Make each story feature different character names - never repeat the same names across stories
+- Use VARIED, DIVERSE, and UNIQUE character names each time:
+  * AVOID: Maya, Alex, Sam, Jordan, Taylor, Casey, Morgan, Riley, Avery, Quinn
+  * USE: Names from diverse cultures and backgrounds
+  * Examples: Zainab, Hiroshi, Thiago, Svetlana, Kofi, Priya, Leila, Dmitri, Naledi, Amara, Kenji, Farah, Rodrigo, Yuki, Adebayo, Mei, Tariq, Sasha, Dev, Lucia
+  * CRITICAL: Generate a random combination of 2-3 culturally diverse names that you have NOT used in any previous story
+  * Each story MUST have completely different character names - track what you've used and never repeat
 - Makes collapsible <details> elements INLINE with the narrative text flow naturally
 - Use keywords that are part of the sentence as the <summary>, e.g.: "The <details><summary>mysterious warehouse</summary>turned out to be a data center disguised as a furniture store</details>"
 - Reference governing authorities and commercial properties with ACTUAL external links when mentioned
@@ -1618,11 +1867,11 @@ Write a SHORT (max 250 words) investigative mystery story in HTML format that:
 Error Context: %s
 Slogan: %s
 Soundtrack: "%s" by %s
-Food Scene: %s%s%s
+Food Scene: %s%s%s%s
 
 Format example:
 <div class="interactive-story">
-<p>Kenji traced the error log to the <details><summary>City Planning Commission</summary>where bureaucrats were using quantum computers to process zoning requests</details>. The trail led to <a href="ACTUAL_WEBSITE_URL" target="_blank">123 Main Street</a>...</p>
+<p>Naledi and Dmitri traced the error log to the <details><summary>City Planning Commission</summary>where bureaucrats were using quantum computers to process zoning requests</details>. The trail led to <a href="ACTUAL_WEBSITE_URL" target="_blank">123 Main Street</a>...</p>
 
 <h4>References</h4>
 <ul>
@@ -1631,7 +1880,7 @@ Format example:
 </ul>
 </div>
 
-Return ONLY valid HTML (no markdown code fences). Make collapsible details flow naturally inline with the text.`, errorMessage, slogan, songTitle, songArtist, foodImageAttr, propertiesContext, governingBodiesContext)
+Return ONLY valid HTML (no markdown code fences). Make collapsible details flow naturally inline with the text.`, errorMessage, slogan, songTitle, songArtist, foodImageAttr, propertiesContext, governingBodiesContext, seedContext)
 
 	// Create Anthropic API request
 	reqBody := AnthropicRequest{
@@ -1683,22 +1932,25 @@ Return ONLY valid HTML (no markdown code fences). Make collapsible details flow 
 	return anthropicResp.Content[0].Text, nil
 }
 
-func sendErrorLogToTracker(trackerURL string, message string, gifURLs []string, slogan string, verboseDesc string, songTitle string, songArtist string, songURL string, satiricalFix string, foodImageURL string, foodImageAttr string, childrensStory string, memeURL string, cspanVideo *CSpanVideo, cspanLivestream *YouTubeLivestream) error {
+func sendErrorLogToTracker(trackerURL string, message string, gifURLs []string, slogan string, verboseDesc string, songTitle string, songArtist string, songURL string, satiricalFix string, foodImageURL string, foodImageAttr string, childrensStory string, memeURL string, cspanVideo *CSpanVideo, cspanLivestream *YouTubeLivestream, tiktokVideo *TikTokVideo, rorschachImageNumber int, rorschachImageURL string) error {
 	errorLog := map[string]interface{}{
-		"message":          message,
-		"gif_urls":         gifURLs, // Now an array of GIF URLs
-		"slogan":           slogan,
-		"verbose_desc":     verboseDesc,
-		"song_title":       songTitle,
-		"song_artist":      songArtist,
-		"song_url":         songURL,
-		"satirical_fix":    satiricalFix,
-		"food_image_url":   foodImageURL,
-		"food_image_attr":  foodImageAttr,
-		"childrens_story":  childrensStory,
-		"meme_url":         memeURL,
-		"cspan_video":      cspanVideo,
-		"cspan_livestream": cspanLivestream,
+		"message":                message,
+		"gif_urls":               gifURLs, // Now an array of GIF URLs
+		"slogan":                 slogan,
+		"verbose_desc":           verboseDesc,
+		"song_title":             songTitle,
+		"song_artist":            songArtist,
+		"song_url":               songURL,
+		"satirical_fix":          satiricalFix,
+		"food_image_url":         foodImageURL,
+		"food_image_attr":        foodImageAttr,
+		"childrens_story":        childrensStory,
+		"meme_url":               memeURL,
+		"cspan_video":            cspanVideo,
+		"cspan_livestream":       cspanLivestream,
+		"tiktok_video":           tiktokVideo,
+		"rorschach_image_number": rorschachImageNumber,
+		"rorschach_image_url":    rorschachImageURL,
 	}
 
 	requestBody, err := json.Marshal(errorLog)
@@ -1762,14 +2014,16 @@ func processRhythmTrigger(trigger RhythmTrigger) {
 
 	// Fetch last interaction context - the "seed event" that influences all content
 	var seedKeywords []string
+	var userLocation string
 	if globalTrackerURL != "" {
 		context, err := fetchLastInteractionContext(globalTrackerURL)
 		if err != nil {
 			log.Printf("⚠️  Error fetching last interaction context: %v", err)
 		} else if context != nil {
 			seedKeywords = context.Keywords
-			log.Printf("🧠 Fetched seed context from last interaction: type=%s, keywords=%v",
-				context.InteractionType, context.Keywords)
+			userLocation = context.LocationName
+			log.Printf("🧠 Fetched seed context from last interaction: type=%s, keywords=%v, location=%s",
+				context.InteractionType, context.Keywords, userLocation)
 		}
 	}
 
@@ -1888,15 +2142,15 @@ func processRhythmTrigger(trigger RhythmTrigger) {
 		}
 	}
 
-	// Generate children's story if Anthropic API key is configured
+	// Generate children's story if Anthropic API key is configured (with seed keywords for evolving memory)
 	var childrensStory string
 	if globalAnthropicKey != "" {
-		story, err := generateChildrensStory(globalAnthropicKey, errorMessage, sloganResponse.Slogan, song.Title, song.Artist, foodImage.Attribution, gifURLs, commercialContext)
+		story, err := generateChildrensStory(globalAnthropicKey, errorMessage, sloganResponse.Slogan, song.Title, song.Artist, foodImage.Attribution, gifURLs, commercialContext, seedKeywords)
 		if err != nil {
 			log.Printf("Warning: Failed to generate children's story: %v", err)
 		} else {
 			childrensStory = story
-			log.Printf("📚 INTERACTIVE FICTION GENERATED:")
+			log.Printf("📚 INTERACTIVE FICTION GENERATED (with seed context: %v):", seedKeywords)
 			log.Printf("─────────────────────────────────────────────────────────")
 			log.Printf("%s", story)
 			log.Printf("─────────────────────────────────────────────────────────")
@@ -1935,11 +2189,11 @@ func processRhythmTrigger(trigger RhythmTrigger) {
 		log.Printf("⏭️  Skipping meme generation (counter: %d/8)", errorCounterNoMeme)
 	}
 
-	// Get C-SPAN video if tracker is configured
+	// Get C-SPAN video if tracker is configured (with seed keywords for evolving memory)
 	var cspanVideo *CSpanVideo
 	var cspanLivestream *YouTubeLivestream
 	if globalTrackerURL != "" {
-		cspanVid, cspanLive, err := getCSpanVideoForErrorLog(globalTrackerURL)
+		cspanVid, cspanLive, err := getCSpanVideoForErrorLog(globalTrackerURL, errorMessage, seedKeywords)
 		if err != nil {
 			log.Printf("⚠️  Failed to get C-SPAN video: %v", err)
 		} else {
@@ -1951,9 +2205,26 @@ func processRhythmTrigger(trigger RhythmTrigger) {
 		}
 	}
 
-	// Send to location tracker if configured (includes satirical fix, food image, children's story, meme, C-SPAN video, and multiple GIFs)
+	// Get TikTok video based on error context, seed keywords, and location
+	var tiktokVideo *TikTokVideo
+	tiktokVid, err := searchTikTokVideo(errorMessage, seedKeywords, userLocation)
+	if err != nil {
+		log.Printf("⚠️  Failed to find TikTok video: %v", err)
+	} else {
+		tiktokVideo = tiktokVid
+		if tiktokVideo != nil {
+			log.Printf("🎵 Found TikTok video: %s by @%s", tiktokVideo.Title, tiktokVideo.Author)
+		}
+	}
+
+	// Assign random Rorschach inkblot (1-10)
+	rorschachNumber := rand.Intn(10) + 1
+	rorschachURL := fmt.Sprintf("https://notspies.org/static/rorschach/card-%d.png", rorschachNumber)
+	log.Printf("🎭 Assigned Rorschach Card #%d", rorschachNumber)
+
+	// Send to location tracker if configured (includes satirical fix, food image, children's story, meme, C-SPAN video, TikTok video, Rorschach, and multiple GIFs)
 	if globalTrackerURL != "" {
-		if err := sendErrorLogToTracker(globalTrackerURL, errorMessage, gifURLs, sloganResponse.Slogan, sloganResponse.VerboseDesc, song.Title, song.Artist, song.URL, satiricalFix, foodImage.URL, foodImage.Attribution, childrensStory, memeURL, cspanVideo, cspanLivestream); err != nil {
+		if err := sendErrorLogToTracker(globalTrackerURL, errorMessage, gifURLs, sloganResponse.Slogan, sloganResponse.VerboseDesc, song.Title, song.Artist, song.URL, satiricalFix, foodImage.URL, foodImage.Attribution, childrensStory, memeURL, cspanVideo, cspanLivestream, tiktokVideo, rorschachNumber, rorschachURL); err != nil {
 			log.Printf("Warning: Failed to send to location tracker: %v", err)
 		} else {
 			log.Printf("💾 Sent error log with satirical fix, food image, children's story, and C-SPAN content to DynamoDB via location tracker")
@@ -2072,6 +2343,7 @@ func main() {
 		// Fetch last interaction context - the "seed event" that influences all content
 		var seedKeywords []string
 		var contextBusinessNames []string
+		var userLocation string
 		if locationTrackerURL != "" {
 			context, err := fetchLastInteractionContext(locationTrackerURL)
 			if err != nil {
@@ -2079,8 +2351,9 @@ func main() {
 			} else if context != nil {
 				seedKeywords = context.Keywords
 				contextBusinessNames = context.BusinessNames
-				log.Printf("🧠 Fetched seed context from last interaction: type=%s, timestamp=%v, keywords=%v, businesses=%v",
-					context.InteractionType, context.Timestamp, context.Keywords, context.BusinessNames)
+				userLocation = context.LocationName
+				log.Printf("🧠 Fetched seed context from last interaction: type=%s, timestamp=%v, keywords=%v, businesses=%v, location=%s",
+					context.InteractionType, context.Timestamp, context.Keywords, context.BusinessNames, userLocation)
 			}
 		}
 
@@ -2140,9 +2413,14 @@ func main() {
 
 		song := spotifyCache.getNextSong()
 
+		gifURL := ""
+		if len(gifURLs) > 0 {
+			gifURL = gifURLs[0]
+		}
+
 		errorLogRequest := ErrorLogRequest{
 			Message:       errorMessage,
-			GifURL:        gifURLs[0], // Use first GIF for slogan server
+			GifURL:        gifURL, // Use first GIF for slogan server
 			SongTitle:     song.Title,
 			SongArtist:    song.Artist,
 			SongURL:       song.URL,
@@ -2192,15 +2470,15 @@ func main() {
 			}
 		}
 
-		// Generate children's story if Anthropic API key is configured
+		// Generate children's story if Anthropic API key is configured (with seed keywords for evolving memory)
 		var childrensStory string
 		if anthropicAPIKey != "" {
-			story, err := generateChildrensStory(anthropicAPIKey, errorMessage, sloganResponse.Slogan, song.Title, song.Artist, foodImage.Attribution, gifURLs, commercialContext)
+			story, err := generateChildrensStory(anthropicAPIKey, errorMessage, sloganResponse.Slogan, song.Title, song.Artist, foodImage.Attribution, gifURLs, commercialContext, seedKeywords)
 			if err != nil {
 				log.Printf("Warning: Failed to generate children's story: %v", err)
 			} else {
 				childrensStory = story
-				log.Printf("📚 INTERACTIVE FICTION GENERATED:")
+				log.Printf("📚 INTERACTIVE FICTION GENERATED (with seed context: %v):", seedKeywords)
 				log.Printf("─────────────────────────────────────────────────────────")
 				log.Printf("%s", story)
 				log.Printf("─────────────────────────────────────────────────────────")
@@ -2259,11 +2537,11 @@ func main() {
 		}
 		fmt.Printf("================\n\n")
 
-		// Get C-SPAN video if tracker is configured
+		// Get C-SPAN video if tracker is configured (with seed keywords for evolving memory)
 		var cspanVideo *CSpanVideo
 		var cspanLivestream *YouTubeLivestream
 		if locationTrackerURL != "" {
-			cspanVid, cspanLive, err := getCSpanVideoForErrorLog(locationTrackerURL)
+			cspanVid, cspanLive, err := getCSpanVideoForErrorLog(locationTrackerURL, errorMessage, seedKeywords)
 			if err != nil {
 				log.Printf("⚠️  Failed to get C-SPAN video: %v", err)
 			} else {
@@ -2276,12 +2554,30 @@ func main() {
 			}
 		}
 
-		// Send to location tracker if configured (includes satirical fix, food image, children's story, meme, C-SPAN video, and multiple GIFs)
+		// Search for TikTok video if tracker is configured
+		var tiktokVideo *TikTokVideo
 		if locationTrackerURL != "" {
-			if err := sendErrorLogToTracker(locationTrackerURL, errorMessage, gifURLs, sloganResponse.Slogan, sloganResponse.VerboseDesc, song.Title, song.Artist, song.URL, satiricalFix, foodImage.URL, foodImage.Attribution, childrensStory, memeURL, cspanVideo, cspanLivestream); err != nil {
+			tiktokVid, err := searchTikTokVideo(errorMessage, seedKeywords, userLocation)
+			if err != nil {
+				log.Printf("⚠️  Failed to search TikTok video: %v", err)
+			} else if tiktokVid != nil {
+				tiktokVideo = tiktokVid
+				log.Printf("🎵 Found TikTok video: %s by %s", tiktokVideo.Title, tiktokVideo.Author)
+				fmt.Printf("TikTok Video: %s by %s\n", tiktokVideo.Title, tiktokVideo.Author)
+			}
+		}
+
+		// Assign random Rorschach inkblot (1-10)
+		rorschachNumber := rand.Intn(10) + 1
+		rorschachURL := fmt.Sprintf("https://notspies.org/static/rorschach/card-%d.png", rorschachNumber)
+		log.Printf("🎭 Assigned Rorschach Card #%d", rorschachNumber)
+
+		// Send to location tracker if configured (includes satirical fix, food image, children's story, meme, C-SPAN video, TikTok video, Rorschach, and multiple GIFs)
+		if locationTrackerURL != "" {
+			if err := sendErrorLogToTracker(locationTrackerURL, errorMessage, gifURLs, sloganResponse.Slogan, sloganResponse.VerboseDesc, song.Title, song.Artist, song.URL, satiricalFix, foodImage.URL, foodImage.Attribution, childrensStory, memeURL, cspanVideo, cspanLivestream, tiktokVideo, rorschachNumber, rorschachURL); err != nil {
 				log.Printf("Warning: Failed to send to location tracker: %v", err)
 			} else {
-				log.Printf("📍 Sent error log with satirical fix, food image, children's story, meme, and C-SPAN content to location tracker")
+				log.Printf("📍 Sent error log with satirical fix, food image, children's story, meme, C-SPAN content, and TikTok video to location tracker")
 			}
 		}
 	}
