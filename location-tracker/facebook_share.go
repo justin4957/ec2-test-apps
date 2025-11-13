@@ -22,6 +22,8 @@ import (
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/gofont/goregular"
 	"golang.org/x/image/math/fixed"
+
+	"location-tracker/types"
 )
 
 const (
@@ -40,7 +42,7 @@ type FacebookShareResponse struct {
 }
 
 // generateFacebookShareImage creates a compilation image from an error log
-func generateFacebookShareImage(errorLog *ErrorLog) ([]byte, error) {
+func generateFacebookShareImage(errorLog *types.ErrorLog) ([]byte, error) {
 	log.Printf("🎨 Starting image generation for error: %s", errorLog.ID)
 
 	// Create base canvas
@@ -373,7 +375,7 @@ func handleFacebookShare(w http.ResponseWriter, r *http.Request) {
 
 	// Find the error log by ID (same as regular error log endpoint)
 	errorLogMutex.RLock()
-	var targetLog *ErrorLog
+	var targetLog *types.ErrorLog
 	for i := range errorLogs {
 		if errorLogs[i].ID == errorID {
 			targetLog = &errorLogs[i]

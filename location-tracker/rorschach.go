@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"os"
 	"strings"
+
+	"location-tracker/types"
 )
 
 // RorschachInterpretRequest represents the request for AI interpretation
@@ -59,7 +61,7 @@ func handleRorschachInterpret(w http.ResponseWriter, r *http.Request) {
 
 	// Find the error log
 	errorLogMutex.Lock()
-	var targetLog *ErrorLog
+	var targetLog *types.ErrorLog
 	var targetIndex int
 	for i := range errorLogs {
 		if errorLogs[i].ID == errorID {
@@ -165,7 +167,7 @@ func handleRorschachUserResponse(w http.ResponseWriter, r *http.Request) {
 
 	// Find the error log
 	errorLogMutex.Lock()
-	var targetLog *ErrorLog
+	var targetLog *types.ErrorLog
 	var targetIndex int
 	for i := range errorLogs {
 		if errorLogs[i].ID == errorID {

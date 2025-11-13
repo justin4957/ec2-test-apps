@@ -29,226 +29,26 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	dynamodbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+
+	"location-tracker/types"
 )
-
-// Location represents a device location with timestamp
-type Location struct {
-	Latitude     float64   `json:"latitude" dynamodbav:"latitude"`
-	Longitude    float64   `json:"longitude" dynamodbav:"longitude"`
-	Accuracy     float64   `json:"accuracy" dynamodbav:"accuracy"`
-	Timestamp    time.Time `json:"timestamp" dynamodbav:"timestamp"`
-	DeviceID     string    `json:"device_id" dynamodbav:"device_id"`
-	UserAgent    string    `json:"user_agent" dynamodbav:"user_agent"`
-	Simulated    bool      `json:"simulated,omitempty" dynamodbav:"simulated"`
-	LocationName string    `json:"location_name,omitempty" dynamodbav:"location_name"`
-}
-
-// ErrorLog represents an error message with timestamp
-type ErrorLog struct {
-	ID                  string    `json:"id,omitempty" dynamodbav:"id"`
-	URL                 string    `json:"url,omitempty" dynamodbav:"url"` // Retrievable URL for this error log
-	Message             string    `json:"message" dynamodbav:"message"`
-	GifURL              string    `json:"gif_url" dynamodbav:"gif_url"` // Kept for backward compatibility
-	GifURLs             []string  `json:"gif_urls,omitempty" dynamodbav:"gif_urls"` // Multiple GIFs
-	Slogan              string    `json:"slogan" dynamodbav:"slogan"`
-	VerboseDesc         string    `json:"verbose_desc,omitempty" dynamodbav:"verbose_desc"`
-	SatiricalFix        string    `json:"satirical_fix,omitempty" dynamodbav:"satirical_fix"`
-	ChildrensStory      string    `json:"childrens_story,omitempty" dynamodbav:"childrens_story"`
-	SongTitle           string    `json:"song_title,omitempty" dynamodbav:"song_title"`
-	SongArtist          string    `json:"song_artist,omitempty" dynamodbav:"song_artist"`
-	SongURL             string    `json:"song_url,omitempty" dynamodbav:"song_url"`
-	FoodImageURL        string    `json:"food_image_url,omitempty" dynamodbav:"food_image_url"`
-	FoodImageAttr       string    `json:"food_image_attr,omitempty" dynamodbav:"food_image_attr"`
-	MemeURL             string             `json:"meme_url,omitempty" dynamodbav:"meme_url"` // AI-generated absurdist meme
-	CSpanVideo          *CSpanVideo        `json:"cspan_video,omitempty" dynamodbav:"cspan_video,omitempty"`
-	CSpanLivestream     *YouTubeLivestream `json:"cspan_livestream,omitempty" dynamodbav:"cspan_livestream,omitempty"`
-	TikTokVideo         *TikTokVideo       `json:"tiktok_video,omitempty" dynamodbav:"tiktok_video,omitempty"`
-	UserExperienceNote  string             `json:"user_experience_note,omitempty" dynamodbav:"user_experience_note"`
-	UserNoteKeywords    []string           `json:"user_note_keywords,omitempty" dynamodbav:"user_note_keywords"`
-	NearbyBusinesses    []string           `json:"nearby_businesses,omitempty" dynamodbav:"nearby_businesses"`
-	AnonymousTips       []string           `json:"anonymous_tips,omitempty" dynamodbav:"anonymous_tips"`
-	Timestamp           time.Time          `json:"timestamp" dynamodbav:"timestamp"`
-
-	// Rorschach test fields
-	RorschachImageNumber int    `json:"rorschach_image_number,omitempty" dynamodbav:"rorschach_image_number"` // 1-10
-	RorschachImageURL    string `json:"rorschach_image_url,omitempty" dynamodbav:"rorschach_image_url"`
-	RorschachAIResponse  string `json:"rorschach_ai_response,omitempty" dynamodbav:"rorschach_ai_response"`       // AI interpretation
-	RorschachUserResponse string `json:"rorschach_user_response,omitempty" dynamodbav:"rorschach_user_response"` // User's response
-
-	// Traceability - links this error log back to the seed interaction that influenced its generation
-	SeedInteractionType      string    `json:"seed_interaction_type,omitempty" dynamodbav:"seed_interaction_type"`
-	SeedInteractionTimestamp time.Time `json:"seed_interaction_timestamp,omitempty" dynamodbav:"seed_interaction_timestamp"`
-	SeedInteractionID        string    `json:"seed_interaction_id,omitempty" dynamodbav:"seed_interaction_id"`
-	SeedKeywords             []string  `json:"seed_keywords,omitempty" dynamodbav:"seed_keywords"`
-}
-
-// AnonymousTip represents an anonymous tip submission
-type AnonymousTip struct {
-	ID               string    `json:"id" dynamodbav:"id"`
-	TipContent       string    `json:"tip_content" dynamodbav:"tip_content"`
-	ModeratedContent string    `json:"moderated_content" dynamodbav:"moderated_content"`
-	UserHash         string    `json:"user_hash" dynamodbav:"user_hash"`
-	UserMetadata     string    `json:"user_metadata" dynamodbav:"user_metadata"`
-	ModerationStatus string    `json:"moderation_status" dynamodbav:"moderation_status"`
-	ModerationReason string    `json:"moderation_reason,omitempty" dynamodbav:"moderation_reason"`
-	Keywords         []string  `json:"keywords,omitempty" dynamodbav:"keywords"`
-	Timestamp        time.Time `json:"timestamp" dynamodbav:"timestamp"`
-	IPAddress        string    `json:"ip_address,omitempty" dynamodbav:"ip_address"`
-}
-
-// Donation represents a Stripe donation record
-type Donation struct {
-	ID                string    `json:"id" dynamodbav:"id"`
-	DonationType      string    `json:"donation_type" dynamodbav:"donation_type"` // "meme_disclaimer" or "church_committee"
-	Amount            int64     `json:"amount" dynamodbav:"amount"`               // Amount in cents
-	StripePaymentID   string    `json:"stripe_payment_id" dynamodbav:"stripe_payment_id"`
-	UserHash          string    `json:"user_hash,omitempty" dynamodbav:"user_hash"`
-	Timestamp         time.Time `json:"timestamp" dynamodbav:"timestamp"`
-	IPAddress         string    `json:"ip_address,omitempty" dynamodbav:"ip_address"`
-	Status            string    `json:"status" dynamodbav:"status"` // "pending", "succeeded", "failed"
-	BankRecordPurpose string    `json:"bank_record_purpose" dynamodbav:"bank_record_purpose"`
-}
-
-// CommercialRealEstate represents commercial real estate and associated businesses in an area
-type CommercialRealEstate struct {
-	ID              string                      `json:"id,omitempty" dynamodbav:"id"`
-	LocationName    string                      `json:"location_name" dynamodbav:"location_name"`
-	QueryLat        float64                     `json:"query_lat" dynamodbav:"query_lat"`
-	QueryLng        float64                     `json:"query_lng" dynamodbav:"query_lng"`
-	Properties      []CommercialPropertyDetails `json:"properties" dynamodbav:"properties"`
-	GoverningBodies []GoverningBody             `json:"governing_bodies,omitempty" dynamodbav:"governing_bodies"`
-	Timestamp       time.Time                   `json:"timestamp" dynamodbav:"timestamp"`
-}
-
-// CommercialPropertyDetails stores information about commercial real estate and businesses
-type CommercialPropertyDetails struct {
-	Address          string                 `json:"address" dynamodbav:"address"`
-	PropertyType     string                 `json:"property_type" dynamodbav:"property_type"` // "retail", "office", "industrial", etc.
-	Status           string                 `json:"status" dynamodbav:"status"`               // "available", "leased", "for_sale"
-	SquareFootage    string                 `json:"square_footage,omitempty" dynamodbav:"square_footage"`
-	PriceInfo        string                 `json:"price_info,omitempty" dynamodbav:"price_info"`
-	CurrentBusiness  string                 `json:"current_business,omitempty" dynamodbav:"current_business"`
-	BusinessType     string                 `json:"business_type,omitempty" dynamodbav:"business_type"`
-	Description      string                 `json:"description,omitempty" dynamodbav:"description"`
-	ContactInfo      map[string]interface{} `json:"contact_info,omitempty" dynamodbav:"contact_info"`
-	AdditionalInfo   map[string]interface{} `json:"additional_info,omitempty" dynamodbav:"additional_info"`
-}
-
-// GoverningBody stores information about local government authorities and civic organizations
-type GoverningBody struct {
-	Name         string `json:"name" dynamodbav:"name"`
-	Type         string `json:"type" dynamodbav:"type"`                     // "city_council", "planning", "zoning", "civic"
-	Jurisdiction string `json:"jurisdiction,omitempty" dynamodbav:"jurisdiction"` // City/county name
-	Contact      string `json:"contact,omitempty" dynamodbav:"contact"`           // Contact info
-}
-
-// CSpanVideo represents a C-SPAN video from search results
-type CSpanVideo struct {
-	Title       string `json:"title" dynamodbav:"title"`
-	URL         string `json:"url" dynamodbav:"url"`
-	EmbedCode   string `json:"embed_code,omitempty" dynamodbav:"embed_code"`
-	Description string `json:"description,omitempty" dynamodbav:"description"`
-	Date        string `json:"date,omitempty" dynamodbav:"date"`
-	Duration    string `json:"duration,omitempty" dynamodbav:"duration"`
-}
-
-// YouTubeLivestream represents a C-SPAN YouTube livestream
-type YouTubeLivestream struct {
-	Title     string `json:"title" dynamodbav:"title"`
-	VideoID   string `json:"video_id,omitempty" dynamodbav:"video_id"`
-	ChannelID string `json:"channel_id,omitempty" dynamodbav:"channel_id"`
-	IsLive    bool   `json:"is_live" dynamodbav:"is_live"`
-}
-
-// TikTokVideo represents a TikTok video found via Google search
-type TikTokVideo struct {
-	VideoID     string   `json:"video_id" dynamodbav:"video_id"`           // TikTok video ID
-	URL         string   `json:"url" dynamodbav:"url"`                     // Full TikTok URL
-	EmbedURL    string   `json:"embed_url" dynamodbav:"embed_url"`         // oEmbed iframe URL
-	Title       string   `json:"title,omitempty" dynamodbav:"title"`       // Video title/description
-	Author      string   `json:"author,omitempty" dynamodbav:"author"`     // Creator username
-	AuthorURL   string   `json:"author_url,omitempty" dynamodbav:"author_url"` // Creator profile URL
-	Thumbnail   string   `json:"thumbnail,omitempty" dynamodbav:"thumbnail"`   // Video thumbnail
-	Tags        []string `json:"tags,omitempty" dynamodbav:"tags"`         // Hashtags used for matching
-	Description string   `json:"description,omitempty" dynamodbav:"description"` // Why this video was selected
-}
-
-// PerplexityRequest represents a request to Perplexity API
-type PerplexityRequest struct {
-	Model    string              `json:"model"`
-	Messages []PerplexityMessage `json:"messages"`
-}
-
-// PerplexityMessage represents a message in Perplexity API format
-type PerplexityMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-// PerplexityResponse represents response from Perplexity API
-type PerplexityResponse struct {
-	Choices []struct {
-		Message PerplexityMessage `json:"message"`
-	} `json:"choices"`
-	Error *struct {
-		Message string `json:"message"`
-		Type    string `json:"type"`
-	} `json:"error"`
-}
-
-// Business represents a nearby business from Google Maps
-type Business struct {
-	Name     string   `json:"name"`
-	Type     string   `json:"type"`
-	Address  string   `json:"address"`
-	PlaceID  string   `json:"place_id"`
-	Location struct {
-		Lat float64 `json:"lat"`
-		Lng float64 `json:"lng"`
-	} `json:"location"`
-}
-
-// Google Maps API response types
-type GooglePlacesResponse struct {
-	Results []struct {
-		Name         string   `json:"name"`
-		Types        []string `json:"types"`
-		PlaceID      string   `json:"place_id"`
-		FormattedAddress string `json:"formatted_address"`
-		Geometry struct {
-			Location struct {
-				Lat float64 `json:"lat"`
-				Lng float64 `json:"lng"`
-			} `json:"location"`
-		} `json:"geometry"`
-	} `json:"results"`
-	Status string `json:"status"`
-}
-
-// TwilioWebhook represents incoming SMS data from Twilio
-type TwilioWebhook struct {
-	MessageSid string `json:"MessageSid"`
-	Body       string `json:"Body"`
-	From       string `json:"From"`
-	To         string `json:"To"`
-}
 
 var (
 	// In-memory cache (locations expire after 24 hours)
-	locations     = make(map[string]Location)
+	locations     = make(map[string]types.Location)
 	locationMutex sync.RWMutex
 
 	// Error log cache (keep last 50 errors)
-	errorLogs     = make([]ErrorLog, 0, 50)
+	errorLogs     = make([]types.ErrorLog, 0, 50)
 	errorLogMutex sync.RWMutex
 
 	// Nearby businesses from last shared location
-	currentBusinesses     = make([]Business, 0, 5)
+	currentBusinesses     = make([]types.Business, 0, 5)
 	currentBusinessesMutex sync.RWMutex
 
 	// Commercial real estate cache (keyed by location name)
-	commercialRealEstateCache     = make(map[string]CommercialRealEstate)
+	commercialRealEstateCache     = make(map[string]types.CommercialRealEstate)
 	commercialRealEstateCacheMutex sync.RWMutex
 
 	// Pending user experience note from Twilio SMS
@@ -281,7 +81,7 @@ var (
 	donationsTableName            = "location-tracker-donations"
 
 	// Anonymous tips cache
-	anonymousTips      = make([]AnonymousTip, 0, 100)
+	anonymousTips      = make([]types.AnonymousTip, 0, 100)
 	anonymousTipsMutex sync.RWMutex
 	pendingTipQueue    = make([]string, 0, 10) // Queue of tip IDs to attach to next errors
 	pendingTipMutex    sync.RWMutex
@@ -300,24 +100,9 @@ var (
 
 	// Last interaction context - tracks the most recent user-driven interaction
 	// All subsequent generated content (errors, GIFs, songs, etc.) traces back to this seed event
-	lastInteractionContext     *LastInteractionContext
+	lastInteractionContext     *types.LastInteractionContext
 	lastInteractionContextMutex sync.RWMutex
 )
-
-// LastInteractionContext represents the last user-driven interaction that serves as the "seed event"
-// for all subsequent generated content. This creates fractal continuity where errors, GIFs, songs,
-// slogans, and other content all trace back to and are influenced by the last known user interaction.
-type LastInteractionContext struct {
-	InteractionType string    `json:"interaction_type"` // "location_share", "user_note", "tip_submission"
-	Timestamp       time.Time `json:"timestamp"`
-	Keywords        []string  `json:"keywords"`         // Extracted keywords that influence content generation
-	LocationName    string    `json:"location_name,omitempty"` // For location shares
-	Latitude        float64   `json:"latitude,omitempty"`
-	Longitude       float64   `json:"longitude,omitempty"`
-	BusinessNames   []string  `json:"business_names,omitempty"` // Nearby businesses at location
-	RawContent      string    `json:"raw_content,omitempty"`    // Original tip/note text
-	SourceID        string    `json:"source_id"`                // ID of the source interaction
-}
 
 func main() {
 	// Initialize random seed for location generation
@@ -431,10 +216,10 @@ func main() {
 	}
 }
 
-func fetchNearbyBusinesses(lat, lng float64) ([]Business, error) {
+func fetchNearbyBusinesses(lat, lng float64) ([]types.Business, error) {
 	if googleMapsAPIKey == "" {
 		log.Println("⚠️  Google Maps API key not set, skipping business fetch")
-		return []Business{}, nil
+		return []types.Business{}, nil
 	}
 
 	url := fmt.Sprintf(
@@ -452,7 +237,7 @@ func fetchNearbyBusinesses(lat, lng float64) ([]Business, error) {
 		return nil, fmt.Errorf("Google Maps API returned status: %d", resp.StatusCode)
 	}
 
-	var placesResp GooglePlacesResponse
+	var placesResp types.GooglePlacesResponse
 	if err := json.NewDecoder(resp.Body).Decode(&placesResp); err != nil {
 		return nil, fmt.Errorf("failed to decode places response: %w", err)
 	}
@@ -462,7 +247,7 @@ func fetchNearbyBusinesses(lat, lng float64) ([]Business, error) {
 	}
 
 	// Randomly select up to 5 businesses
-	businesses := make([]Business, 0, 5)
+	businesses := make([]types.Business, 0, 5)
 	if len(placesResp.Results) > 0 {
 		// Shuffle and take up to 5
 		indices := make([]int, len(placesResp.Results))
@@ -483,7 +268,7 @@ func fetchNearbyBusinesses(lat, lng float64) ([]Business, error) {
 
 		for i := 0; i < count; i++ {
 			place := placesResp.Results[indices[i]]
-			business := Business{
+			business := types.Business{
 				Name:    place.Name,
 				Type:    getBusinessType(place.Types),
 				Address: place.FormattedAddress,
@@ -541,7 +326,7 @@ func extractUserKeywords(userNote string) []string {
 }
 
 // extractLocationKeywords extracts keywords from location data (place names, addresses, business names)
-func extractLocationKeywords(locationName string, businesses []Business) []string {
+func extractLocationKeywords(locationName string, businesses []types.Business) []string {
 	keywords := make([]string, 0)
 
 	// Extract from location name/address
@@ -577,7 +362,7 @@ func extractLocationKeywords(locationName string, businesses []Business) []strin
 
 // updateLastInteractionContext updates the global last interaction context
 // This serves as the "seed event" for all subsequent generated content
-func updateLastInteractionContext(interactionType string, keywords []string, sourceID string, locationName string, lat float64, lng float64, businesses []Business, rawContent string) {
+func updateLastInteractionContext(interactionType string, keywords []string, sourceID string, locationName string, lat float64, lng float64, businesses []types.Business, rawContent string) {
 	lastInteractionContextMutex.Lock()
 	defer lastInteractionContextMutex.Unlock()
 
@@ -586,7 +371,7 @@ func updateLastInteractionContext(interactionType string, keywords []string, sou
 		businessNames = append(businessNames, b.Name)
 	}
 
-	lastInteractionContext = &LastInteractionContext{
+	lastInteractionContext = &types.LastInteractionContext{
 		InteractionType: interactionType,
 		Timestamp:       time.Now(),
 		Keywords:        keywords,
@@ -603,7 +388,7 @@ func updateLastInteractionContext(interactionType string, keywords []string, sou
 }
 
 // getLastInteractionContext safely retrieves the current last interaction context
-func getLastInteractionContext() *LastInteractionContext {
+func getLastInteractionContext() *types.LastInteractionContext {
 	lastInteractionContextMutex.RLock()
 	defer lastInteractionContextMutex.RUnlock()
 
@@ -635,7 +420,7 @@ func generateRandomLocationInRadius(baseLat, baseLng, radiusMiles float64) (floa
 }
 
 // getCachedCommercialRealEstate attempts to find cached commercial real estate data near a location
-func getCachedCommercialRealEstate(queryLat, queryLng float64, radiusMiles float64) (*CommercialRealEstate, error) {
+func getCachedCommercialRealEstate(queryLat, queryLng float64, radiusMiles float64) (*types.CommercialRealEstate, error) {
 	if !useDynamoDB {
 		return nil, nil
 	}
@@ -654,7 +439,7 @@ func getCachedCommercialRealEstate(queryLat, queryLng float64, radiusMiles float
 		return nil, err
 	}
 
-	var records []CommercialRealEstate
+	var records []types.CommercialRealEstate
 	err = attributevalue.UnmarshalListOfMaps(result.Items, &records)
 	if err != nil {
 		log.Printf("⚠️  Failed to unmarshal commercial real estate records: %v", err)
@@ -713,10 +498,10 @@ func calculateDistance(lat1, lng1, lat2, lng2 float64) float64 {
 
 // searchCommercialRealEstate uses Perplexity API to find commercial real estate and businesses in an area
 // It first checks the cache to avoid unnecessary API calls
-func searchCommercialRealEstate(baseLat, baseLng float64, userKeywords []string) ([]CommercialPropertyDetails, []GoverningBody, float64, float64, error) {
+func searchCommercialRealEstate(baseLat, baseLng float64, userKeywords []string) ([]types.CommercialPropertyDetails, []types.GoverningBody, float64, float64, error) {
 	if perplexityAPIKey == "" {
 		log.Println("⚠️  Perplexity API key not set, skipping commercial real estate search")
-		return []CommercialPropertyDetails{}, []GoverningBody{}, baseLat, baseLng, nil
+		return []types.CommercialPropertyDetails{}, []types.GoverningBody{}, baseLat, baseLng, nil
 	}
 
 	// Generate random location within 10 mile radius
@@ -751,9 +536,9 @@ JSON format:
 
 Return ONLY valid JSON.`, queryLat, queryLng, keywordContext)
 
-	reqBody := PerplexityRequest{
+	reqBody := types.PerplexityRequest{
 		Model: "sonar",
-		Messages: []PerplexityMessage{
+		Messages: []types.PerplexityMessage{
 			{
 				Role:    "user",
 				Content: prompt,
@@ -786,7 +571,7 @@ Return ONLY valid JSON.`, queryLat, queryLng, keywordContext)
 		return nil, nil, queryLat, queryLng, fmt.Errorf("failed to read perplexity response: %w", err)
 	}
 
-	var perplexityResp PerplexityResponse
+	var perplexityResp types.PerplexityResponse
 	if err := json.Unmarshal(body, &perplexityResp); err != nil {
 		return nil, nil, queryLat, queryLng, fmt.Errorf("failed to parse perplexity response: %w", err)
 	}
@@ -810,13 +595,13 @@ Return ONLY valid JSON.`, queryLat, queryLng, keywordContext)
 	}
 
 	var result struct {
-		Properties      []CommercialPropertyDetails `json:"properties"`
-		GoverningBodies []GoverningBody             `json:"governing_bodies"`
+		Properties      []types.CommercialPropertyDetails `json:"properties"`
+		GoverningBodies []types.GoverningBody             `json:"governing_bodies"`
 	}
 
 	if err := json.Unmarshal([]byte(content), &result); err != nil {
 		log.Printf("⚠️  Failed to parse commercial real estate JSON, raw content: %s", content)
-		return []CommercialPropertyDetails{}, []GoverningBody{}, queryLat, queryLng, nil
+		return []types.CommercialPropertyDetails{}, []types.GoverningBody{}, queryLat, queryLng, nil
 	}
 
 	log.Printf("🏢 Found %d commercial properties and %d governing bodies near (%.6f, %.6f)",
@@ -826,7 +611,7 @@ Return ONLY valid JSON.`, queryLat, queryLng, keywordContext)
 }
 
 // saveCommercialRealEstateToDynamoDB stores commercial real estate information in DynamoDB
-func saveCommercialRealEstateToDynamoDB(commercialRealEstate CommercialRealEstate) {
+func saveCommercialRealEstateToDynamoDB(commercialRealEstate types.CommercialRealEstate) {
 	if !useDynamoDB {
 		return
 	}
@@ -852,7 +637,7 @@ func saveCommercialRealEstateToDynamoDB(commercialRealEstate CommercialRealEstat
 }
 
 // saveTipToDynamoDB saves an anonymous tip to DynamoDB
-func saveTipToDynamoDB(tip AnonymousTip) {
+func saveTipToDynamoDB(tip types.AnonymousTip) {
 	if !useDynamoDB {
 		return
 	}
@@ -878,7 +663,7 @@ func saveTipToDynamoDB(tip AnonymousTip) {
 }
 
 // getTipFromDynamoDB retrieves a tip by ID from DynamoDB
-func getTipFromDynamoDB(tipID string) (*AnonymousTip, error) {
+func getTipFromDynamoDB(tipID string) (*types.AnonymousTip, error) {
 	if !useDynamoDB {
 		return nil, fmt.Errorf("DynamoDB not available")
 	}
@@ -887,8 +672,8 @@ func getTipFromDynamoDB(tipID string) (*AnonymousTip, error) {
 
 	result, err := dynamoClient.GetItem(ctx, &dynamodb.GetItemInput{
 		TableName: aws.String(anonymousTipsTableName),
-		Key: map[string]types.AttributeValue{
-			"id": &types.AttributeValueMemberS{Value: tipID},
+		Key: map[string]dynamodbtypes.AttributeValue{
+			"id": &dynamodbtypes.AttributeValueMemberS{Value: tipID},
 		},
 	})
 	if err != nil {
@@ -899,7 +684,7 @@ func getTipFromDynamoDB(tipID string) (*AnonymousTip, error) {
 		return nil, fmt.Errorf("tip not found")
 	}
 
-	var tip AnonymousTip
+	var tip types.AnonymousTip
 	if err := attributevalue.UnmarshalMap(result.Item, &tip); err != nil {
 		return nil, err
 	}
@@ -1130,7 +915,7 @@ func handleCreatePaymentIntent(w http.ResponseWriter, r *http.Request) {
 
 	// Store pending donation record
 	donationID := fmt.Sprintf("%d", time.Now().UnixNano())
-	donation := Donation{
+	donation := types.Donation{
 		ID:                donationID,
 		DonationType:      req.DonationType,
 		Amount:            amount,
@@ -1194,7 +979,7 @@ func handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 }
 
 // saveDonationToDynamoDB saves donation record to DynamoDB
-func saveDonationToDynamoDB(donation Donation) {
+func saveDonationToDynamoDB(donation types.Donation) {
 	ctx := context.Background()
 
 	item, err := attributevalue.MarshalMap(donation)
@@ -1212,7 +997,7 @@ func saveDonationToDynamoDB(donation Donation) {
 		return
 	}
 
-	log.Printf("💾 Donation saved to DynamoDB: %s", donation.ID)
+	log.Printf("💾 types.Donation saved to DynamoDB: %s", donation.ID)
 }
 
 func handleCryptogram(w http.ResponseWriter, r *http.Request) {
@@ -1306,7 +1091,7 @@ func handleLocation(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "POST":
 		// Store new location
-		var loc Location
+		var loc types.Location
 		if err := json.NewDecoder(r.Body).Decode(&loc); err != nil {
 			http.Error(w, "Invalid location data", http.StatusBadRequest)
 			return
@@ -1341,7 +1126,7 @@ func handleLocation(w http.ResponseWriter, r *http.Request) {
 					fmt.Sprintf("%.6f,%.6f", loc.Latitude, loc.Longitude),
 					loc.Latitude,
 					loc.Longitude,
-					[]Business{},
+					[]types.Business{},
 					"",
 				)
 				return
@@ -1400,7 +1185,7 @@ func handleErrorLogs(w http.ResponseWriter, r *http.Request) {
 	case "POST":
 		// POST doesn't require auth (for error-generator to send logs)
 		// Store new error log
-		var errorLog ErrorLog
+		var errorLog types.ErrorLog
 		if err := json.NewDecoder(r.Body).Decode(&errorLog); err != nil {
 			http.Error(w, "Invalid error log data", http.StatusBadRequest)
 			return
@@ -1446,7 +1231,7 @@ func handleErrorLogs(w http.ResponseWriter, r *http.Request) {
 
 		// Get current nearby businesses from Google Maps
 		currentBusinessesMutex.RLock()
-		businesses := make([]Business, len(currentBusinesses))
+		businesses := make([]types.Business, len(currentBusinesses))
 		copy(businesses, currentBusinesses)
 		currentBusinessesMutex.RUnlock()
 
@@ -1462,7 +1247,7 @@ func handleErrorLogs(w http.ResponseWriter, r *http.Request) {
 
 		// Get current location to search for commercial real estate
 		locationMutex.RLock()
-		var currentLocation *Location
+		var currentLocation *types.Location
 		for _, loc := range locations {
 			// Use the most recent location
 			if currentLocation == nil || loc.Timestamp.After(currentLocation.Timestamp) {
@@ -1484,7 +1269,7 @@ func handleErrorLogs(w http.ResponseWriter, r *http.Request) {
 				if len(properties) > 0 || len(governingBodies) > 0 {
 					locationName := fmt.Sprintf("Area-%.4f-%.4f", queryLat, queryLng)
 
-					commercialRealEstateRecord := CommercialRealEstate{
+					commercialRealEstateRecord := types.CommercialRealEstate{
 						ID:              fmt.Sprintf("%s-%d", locationName, time.Now().UnixNano()),
 						LocationName:    locationName,
 						QueryLat:        queryLat,
@@ -1555,7 +1340,7 @@ func handleErrorLogs(w http.ResponseWriter, r *http.Request) {
 		// Store in memory cache
 		errorLogMutex.Lock()
 		// Prepend new error to beginning (most recent first)
-		errorLogs = append([]ErrorLog{errorLog}, errorLogs...)
+		errorLogs = append([]types.ErrorLog{errorLog}, errorLogs...)
 		// Keep only last 50 errors in memory
 		if len(errorLogs) > 50 {
 			errorLogs = errorLogs[:50]
@@ -1592,7 +1377,7 @@ func handleErrorLogs(w http.ResponseWriter, r *http.Request) {
 		hasFullAccess := isAuthenticated(r)
 		if !hasFullAccess {
 			// Create sanitized copy without location data and user notes
-			sanitized := make([]ErrorLog, len(recentLogs))
+			sanitized := make([]types.ErrorLog, len(recentLogs))
 			for i, log := range recentLogs {
 				sanitized[i] = log
 				sanitized[i].NearbyBusinesses = nil         // Hide nearby businesses (location-specific)
@@ -1684,16 +1469,16 @@ func handleErrorLogByID(w http.ResponseWriter, r *http.Request) {
 	// Not found in memory, check DynamoDB if enabled
 	if useDynamoDB {
 		ctx := context.Background()
-		var errorLog ErrorLog
+		var errorLog types.ErrorLog
 		var err error
 
 		if hasTimestamp {
 			// Fast path: Use GetItem with both id and timestamp (composite key)
 			result, getErr := dynamoClient.GetItem(ctx, &dynamodb.GetItemInput{
 				TableName: aws.String(errorLogsTableName),
-				Key: map[string]types.AttributeValue{
-					"id":        &types.AttributeValueMemberS{Value: errorLogID},
-					"timestamp": &types.AttributeValueMemberS{Value: timestampStr},
+				Key: map[string]dynamodbtypes.AttributeValue{
+					"id":        &dynamodbtypes.AttributeValueMemberS{Value: errorLogID},
+					"timestamp": &dynamodbtypes.AttributeValueMemberS{Value: timestampStr},
 				},
 			})
 
@@ -1714,8 +1499,8 @@ func handleErrorLogByID(w http.ResponseWriter, r *http.Request) {
 			queryResult, queryErr := dynamoClient.Query(ctx, &dynamodb.QueryInput{
 				TableName:              aws.String(errorLogsTableName),
 				KeyConditionExpression: aws.String("id = :id"),
-				ExpressionAttributeValues: map[string]types.AttributeValue{
-					":id": &types.AttributeValueMemberS{Value: errorLogID},
+				ExpressionAttributeValues: map[string]dynamodbtypes.AttributeValue{
+					":id": &dynamodbtypes.AttributeValueMemberS{Value: errorLogID},
 				},
 				Limit: aws.Int32(1),
 			})
@@ -1804,8 +1589,8 @@ func handleCommercialContext(w http.ResponseWriter, r *http.Request) {
 	defer commercialRealEstateCacheMutex.RUnlock()
 
 	// Flatten all commercial properties and governing bodies from cache
-	allProperties := make([]CommercialPropertyDetails, 0)
-	allGoverningBodies := make([]GoverningBody, 0)
+	allProperties := make([]types.CommercialPropertyDetails, 0)
+	allGoverningBodies := make([]types.GoverningBody, 0)
 	for _, record := range commercialRealEstateCache {
 		allProperties = append(allProperties, record.Properties...)
 		allGoverningBodies = append(allGoverningBodies, record.GoverningBodies...)
@@ -1936,7 +1721,7 @@ func handleTwilioWebhook(w http.ResponseWriter, r *http.Request) {
 		"",
 		0,
 		0,
-		[]Business{},
+		[]types.Business{},
 		messageBody,
 	)
 
@@ -2021,7 +1806,7 @@ func handleTips(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Create tip record
-		tip := AnonymousTip{
+		tip := types.AnonymousTip{
 			ID:               fmt.Sprintf("%d", time.Now().UnixNano()),
 			TipContent:       req.TipContent,
 			ModeratedContent: moderationResult.ModeratedText,
@@ -2063,7 +1848,7 @@ func handleTips(w http.ResponseWriter, r *http.Request) {
 			"",
 			0,
 			0,
-			[]Business{},
+			[]types.Business{},
 			moderationResult.ModeratedText,
 		)
 
@@ -2081,7 +1866,7 @@ func handleTips(w http.ResponseWriter, r *http.Request) {
 		defer anonymousTipsMutex.RUnlock()
 
 		// Filter for approved tips only
-		approvedTips := []AnonymousTip{}
+		approvedTips := []types.AnonymousTip{}
 		for _, tip := range anonymousTips {
 			if tip.ModerationStatus == "approved" || tip.ModerationStatus == "redacted" {
 				approvedTips = append(approvedTips, tip)
@@ -2621,7 +2406,7 @@ func initializeTipSystem() {
 }
 
 // saveErrorLogToDynamoDB appends error log to DynamoDB (never deletes existing data)
-func saveErrorLogToDynamoDB(errorLog ErrorLog) {
+func saveErrorLogToDynamoDB(errorLog types.ErrorLog) {
 	ctx := context.Background()
 
 	// Marshal the error log to DynamoDB attribute values
@@ -2645,7 +2430,7 @@ func saveErrorLogToDynamoDB(errorLog ErrorLog) {
 }
 
 // saveLocationToDynamoDB appends location to DynamoDB (never deletes existing data)
-func saveLocationToDynamoDB(location Location) {
+func saveLocationToDynamoDB(location types.Location) {
 	ctx := context.Background()
 
 	// Marshal the location to DynamoDB attribute values
@@ -2681,7 +2466,7 @@ func loadExistingData() {
 	if err != nil {
 		log.Printf("⚠️  Failed to load error logs: %v", err)
 	} else {
-		var loadedErrorLogs []ErrorLog
+		var loadedErrorLogs []types.ErrorLog
 		err = attributevalue.UnmarshalListOfMaps(errorLogsResult.Items, &loadedErrorLogs)
 		if err != nil {
 			log.Printf("⚠️  Failed to unmarshal error logs: %v", err)
@@ -2712,14 +2497,14 @@ func loadExistingData() {
 	if err != nil {
 		log.Printf("⚠️  Failed to load locations: %v", err)
 	} else {
-		var loadedLocations []Location
+		var loadedLocations []types.Location
 		err = attributevalue.UnmarshalListOfMaps(locationsResult.Items, &loadedLocations)
 		if err != nil {
 			log.Printf("⚠️  Failed to unmarshal locations: %v", err)
 		} else {
 			// Filter to last 24 hours and get most recent per device
 			now := time.Now()
-			recentLocations := make(map[string]Location)
+			recentLocations := make(map[string]types.Location)
 
 			for _, loc := range loadedLocations {
 				if now.Sub(loc.Timestamp) <= 24*time.Hour {
@@ -3461,7 +3246,7 @@ const indexHTML = `<!DOCTYPE html>
 
             <!-- Tracker View -->
             <div id="tracker">
-                <!-- Donation Section -->
+                <!-- types.Donation Section -->
                 <div id="donation-section" style="background: linear-gradient(135deg, #ffd700 0%, #ffa500 100%); padding: 20px; border-radius: 12px; margin-bottom: 20px; border: 3px solid var(--swiss-black); box-shadow: 4px 4px 0px rgba(0, 0, 0, 0.2);">
                     <h3 style="color: #000; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.1em; font-size: 18px;">💰 Support This Project</h3>
                     <p style="color: rgba(0,0,0,0.8); font-size: 13px; margin-bottom: 15px; font-family: 'Courier New', monospace; line-height: 1.5;">
@@ -4700,7 +4485,7 @@ const indexHTML = `<!DOCTYPE html>
         function displayCommercialRealEstate(commercialRealEstateMap) {
             const container = document.getElementById('commercialrealestate');
 
-            // Convert new format (map of CommercialRealEstate records) to old format for compatibility
+            // Convert new format (map of types.CommercialRealEstate records) to old format for compatibility
             allBusinessesData = {};
             let allGoverningBodies = [];
 
@@ -5280,7 +5065,7 @@ const indexHTML = `<!DOCTYPE html>
         console.log('%c🎯 Pro tip: Try the Konami Code (↑↑↓↓←→←→BA)', 'color: #666; font-style: italic; font-size: 11px;');
     </script>
 
-    <!-- Donation Modal -->
+    <!-- types.Donation Modal -->
     <div id="donation-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); z-index: 10000; align-items: center; justify-content: center; padding: 20px;">
         <div style="background: white; border-radius: 16px; max-width: 500px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5); position: relative;">
             <div style="padding: 25px; border-bottom: 2px solid #e5e7eb;">
