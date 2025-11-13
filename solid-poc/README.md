@@ -20,9 +20,10 @@ solid-poc/
 ├── main.go                    # Web server with API endpoints
 ├── internal/solid/
 │   └── rdf.go                # RDF serialization (Turtle/JSON-LD)
-└── ../proof-of-concept/      # Browser-based authentication PoC
+└── frontend/                 # Browser-based authentication PoC
     ├── index.html            # Interactive authentication UI
     ├── dist/                 # Bundled Solid libraries
+    ├── src/                  # Source files for bundling
     └── README.md             # Frontend PoC documentation
 ```
 
@@ -109,7 +110,7 @@ Content-Type: application/json
 
 ## Features
 
-### Frontend PoC (`/proof-of-concept`) ✅
+### Frontend PoC (`/frontend`) ✅
 - OIDC authentication with any Solid provider
 - DPoP token handling (automatic via Inrupt libraries)
 - WebID profile reading
@@ -250,7 +251,7 @@ After validating this PoC:
 - **Inrupt Docs**: https://docs.inrupt.com/
 - **RDF Data Models**: See `../SOLID_DATA_MODELS.md`
 - **Authentication Research**: See `../SOLID_AUTHENTICATION.md`
-- **Frontend PoC**: See `../proof-of-concept/README.md`
+- **Frontend PoC**: See `./frontend/README.md`
 
 ## License
 

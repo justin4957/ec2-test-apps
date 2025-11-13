@@ -1,6 +1,8 @@
-# Solid Authentication Proof-of-Concept
+# Solid Authentication Frontend
 
-This is a standalone proof-of-concept demonstrating Solid Pod authentication and basic data operations for the Location Tracker project.
+This is the frontend component of the solid-poc application, demonstrating Solid Pod authentication and basic data operations for the Location Tracker project.
+
+**Location**: `solid-poc/frontend/` (served by `solid-poc/main.go`)
 
 ## Overview
 
@@ -22,29 +24,35 @@ This PoC validates the authentication flow and data operations that will be inte
 The Solid client libraries are bundled locally for better reliability:
 
 ```bash
-cd proof-of-concept
+cd solid-poc/frontend
 npm install
 npm run build
 ```
 
 This creates `dist/solid-client-bundle.js` from the Inrupt libraries.
 
-### Step 2: Serve via Local Web Server
+### Step 2: Run the solid-poc Server
 
-**You must use a web server** (not `file://` protocol):
+The frontend is served by the solid-poc backend:
 
 ```bash
-# Option A: Using Python (from the proof-of-concept directory)
-python3 -m http.server 8080
-
-# Option B: Using Node.js
-npx http-server -p 8080
-
-# Option C: Using PHP
-php -S localhost:8080
+cd solid-poc
+go run main.go
 ```
 
-Then navigate to: `http://localhost:8080/index.html`
+Then navigate to: `http://localhost:9090`
+
+The server serves the frontend files and provides RDF serialization API endpoints.
+
+**Alternative** - Standalone Frontend Server:
+
+You can also serve just the frontend (without the backend APIs) using:
+
+```bash
+cd solid-poc/frontend
+python3 -m http.server 8080
+# Then navigate to: http://localhost:8080/index.html
+```
 
 **Note**: Opening `index.html` directly in a browser (`file://` protocol) will cause CORS errors and OAuth redirect issues.
 
@@ -274,8 +282,9 @@ After validating this PoC:
 
 - **Inrupt Documentation**: https://docs.inrupt.com/
 - **Solid Protocol Spec**: https://solidproject.org/TR/protocol
-- **RDF Data Models** (Issue #47): See `../SOLID_DATA_MODELS.md`
-- **Authentication Research** (Issue #46): See `../SOLID_AUTHENTICATION.md`
+- **RDF Data Models** (Issue #47): See `../../SOLID_DATA_MODELS.md`
+- **Authentication Research** (Issue #46): See `../../SOLID_AUTHENTICATION.md`
+- **Backend README**: See `../README.md` for solid-poc server documentation
 
 ## Support
 
