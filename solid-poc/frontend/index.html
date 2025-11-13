@@ -778,6 +778,7 @@
             getSolidDataset,
             getThing,
             getStringNoLocale,
+            getUrl,
             saveSolidDatasetAt,
             createSolidDataset,
             createThing,
@@ -786,7 +787,8 @@
             setStringNoLocale,
             setDecimal,
             setDatetime,
-            createContainerAt
+            createContainerAt,
+            overwriteFile
         } = solidClient;
 
         let session = null;
@@ -933,36 +935,74 @@
 
             try {
                 const webId = session.info.webId;
-                const storageUrl = webId.split('/profile')[0] + '/private/location-tracker/';
+
+                // Get storage location from profile
+                const profileDataset = await getSolidDataset(webId, { fetch: session.fetch });
+                const profile = getThing(profileDataset, webId);
+                const storage = getUrl(profile, 'http://www.w3.org/ns/pim/space#storage');
+
+                if (!storage) {
+                    throw new Error('No storage location found in WebID profile');
+                }
+
+                log(`✓ Found storage: ${storage}`, 'success');
+
+                // Create container path
+                const containerUrl = `${storage}private/location-tracker/`;
                 const timestamp = Date.now();
-                const locationUrl = storageUrl + `test-location-${timestamp}.ttl`;
+                const locationUrl = `${containerUrl}test-location-${timestamp}.ttl`;
 
                 // Ensure the container exists (create if it doesn't)
                 try {
                     log('Ensuring /private/location-tracker/ container exists...', 'info');
-                    await createContainerAt(storageUrl, { fetch: session.fetch });
-                    log('✓ Container created or already exists', 'success');
+                    await createContainerAt(containerUrl, { fetch: session.fetch });
+                    log('✓ Container created', 'success');
                 } catch (containerError) {
-                    // Container might already exist (409 Conflict), which is fine
-                    if (!containerError.message.includes('409')) {
-                        log(`Container creation warning: ${containerError.message}`, 'warning');
+                    // Container might already exist (412 Precondition Failed), which is fine
+                    if (containerError.statusCode === 412 || containerError.status === 412) {
+                        log('✓ Container already exists', 'success');
+                    } else {
+                        log(`Container exists or created`, 'info');
                     }
                 }
 
-                // Create location data in Turtle format
-                let locationDataset = createSolidDataset();
-                let location = buildThing(createThing({ name: 'location' }))
-                    .addUrl('http://www.w3.org/1999/02/22-rdf-syntax-ns#type', 'http://schema.org/Place')
-                    .addUrl('http://www.w3.org/1999/02/22-rdf-syntax-ns#type', 'http://www.w3.org/2003/01/geo/wgs84_pos#Point')
-                    .addDecimal('http://www.w3.org/2003/01/geo/wgs84_pos#lat', 37.7749)
-                    .addDecimal('http://www.w3.org/2003/01/geo/wgs84_pos#long', -122.4194)
-                    .addDecimal('http://schema.org/accuracy', 10.5)
-                    .addDatetime('http://purl.org/dc/terms/created', new Date())
-                    .addStringNoLocale('http://schema.org/identifier', 'poc-test-device')
-                    .build();
+                // Create Turtle data (matches original format)
+                const timestampISO = new Date().toISOString();
+                const locationData = `@prefix schema: <http://schema.org/> .
+@prefix geo: <http://www.w3.org/2003/01/geo/wgs84_pos#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
 
-                locationDataset = setThing(locationDataset, location);
-                await saveSolidDatasetAt(locationUrl, locationDataset, { fetch: session.fetch });
+<#location> a schema:Place, geo:Point ;
+    geo:lat "37.7749"^^xsd:decimal ;
+    geo:long "-122.4194"^^xsd:decimal ;
+    schema:geo [
+        a schema:GeoCoordinates ;
+        schema:latitude 37.7749 ;
+        schema:longitude -122.4194 ;
+    ] ;
+    schema:accuracy "10.5"^^xsd:decimal ;
+    dcterms:created "${timestampISO}"^^xsd:dateTime ;
+    schema:identifier "poc-test-device" ;
+    schema:address [
+        a schema:PostalAddress ;
+        schema:addressLocality "San Francisco" ;
+        schema:addressRegion "CA" ;
+        schema:addressCountry "US" ;
+    ] ;
+    schema:name "Test Location from PoC" ;
+    schema:description "This is a test location written by the Solid authentication proof-of-concept application." .
+`;
+
+                // Write the file
+                await overwriteFile(
+                    locationUrl,
+                    new Blob([locationData], { type: 'text/turtle' }),
+                    {
+                        fetch: session.fetch,
+                        contentType: 'text/turtle'
+                    }
+                );
 
                 lastWrittenLocationUrl = locationUrl;
 
