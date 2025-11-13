@@ -367,7 +367,6 @@ func main() {
 	http.HandleFunc("/api/share-image/", handleShareImage)
 	http.HandleFunc("/api/rorschach/interpret/", handleRorschachInterpret)
 	http.HandleFunc("/api/rorschach/respond/", handleRorschachUserResponse)
-	http.HandleFunc("/api/giphy/action/", handleGiphyAction)
 	http.HandleFunc("/api/businesses", handleBusinesses)
 	http.HandleFunc("/api/keywords", handlePendingKeywords)
 	http.HandleFunc("/api/commercial-context", handleCommercialContext)
@@ -4533,7 +4532,7 @@ const indexHTML = `<!DOCTYPE html>
 
                     // Add hidden GIFs (will be shown on expansion)
                     for (let i = 2; i < gifURLs.length; i++) {
-                        gifHTML += '<div id="gif-' + errorLog.id + '-' + i + '" style="display: none; border: 4px solid rgba(239, 68, 68, 0.5); border-radius: 12px; padding: 6px; background: rgba(255, 255, 255, 0.6); box-shadow: inset 0 0 20px rgba(239, 68, 68, 0.15);"><img data-src="' + gifURLs[i] + '" alt="Reaction GIF ' + (i + 1) + '" style="width: 100%; border-radius: 8px; display: block; object-fit: contain;" onload="triggerGiphyAction(this.src)"></div>';
+                        gifHTML += '<div id="gif-' + errorLog.id + '-' + i + '" style="display: none; border: 4px solid rgba(239, 68, 68, 0.5); border-radius: 12px; padding: 6px; background: rgba(255, 255, 255, 0.6); box-shadow: inset 0 0 20px rgba(239, 68, 68, 0.15);"><img data-src="' + gifURLs[i] + '" alt="Reaction GIF ' + (i + 1) + '" style="width: 100%; border-radius: 8px; display: block; object-fit: contain;"></div>';
                     }
 
                     gifHTML += '</div>';
@@ -5069,40 +5068,12 @@ const indexHTML = `<!DOCTYPE html>
                         const img = gifDiv.querySelector('img');
                         if (img && img.dataset.src && !img.src) {
                             img.src = img.dataset.src;
-                            // Image onload will trigger Giphy action automatically
                         }
                     }
                 }
                 button.textContent = 'Show Less ▲';
                 button.dataset.expanded = 'true';
             }
-        }
-
-        // Trigger Giphy action endpoint for analytics (proxied through backend)
-        function triggerGiphyAction(gifURL) {
-            // Extract GIF ID from URL (e.g., https://media.giphy.com/media/ABC123/giphy.gif -> ABC123)
-            const gifIDMatch = gifURL.match(/\/media\/([^\/]+)\//);
-            if (!gifIDMatch || !gifIDMatch[1]) {
-                return; // Not a valid Giphy URL
-            }
-
-            const gifID = gifIDMatch[1];
-
-            // Call our backend proxy endpoint (async, no need to wait for response)
-            fetch('/api/giphy/action/' + gifID, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    gif_id: gifID,
-                    action_type: 'VIEW',
-                    random_id: Math.random().toString(36).substring(7)
-                })
-            }).catch(err => {
-                // Silently fail - analytics shouldn't break the UI
-                console.debug('Giphy action endpoint call failed:', err);
-            });
         }
 
         // Easter egg: DOJ banner at top of error logs
