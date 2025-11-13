@@ -63,11 +63,8 @@ func main() {
 	fs := http.FileServer(http.Dir("../proof-of-concept"))
 	http.Handle("/", loggingMiddleware(fs))
 
-	// API endpoints for backend Solid operations
+	// API endpoints for RDF operations
 	http.HandleFunc("/api/health", loggingHandler(healthHandler))
-	http.HandleFunc("/api/validate-token", loggingHandler(validateTokenHandler))
-	http.HandleFunc("/api/pod/read", loggingHandler(podReadHandler))
-	http.HandleFunc("/api/pod/write", loggingHandler(podWriteHandler))
 	http.HandleFunc("/api/rdf/serialize", loggingHandler(serializeHandler))
 	http.HandleFunc("/api/rdf/deserialize", loggingHandler(deserializeHandler))
 
@@ -113,135 +110,6 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 		"status":  "ok",
 		"service": "solid-poc",
 		"version": "1.0.0",
-	})
-}
-
-// validateTokenHandler validates a DPoP token from the frontend
-func validateTokenHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		log.Printf("❌ Token validation failed: method not allowed (%s)", r.Method)
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var req struct {
-		Token string `json:"token"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Printf("❌ Token validation failed: invalid request body: %v", err)
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	log.Printf("🔑 Validating DPoP token")
-
-	// Validate the DPoP token
-	valid, err := solid.ValidateDPoPToken(req.Token)
-	if err != nil {
-		log.Printf("❌ Token validation failed: %v", err)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"valid": false,
-			"error": err.Error(),
-		})
-		return
-	}
-
-	log.Printf("✅ Token validation successful")
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"valid": valid,
-	})
-}
-
-// podReadHandler reads a resource from a Pod (server-side)
-func podReadHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		log.Printf("❌ Pod read failed: method not allowed (%s)", r.Method)
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var req struct {
-		Token string `json:"token"`
-		URL   string `json:"url"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Printf("❌ Pod read failed: invalid request body: %v", err)
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	log.Printf("📖 Reading Pod resource: %s", req.URL)
-
-	client, err := solid.NewClient(req.Token)
-	if err != nil {
-		log.Printf("❌ Pod read failed: client creation error: %v", err)
-		http.Error(w, fmt.Sprintf("Failed to create client: %v", err), http.StatusBadRequest)
-		return
-	}
-
-	data, contentType, err := client.GetResource(r.Context(), req.URL)
-	if err != nil {
-		log.Printf("❌ Pod read failed: %v", err)
-		http.Error(w, fmt.Sprintf("Failed to read resource: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	log.Printf("✅ Pod read successful: %d bytes, content-type: %s", len(data), contentType)
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"data":         string(data),
-		"content_type": contentType,
-	})
-}
-
-// podWriteHandler writes a resource to a Pod (server-side)
-func podWriteHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		log.Printf("❌ Pod write failed: method not allowed (%s)", r.Method)
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var req struct {
-		Token       string `json:"token"`
-		URL         string `json:"url"`
-		Data        string `json:"data"`
-		ContentType string `json:"content_type"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Printf("❌ Pod write failed: invalid request body: %v", err)
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	log.Printf("📝 Writing Pod resource: %s (content-type: %s, size: %d bytes)", req.URL, req.ContentType, len(req.Data))
-
-	client, err := solid.NewClient(req.Token)
-	if err != nil {
-		log.Printf("❌ Pod write failed: client creation error: %v", err)
-		http.Error(w, fmt.Sprintf("Failed to create client: %v", err), http.StatusBadRequest)
-		return
-	}
-
-	if err := client.PutResource(r.Context(), req.URL, []byte(req.Data), req.ContentType); err != nil {
-		log.Printf("❌ Pod write failed: %v", err)
-		http.Error(w, fmt.Sprintf("Failed to write resource: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	log.Printf("✅ Pod write successful: %s", req.URL)
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
 	})
 }
 
