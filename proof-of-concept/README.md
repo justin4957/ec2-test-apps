@@ -15,37 +15,38 @@ This PoC validates the authentication flow and data operations that will be inte
 
 ## Quick Start
 
-### Option 1: Open Directly in Browser
+**IMPORTANT**: You need to build the JavaScript bundle first before running the application.
 
-Simply open `index.html` in any modern web browser:
+### Step 1: Build the Bundle
+
+The Solid client libraries are bundled locally for better reliability:
 
 ```bash
-# macOS
-open proof-of-concept/index.html
-
-# Linux
-xdg-open proof-of-concept/index.html
-
-# Windows
-start proof-of-concept/index.html
+cd proof-of-concept
+npm install
+npm run build
 ```
 
-### Option 2: Serve via Local Web Server
+This creates `dist/solid-client-bundle.js` from the Inrupt libraries.
 
-For a better development experience:
+### Step 2: Serve via Local Web Server
+
+**You must use a web server** (not `file://` protocol):
 
 ```bash
-# Using Python
+# Option A: Using Python (from the proof-of-concept directory)
 python3 -m http.server 8080
 
-# Using Node.js
+# Option B: Using Node.js
 npx http-server -p 8080
 
-# Using PHP
+# Option C: Using PHP
 php -S localhost:8080
 ```
 
-Then navigate to: `http://localhost:8080/proof-of-concept/`
+Then navigate to: `http://localhost:8080/index.html`
+
+**Note**: Opening `index.html` directly in a browser (`file://` protocol) will cause CORS errors and OAuth redirect issues.
 
 ## Testing Instructions
 
@@ -240,10 +241,24 @@ Tested and working on:
 
 ## Libraries Used
 
-- **@inrupt/solid-client-authn-browser** v2.0.0 - Authentication
-- **@inrupt/solid-client** v2.0.0 - Data operations
+- **@inrupt/solid-client-authn-browser** v3.1.1 - Authentication
+- **@inrupt/solid-client** v3.0.0 - Data operations
 
-Both loaded via CDN for simplicity. Production applications should use npm packages.
+Both libraries are bundled locally using webpack. The bundle is generated from npm packages and served as `dist/solid-client-bundle.js`. This approach:
+- ✅ Ensures consistent library versions
+- ✅ Works offline after initial build
+- ✅ Avoids CDN reliability issues
+- ✅ Provides better performance (single bundle file)
+
+### Rebuilding the Bundle
+
+If you update the libraries or make changes to `src/index.mjs`:
+
+```bash
+npm run build
+```
+
+This will regenerate `dist/solid-client-bundle.js`.
 
 ## Next Steps
 
