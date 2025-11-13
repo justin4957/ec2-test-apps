@@ -31,6 +31,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	dynamodbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
+	"location-tracker/services"
 	"location-tracker/types"
 )
 
@@ -102,6 +103,11 @@ var (
 	// All subsequent generated content (errors, GIFs, songs, etc.) traces back to this seed event
 	lastInteractionContext     *types.LastInteractionContext
 	lastInteractionContextMutex sync.RWMutex
+
+	// Services
+	businessService   *services.BusinessService
+	commercialService *services.CommercialService
+	contextService    *services.ContextService
 )
 
 func main() {
@@ -124,7 +130,13 @@ func main() {
 	// Initialize anonymous tip system
 	initializeTipSystem()
 
+	// Initialize services
+	businessService = services.NewBusinessService(googleMapsAPIKey)
+	commercialService = services.NewCommercialService(perplexityAPIKey)
+	contextService = services.NewContextService()
+
 	log.Printf("✅ Location tracker starting...")
+	log.Printf("🔧 Services initialized (business, commercial, context)")
 	log.Printf("🔒 Password authentication enabled")
 	if useHTTPS {
 		log.Printf("🔐 HTTPS mode enabled")
@@ -217,85 +229,11 @@ func main() {
 }
 
 func fetchNearbyBusinesses(lat, lng float64) ([]types.Business, error) {
-	if googleMapsAPIKey == "" {
-		log.Println("⚠️  Google Maps API key not set, skipping business fetch")
-		return []types.Business{}, nil
-	}
-
-	url := fmt.Sprintf(
-		"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=%f,%f&radius=500&key=%s",
-		lat, lng, googleMapsAPIKey,
-	)
-
-	resp, err := http.Get(url)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch places: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Google Maps API returned status: %d", resp.StatusCode)
-	}
-
-	var placesResp types.GooglePlacesResponse
-	if err := json.NewDecoder(resp.Body).Decode(&placesResp); err != nil {
-		return nil, fmt.Errorf("failed to decode places response: %w", err)
-	}
-
-	if placesResp.Status != "OK" && placesResp.Status != "ZERO_RESULTS" {
-		return nil, fmt.Errorf("Google Maps API error: %s", placesResp.Status)
-	}
-
-	// Randomly select up to 5 businesses
-	businesses := make([]types.Business, 0, 5)
-	if len(placesResp.Results) > 0 {
-		// Shuffle and take up to 5
-		indices := make([]int, len(placesResp.Results))
-		for i := range indices {
-			indices[i] = i
-		}
-
-		// Simple shuffle
-		for i := range indices {
-			j := i + int(time.Now().UnixNano())%(len(indices)-i)
-			indices[i], indices[j] = indices[j], indices[i]
-		}
-
-		count := 5
-		if len(placesResp.Results) < count {
-			count = len(placesResp.Results)
-		}
-
-		for i := 0; i < count; i++ {
-			place := placesResp.Results[indices[i]]
-			business := types.Business{
-				Name:    place.Name,
-				Type:    getBusinessType(place.Types),
-				Address: place.FormattedAddress,
-				PlaceID: place.PlaceID,
-			}
-			business.Location.Lat = place.Geometry.Location.Lat
-			business.Location.Lng = place.Geometry.Location.Lng
-			businesses = append(businesses, business)
-		}
-
-		log.Printf("🏢 Found %d nearby businesses", len(businesses))
-	}
-
-	return businesses, nil
+	return businessService.FetchNearbyBusinesses(lat, lng)
 }
 
 func getBusinessType(types []string) string {
-	// Return the first meaningful type
-	for _, t := range types {
-		if t != "point_of_interest" && t != "establishment" {
-			return t
-		}
-	}
-	if len(types) > 0 {
-		return types[0]
-	}
-	return "business"
+	return businessService.GetBusinessType(types)
 }
 
 // extractUserKeywords extracts meaningful keywords from user notes for satirical purposes
@@ -327,64 +265,18 @@ func extractUserKeywords(userNote string) []string {
 
 // extractLocationKeywords extracts keywords from location data (place names, addresses, business names)
 func extractLocationKeywords(locationName string, businesses []types.Business) []string {
-	keywords := make([]string, 0)
-
-	// Extract from location name/address
-	if locationName != "" {
-		nameKeywords := extractUserKeywords(locationName)
-		keywords = append(keywords, nameKeywords...)
-	}
-
-	// Extract from business names
-	for _, business := range businesses {
-		businessKeywords := extractUserKeywords(business.Name)
-		keywords = append(keywords, businessKeywords...)
-
-		// Also add business type if meaningful
-		if business.Type != "" {
-			typeKeywords := extractUserKeywords(business.Type)
-			keywords = append(keywords, typeKeywords...)
-		}
-	}
-
-	// Remove duplicates
-	seen := make(map[string]bool)
-	uniqueKeywords := make([]string, 0)
-	for _, keyword := range keywords {
-		if !seen[keyword] {
-			seen[keyword] = true
-			uniqueKeywords = append(uniqueKeywords, keyword)
-		}
-	}
-
-	return uniqueKeywords
+	return businessService.ExtractLocationKeywords(locationName, businesses)
 }
 
 // updateLastInteractionContext updates the global last interaction context
 // This serves as the "seed event" for all subsequent generated content
 func updateLastInteractionContext(interactionType string, keywords []string, sourceID string, locationName string, lat float64, lng float64, businesses []types.Business, rawContent string) {
+	contextService.UpdateContext(interactionType, keywords, sourceID, locationName, lat, lng, businesses, rawContent)
+
+	// Also update the global variable for backwards compatibility
 	lastInteractionContextMutex.Lock()
 	defer lastInteractionContextMutex.Unlock()
-
-	businessNames := make([]string, 0)
-	for _, b := range businesses {
-		businessNames = append(businessNames, b.Name)
-	}
-
-	lastInteractionContext = &types.LastInteractionContext{
-		InteractionType: interactionType,
-		Timestamp:       time.Now(),
-		Keywords:        keywords,
-		LocationName:    locationName,
-		Latitude:        lat,
-		Longitude:       lng,
-		BusinessNames:   businessNames,
-		RawContent:      rawContent,
-		SourceID:        sourceID,
-	}
-
-	log.Printf("🧠 Updated last interaction context: type=%s, keywords=%v, source_id=%s",
-		interactionType, keywords, sourceID)
+	lastInteractionContext = contextService.GetContext()
 }
 
 // getLastInteractionContext safely retrieves the current last interaction context
@@ -499,115 +391,14 @@ func calculateDistance(lat1, lng1, lat2, lng2 float64) float64 {
 // searchCommercialRealEstate uses Perplexity API to find commercial real estate and businesses in an area
 // It first checks the cache to avoid unnecessary API calls
 func searchCommercialRealEstate(baseLat, baseLng float64, userKeywords []string) ([]types.CommercialPropertyDetails, []types.GoverningBody, float64, float64, error) {
-	if perplexityAPIKey == "" {
-		log.Println("⚠️  Perplexity API key not set, skipping commercial real estate search")
-		return []types.CommercialPropertyDetails{}, []types.GoverningBody{}, baseLat, baseLng, nil
-	}
-
-	// Generate random location within 10 mile radius
-	queryLat, queryLng := generateRandomLocationInRadius(baseLat, baseLng, 10.0)
-	log.Printf("🎲 Searching for commercial real estate at random location: (%.6f, %.6f) within 10 miles of base", queryLat, queryLng)
-
-	// Try to find cached data within 5 miles of the query location
-	cached, err := getCachedCommercialRealEstate(queryLat, queryLng, 5.0)
+	// Try to find cached data first
+	cached, err := getCachedCommercialRealEstate(baseLat, baseLng, 5.0)
 	if err == nil && cached != nil {
-		// Return cached data, using the cached query coordinates
 		return cached.Properties, cached.GoverningBodies, cached.QueryLat, cached.QueryLng, nil
 	}
 
-	// Build satirical prompt that references user keywords if available
-	keywordContext := ""
-	if len(userKeywords) > 0 {
-		keywordContext = fmt.Sprintf("\n\nContext keywords from user: %s. Feel free to incorporate these themes into the property descriptions.", strings.Join(userKeywords, ", "))
-	}
-
-	prompt := fmt.Sprintf(`Find commercial properties, governing authorities, and businesses near (%.6f, %.6f).
-
-Return JSON with:
-1. Available commercial spaces (address, type, sqft, price)
-2. Current businesses (name, type, contact)
-3. Local governing bodies (city council, planning commission, zoning board, civic orgs)%s
-
-JSON format:
-{
-  "properties": [{"address": "...", "property_type": "retail|office|industrial", "status": "available|leased", "square_footage": "...", "price_info": "...", "current_business": "...", "business_type": "...", "description": "...", "contact_info": {"phone": "...", "email": "...", "website": "..."}}],
-  "governing_bodies": [{"name": "...", "type": "city_council|planning|zoning|civic", "jurisdiction": "...", "contact": "..."}]
-}
-
-Return ONLY valid JSON.`, queryLat, queryLng, keywordContext)
-
-	reqBody := types.PerplexityRequest{
-		Model: "sonar",
-		Messages: []types.PerplexityMessage{
-			{
-				Role:    "user",
-				Content: prompt,
-			},
-		},
-	}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, nil, queryLat, queryLng, fmt.Errorf("failed to marshal perplexity request: %w", err)
-	}
-
-	req, err := http.NewRequest("POST", "https://api.perplexity.ai/chat/completions", bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, nil, queryLat, queryLng, fmt.Errorf("failed to create perplexity request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+perplexityAPIKey)
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, nil, queryLat, queryLng, fmt.Errorf("failed to call perplexity API: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, nil, queryLat, queryLng, fmt.Errorf("failed to read perplexity response: %w", err)
-	}
-
-	var perplexityResp types.PerplexityResponse
-	if err := json.Unmarshal(body, &perplexityResp); err != nil {
-		return nil, nil, queryLat, queryLng, fmt.Errorf("failed to parse perplexity response: %w", err)
-	}
-
-	if perplexityResp.Error != nil {
-		return nil, nil, queryLat, queryLng, fmt.Errorf("perplexity API error: %s", perplexityResp.Error.Message)
-	}
-
-	if len(perplexityResp.Choices) == 0 {
-		return nil, nil, queryLat, queryLng, fmt.Errorf("no choices in perplexity response")
-	}
-
-	// Parse the JSON response from Perplexity
-	content := perplexityResp.Choices[0].Message.Content
-
-	// Try to extract JSON from response (sometimes wrapped in markdown)
-	jsonStart := strings.Index(content, "{")
-	jsonEnd := strings.LastIndex(content, "}")
-	if jsonStart >= 0 && jsonEnd > jsonStart {
-		content = content[jsonStart : jsonEnd+1]
-	}
-
-	var result struct {
-		Properties      []types.CommercialPropertyDetails `json:"properties"`
-		GoverningBodies []types.GoverningBody             `json:"governing_bodies"`
-	}
-
-	if err := json.Unmarshal([]byte(content), &result); err != nil {
-		log.Printf("⚠️  Failed to parse commercial real estate JSON, raw content: %s", content)
-		return []types.CommercialPropertyDetails{}, []types.GoverningBody{}, queryLat, queryLng, nil
-	}
-
-	log.Printf("🏢 Found %d commercial properties and %d governing bodies near (%.6f, %.6f)",
-		len(result.Properties), len(result.GoverningBodies), queryLat, queryLng)
-
-	return result.Properties, result.GoverningBodies, queryLat, queryLng, nil
+	// Use service for search
+	return commercialService.SearchCommercialRealEstate(baseLat, baseLng, userKeywords)
 }
 
 // saveCommercialRealEstateToDynamoDB stores commercial real estate information in DynamoDB

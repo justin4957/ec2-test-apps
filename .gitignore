@@ -19,6 +19,11 @@
 *.out
 go.work
 
+# Go binaries (named same as directory)
+location-tracker/location-tracker
+error-generator/error-generator
+slogan-server/slogan-server
+
 # Docker
 .dockerignore
 
