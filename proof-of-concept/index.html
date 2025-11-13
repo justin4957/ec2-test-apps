@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solid Authentication Proof-of-Concept</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 800px;
+            width: 100%;
+            padding: 40px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #e0e0e0;
+            border-radius: 10px;
+            background: #f9f9f9;
+        }
+
+        .section h2 {
+            color: #444;
+            margin-bottom: 15px;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #ccc;
+        }
+
+        .status-indicator.active {
+            background: #4caf50;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        button.secondary {
+            background: #6c757d;
+        }
+
+        button.danger {
+            background: #dc3545;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+
+        .profile-card {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+            margin-top: 15px;
+        }
+
+        .profile-card img {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+
+        .profile-info h3 {
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .profile-info p {
+            color: #666;
+            font-size: 14px;
+            word-break: break-all;
+        }
+
+        .log {
+            background: #1e1e1e;
+            color: #00ff00;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 15px;
+        }
+
+        .log-entry {
+            margin-bottom: 5px;
+        }
+
+        .log-entry.error {
+            color: #ff4444;
+        }
+
+        .log-entry.success {
+            color: #00ff00;
+        }
+
+        .log-entry.info {
+            color: #4af;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .data-display {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .data-display pre {
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-left: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .provider-list {
+            list-style: none;
+            margin-top: 10px;
+        }
+
+        .provider-list li {
+            padding: 8px 0;
+            color: #666;
+        }
+
+        .provider-list a {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .provider-list a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 Solid Authentication PoC</h1>
+        <p class="subtitle">Location Tracker - Phase 1.4: Authentication Proof-of-Concept</p>
+
+        <!-- Step 1: Provider Selection -->
+        <div class="section">
+            <h2>
+                <span class="status-indicator" id="status-provider"></span>
+                Step 1: Choose Solid Provider
+            </h2>
+            <input type="text" id="issuer-input" placeholder="Enter Solid provider URL (e.g., https://solidcommunity.net)" value="https://solidcommunity.net">
+            <div class="provider-list">
+                <p><strong>Common Providers:</strong></p>
+                <ul>
+                    <li><a href="#" onclick="setIssuer('https://solidcommunity.net'); return false;">solidcommunity.net</a> - Free public Pod provider</li>
+                    <li><a href="#" onclick="setIssuer('https://inrupt.net'); return false;">inrupt.net</a> - Commercial Pod provider (PodSpaces)</li>
+                    <li><a href="#" onclick="setIssuer('http://localhost:3000'); return false;">localhost:3000</a> - Local Community Solid Server</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Step 2: Authentication -->
+        <div class="section">
+            <h2>
+                <span class="status-indicator" id="status-auth"></span>
+                Step 2: Authenticate
+            </h2>
+            <button id="login-btn" onclick="login()">Login with Solid</button>
+            <button id="logout-btn" onclick="logout()" class="danger hidden">Logout</button>
+            <div id="profile-container" class="hidden"></div>
+        </div>
+
+        <!-- Step 3: Read WebID Profile -->
+        <div class="section">
+            <h2>
+                <span class="status-indicator" id="status-profile"></span>
+                Step 3: Read WebID Profile
+            </h2>
+            <button id="read-profile-btn" onclick="readProfile()" disabled>Read Profile</button>
+            <div id="profile-data" class="hidden data-display"></div>
+        </div>
+
+        <!-- Step 4: Write Location Data -->
+        <div class="section">
+            <h2>
+                <span class="status-indicator" id="status-write"></span>
+                Step 4: Write Location to Pod
+            </h2>
+            <button id="write-data-btn" onclick="writeLocationData()" disabled>Write Test Location</button>
+            <div id="write-result" class="hidden data-display"></div>
+        </div>
+
+        <!-- Step 5: Read Location Data -->
+        <div class="section">
+            <h2>
+                <span class="status-indicator" id="status-read"></span>
+                Step 5: Read Location from Pod
+            </h2>
+            <button id="read-data-btn" onclick="readLocationData()" disabled>Read Location Data</button>
+            <div id="read-result" class="hidden data-display"></div>
+        </div>
+
+        <!-- Activity Log -->
+        <div class="section">
+            <h2>Activity Log</h2>
+            <div id="log" class="log"></div>
+        </div>
+    </div>
+
+    <!-- Load Solid Client Libraries from CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@inrupt/solid-client-authn-browser@2.0.0/dist/solid-client-authn.bundle.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@inrupt/solid-client@2.0.0/dist/solid-client.bundle.js"></script>
+
+    <script>
+        // State management
+        let session = null;
+        let currentLocationUrl = null;
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', async () => {
+            log('Initializing Solid authentication...', 'info');
+
+            try {
+                // Create a new session
+                session = new solidClientAuthentication.Session();
+
+                // Handle redirect from OAuth provider
+                await session.handleIncomingRedirect({
+                    restorePreviousSession: true
+                });
+
+                if (session.info.isLoggedIn) {
+                    log('✓ Restored previous session', 'success');
+                    onLoginSuccess();
+                } else {
+                    log('Ready to authenticate', 'info');
+                }
+            } catch (error) {
+                log(`✗ Initialization error: ${error.message}`, 'error');
+            }
+        });
+
+        // Logging utility
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${timestamp}] ${message}`;
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+
+        // Set issuer URL from quick links
+        function setIssuer(url) {
+            document.getElementById('issuer-input').value = url;
+            log(`Selected provider: ${url}`, 'info');
+        }
+
+        // Update status indicators
+        function updateStatus(step, active) {
+            const indicator = document.getElementById(`status-${step}`);
+            if (active) {
+                indicator.classList.add('active');
+            } else {
+                indicator.classList.remove('active');
+            }
+        }
+
+        // Login function
+        async function login() {
+            const issuer = document.getElementById('issuer-input').value.trim();
+
+            if (!issuer) {
+                log('✗ Please enter a Solid provider URL', 'error');
+                return;
+            }
+
+            log(`Initiating login with ${issuer}...`, 'info');
+            updateStatus('provider', true);
+
+            try {
+                // Start the login process - this will redirect to the Solid provider
+                await session.login({
+                    oidcIssuer: issuer,
+                    redirectUrl: window.location.href,
+                    clientName: 'Location Tracker PoC'
+                });
+            } catch (error) {
+                log(`✗ Login failed: ${error.message}`, 'error');
+                updateStatus('provider', false);
+            }
+        }
+
+        // Logout function
+        async function logout() {
+            log('Logging out...', 'info');
+
+            try {
+                await session.logout();
+                log('✓ Logged out successfully', 'success');
+                onLogoutSuccess();
+            } catch (error) {
+                log(`✗ Logout failed: ${error.message}`, 'error');
+            }
+        }
+
+        // Handle successful login
+        function onLoginSuccess() {
+            log(`✓ Authenticated as: ${session.info.webId}`, 'success');
+            updateStatus('auth', true);
+
+            // Update UI
+            document.getElementById('login-btn').classList.add('hidden');
+            document.getElementById('logout-btn').classList.remove('hidden');
+            document.getElementById('read-profile-btn').disabled = false;
+            document.getElementById('write-data-btn').disabled = false;
+            document.getElementById('read-data-btn').disabled = false;
+
+            // Display profile card
+            displayBasicProfile();
+
+            // Automatically read profile
+            setTimeout(() => readProfile(), 500);
+        }
+
+        // Handle logout
+        function onLogoutSuccess() {
+            updateStatus('auth', false);
+            updateStatus('profile', false);
+            updateStatus('write', false);
+            updateStatus('read', false);
+
+            // Reset UI
+            document.getElementById('login-btn').classList.remove('hidden');
+            document.getElementById('logout-btn').classList.add('hidden');
+            document.getElementById('read-profile-btn').disabled = true;
+            document.getElementById('write-data-btn').disabled = true;
+            document.getElementById('read-data-btn').disabled = true;
+            document.getElementById('profile-container').classList.add('hidden');
+            document.getElementById('profile-data').classList.add('hidden');
+            document.getElementById('write-result').classList.add('hidden');
+            document.getElementById('read-result').classList.add('hidden');
+        }
+
+        // Display basic profile info
+        function displayBasicProfile() {
+            const container = document.getElementById('profile-container');
+            const webId = session.info.webId;
+
+            container.innerHTML = `
+                <div class="profile-card">
+                    <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(webId)}&size=80&background=667eea&color=fff" alt="Avatar">
+                    <div class="profile-info">
+                        <h3>Authenticated</h3>
+                        <p><strong>WebID:</strong> ${webId}</p>
+                    </div>
+                </div>
+            `;
+            container.classList.remove('hidden');
+        }
+
+        // Read WebID Profile
+        async function readProfile() {
+            log('Reading WebID profile...', 'info');
+
+            try {
+                const webId = session.info.webId;
+
+                // Fetch the WebID profile document
+                const profileDataset = await solidClient.getSolidDataset(webId, {
+                    fetch: session.fetch
+                });
+
+                const profileThing = solidClient.getThing(profileDataset, webId);
+
+                // Extract profile information
+                const name = solidClient.getStringNoLocale(profileThing, 'http://xmlns.com/foaf/0.1/name') || 'No name set';
+                const storage = solidClient.getUrl(profileThing, 'http://www.w3.org/ns/pim/space#storage');
+
+                log(`✓ Profile read successfully`, 'success');
+                updateStatus('profile', true);
+
+                // Display profile data
+                const profileData = {
+                    webId: webId,
+                    name: name,
+                    storage: storage || 'Not specified'
+                };
+
+                document.getElementById('profile-data').innerHTML = `<pre>${JSON.stringify(profileData, null, 2)}</pre>`;
+                document.getElementById('profile-data').classList.remove('hidden');
+
+                // Update profile card with real name
+                if (name !== 'No name set') {
+                    const container = document.getElementById('profile-container');
+                    container.innerHTML = `
+                        <div class="profile-card">
+                            <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&size=80&background=667eea&color=fff" alt="Avatar">
+                            <div class="profile-info">
+                                <h3>${name}</h3>
+                                <p><strong>WebID:</strong> ${webId}</p>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                return storage;
+            } catch (error) {
+                log(`✗ Failed to read profile: ${error.message}`, 'error');
+                updateStatus('profile', false);
+            }
+        }
+
+        // Write location data to Pod
+        async function writeLocationData() {
+            log('Writing test location to Pod...', 'info');
+
+            try {
+                const webId = session.info.webId;
+
+                // Get storage location
+                const profileDataset = await solidClient.getSolidDataset(webId, {
+                    fetch: session.fetch
+                });
+                const profileThing = solidClient.getThing(profileDataset, webId);
+                const storage = solidClient.getUrl(profileThing, 'http://www.w3.org/ns/pim/space#storage');
+
+                if (!storage) {
+                    throw new Error('No storage location found in profile');
+                }
+
+                // Create container path: /private/location-tracker/
+                const containerUrl = `${storage}private/location-tracker/`;
+
+                // Ensure container exists
+                try {
+                    await solidClient.createContainerAt(containerUrl, {
+                        fetch: session.fetch
+                    });
+                    log(`✓ Created container: ${containerUrl}`, 'success');
+                } catch (error) {
+                    // Container might already exist, that's okay
+                    log(`Container exists or created: ${containerUrl}`, 'info');
+                }
+
+                // Create test location data
+                const timestamp = new Date().toISOString();
+                const locationFileName = `test-location-${Date.now()}.ttl`;
+                const locationUrl = `${containerUrl}${locationFileName}`;
+
+                // Build Turtle data (based on our RDF schema from issue #47)
+                const locationData = `@prefix schema: <http://schema.org/> .
+@prefix geo: <http://www.w3.org/2003/01/geo/wgs84_pos#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+<#location> a schema:Place, geo:Point ;
+    geo:lat "37.7749"^^xsd:decimal ;
+    geo:long "-122.4194"^^xsd:decimal ;
+    schema:geo [
+        a schema:GeoCoordinates ;
+        schema:latitude 37.7749 ;
+        schema:longitude -122.4194 ;
+    ] ;
+    schema:accuracy "10.5"^^xsd:decimal ;
+    dcterms:created "${timestamp}"^^xsd:dateTime ;
+    schema:identifier "poc-test-device" ;
+    schema:address [
+        a schema:PostalAddress ;
+        schema:addressLocality "San Francisco" ;
+        schema:addressRegion "CA" ;
+        schema:addressCountry "US" ;
+    ] ;
+    schema:name "Test Location from PoC" ;
+    schema:description "This is a test location written by the Solid authentication proof-of-concept application." .
+`;
+
+                // Write the file
+                await solidClient.overwriteFile(
+                    locationUrl,
+                    new Blob([locationData], { type: 'text/turtle' }),
+                    {
+                        fetch: session.fetch,
+                        contentType: 'text/turtle'
+                    }
+                );
+
+                currentLocationUrl = locationUrl;
+
+                log(`✓ Location written successfully to: ${locationUrl}`, 'success');
+                updateStatus('write', true);
+
+                const result = {
+                    url: locationUrl,
+                    latitude: 37.7749,
+                    longitude: -122.4194,
+                    location: 'San Francisco, CA',
+                    timestamp: timestamp
+                };
+
+                document.getElementById('write-result').innerHTML = `
+                    <pre>${JSON.stringify(result, null, 2)}</pre>
+                    <p style="margin-top: 10px; color: #666; font-size: 12px;">
+                        You can verify this data in your Pod browser at: <a href="${locationUrl}" target="_blank" style="color: #667eea;">${locationUrl}</a>
+                    </p>
+                `;
+                document.getElementById('write-result').classList.remove('hidden');
+
+            } catch (error) {
+                log(`✗ Failed to write location: ${error.message}`, 'error');
+                updateStatus('write', false);
+            }
+        }
+
+        // Read location data from Pod
+        async function readLocationData() {
+            log('Reading location data from Pod...', 'info');
+
+            if (!currentLocationUrl) {
+                log('✗ No location written yet. Please write a location first.', 'error');
+                return;
+            }
+
+            try {
+                // Fetch the Turtle file
+                const response = await session.fetch(currentLocationUrl);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const turtleData = await response.text();
+
+                log(`✓ Location data read successfully`, 'success');
+                updateStatus('read', true);
+
+                // Parse the dataset
+                const dataset = await solidClient.getSolidDataset(currentLocationUrl, {
+                    fetch: session.fetch
+                });
+
+                const thing = solidClient.getThing(dataset, `${currentLocationUrl}#location`);
+
+                // Extract location data
+                const latitude = solidClient.getDecimal(thing, 'http://www.w3.org/2003/01/geo/wgs84_pos#lat');
+                const longitude = solidClient.getDecimal(thing, 'http://www.w3.org/2003/01/geo/wgs84_pos#long');
+                const accuracy = solidClient.getDecimal(thing, 'http://schema.org/accuracy');
+                const created = solidClient.getDatetime(thing, 'http://purl.org/dc/terms/created');
+                const name = solidClient.getStringNoLocale(thing, 'http://schema.org/name');
+
+                const parsedData = {
+                    url: currentLocationUrl,
+                    name: name,
+                    coordinates: {
+                        latitude: latitude,
+                        longitude: longitude,
+                        accuracy: accuracy
+                    },
+                    timestamp: created,
+                    mapUrl: `https://www.google.com/maps?q=${latitude},${longitude}`
+                };
+
+                document.getElementById('read-result').innerHTML = `
+                    <pre>${JSON.stringify(parsedData, null, 2)}</pre>
+                    <p style="margin-top: 10px; color: #666; font-size: 12px;">
+                        View on map: <a href="${parsedData.mapUrl}" target="_blank" style="color: #667eea;">Google Maps</a>
+                    </p>
+                    <details style="margin-top: 15px;">
+                        <summary style="cursor: pointer; color: #667eea; font-weight: 600;">View Raw Turtle Data</summary>
+                        <pre style="margin-top: 10px; padding: 10px; background: #f5f5f5; border-radius: 5px; font-size: 11px;">${turtleData}</pre>
+                    </details>
+                `;
+                document.getElementById('read-result').classList.remove('hidden');
+
+                log(`✓ Successfully parsed location data`, 'success');
+
+            } catch (error) {
+                log(`✗ Failed to read location: ${error.message}`, 'error');
+                updateStatus('read', false);
+            }
+        }
+    </script>
+</body>
+</html>
