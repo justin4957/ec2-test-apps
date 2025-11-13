@@ -785,7 +785,8 @@
             buildThing,
             setStringNoLocale,
             setDecimal,
-            setDatetime
+            setDatetime,
+            createContainerAt
         } = solidClient;
 
         let session = null;
@@ -935,6 +936,18 @@
                 const storageUrl = webId.split('/profile')[0] + '/private/location-tracker/';
                 const timestamp = Date.now();
                 const locationUrl = storageUrl + `test-location-${timestamp}.ttl`;
+
+                // Ensure the container exists (create if it doesn't)
+                try {
+                    log('Ensuring /private/location-tracker/ container exists...', 'info');
+                    await createContainerAt(storageUrl, { fetch: session.fetch });
+                    log('✓ Container created or already exists', 'success');
+                } catch (containerError) {
+                    // Container might already exist (409 Conflict), which is fine
+                    if (!containerError.message.includes('409')) {
+                        log(`Container creation warning: ${containerError.message}`, 'warning');
+                    }
+                }
 
                 // Create location data in Turtle format
                 let locationDataset = createSolidDataset();
