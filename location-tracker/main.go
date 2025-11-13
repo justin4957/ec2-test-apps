@@ -1,3 +1,148 @@
+/*
+# Module: main.go
+Location tracker service - main application entry point with HTTP handlers, initialization, and routing.
+
+## Architecture Overview
+
+This service provides location tracking with satirical error logging, commercial real estate discovery,
+anonymous tips, cryptogram puzzles, and integration with multiple external APIs (Google Maps, Perplexity AI,
+OpenAI, Anthropic, Gemini, Twilio, Stripe, C-SPAN).
+
+### Current State
+Main application file containing:
+- HTTP request handlers for all endpoints
+- Service initialization and dependency injection
+- DynamoDB persistence layer integration
+- Identity management and content moderation
+- Background worker goroutines
+- HTTPS/TLS support with self-signed certificates
+
+### Refactoring Progress
+Extracted modules (Phases 1-5 complete):
+- ✅ types/ - All data structures and type definitions
+- ✅ services/ - Business logic (business search, commercial real estate, context tracking)
+- ✅ storage/ - DynamoDB repository implementations
+- ✅ clients/ - External API clients (Google Places, Perplexity, OpenAI)
+
+Remaining in main.go (Phase 6 - in progress):
+- HTTP handlers (18+ endpoints)
+- Initialization logic
+- Global state management
+- Helper functions
+
+## Linked Modules
+- [types/*](types/) - Data structures and type definitions
+- [services/*](services/) - Business logic layer
+- [storage/*](storage/) - Data persistence layer
+- [clients/*](clients/) - External API clients
+- [rorschach.go](rorschach.go) - Rorschach test interpretation
+- [facebook_share.go](facebook_share.go) - Social sharing functionality
+
+## Key Dependencies
+- AWS SDK v2 (DynamoDB)
+- Google Maps API (Places, Geocoding)
+- Perplexity AI (Commercial real estate)
+- OpenAI (Rorschach interpretations)
+- Anthropic Claude (Story generation)
+- Google Vertex AI (Meme generation)
+- Twilio (SMS webhooks)
+- Stripe (Payment processing)
+- C-SPAN (Video integration)
+
+## Tags
+main, http-server, handlers, initialization, location-tracking
+
+## Exports
+main, HTTP handlers, initialization functions
+
+<!-- LinkedDoc RDF -->
+@prefix code: <https://schema.codedoc.org/> .
+@prefix http: <http://www.w3.org/2011/http#> .
+@prefix api: <https://schema.api.org/> .
+
+<this> a code:Module ;
+    code:name "main.go" ;
+    code:description "Location tracker service main application entry point" ;
+    code:linksTo [
+        code:name "types" ;
+        code:path "types/" ;
+        code:relationship "Data structures"
+    ], [
+        code:name "services" ;
+        code:path "services/" ;
+        code:relationship "Business logic"
+    ], [
+        code:name "storage" ;
+        code:path "storage/" ;
+        code:relationship "Data persistence"
+    ], [
+        code:name "clients" ;
+        code:path "clients/" ;
+        code:relationship "External API clients"
+    ], [
+        code:name "rorschach" ;
+        code:path "rorschach.go" ;
+        code:relationship "Rorschach test functionality"
+    ], [
+        code:name "facebook_share" ;
+        code:path "facebook_share.go" ;
+        code:relationship "Social sharing"
+    ] ;
+    code:exports :main ;
+    code:provides [
+        a api:Endpoint ;
+        api:path "/api/health" ;
+        api:method "GET" ;
+        api:description "Health check endpoint"
+    ], [
+        a api:Endpoint ;
+        api:path "/api/login" ;
+        api:method "POST" ;
+        api:description "Password authentication"
+    ], [
+        a api:Endpoint ;
+        api:path "/api/location" ;
+        api:method "POST", "GET" ;
+        api:description "Submit and retrieve location data"
+    ], [
+        a api:Endpoint ;
+        api:path "/api/errorlogs" ;
+        api:method "GET" ;
+        api:description "Retrieve error logs with GIFs and stories"
+    ], [
+        a api:Endpoint ;
+        api:path "/api/businesses" ;
+        api:method "GET" ;
+        api:description "Find nearby businesses via Google Places"
+    ], [
+        a api:Endpoint ;
+        api:path "/api/commercialrealestate" ;
+        api:method "POST" ;
+        api:description "Search commercial properties via Perplexity"
+    ], [
+        a api:Endpoint ;
+        api:path "/api/tips" ;
+        api:method "GET", "POST" ;
+        api:description "Anonymous tips with moderation"
+    ], [
+        a api:Endpoint ;
+        api:path "/api/cryptogram" ;
+        api:method "GET" ;
+        api:description "Daily cryptogram puzzle"
+    ], [
+        a api:Endpoint ;
+        api:path "/api/create-payment-intent" ;
+        api:method "POST" ;
+        api:description "Stripe payment processing"
+    ], [
+        a api:Endpoint ;
+        api:path "/api/twilio/sms" ;
+        api:method "POST" ;
+        api:description "Twilio SMS webhook"
+    ] ;
+    code:tags "main", "http-server", "handlers", "initialization", "location-tracking" .
+<!-- End LinkedDoc RDF -->
+*/
 package main
 
 import (
