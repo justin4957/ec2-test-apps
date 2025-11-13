@@ -378,8 +378,17 @@ func main() {
 	http.HandleFunc("/api/tips", handleTips)
 	http.HandleFunc("/api/tips/", handleTipByID)
 
-	// Start cleanup goroutine (remove locations older than 24h)
+	// Solid authentication routes (dual-mode: works alongside password auth)
+	http.HandleFunc("/api/solid/providers", handleSolidProviders)
+	http.HandleFunc("/api/solid/login", handleSolidLogin)
+	http.HandleFunc("/api/solid/callback", handleSolidCallback)
+	http.HandleFunc("/api/solid/session", handleSolidSession)
+	http.HandleFunc("/api/solid/logout", handleSolidLogout)
+	http.HandleFunc("/api/storage/info", handleStorageInfo)
+
+	// Start cleanup goroutines
 	go cleanupOldLocations()
+	go cleanupExpiredStates() // Solid OIDC state cleanup
 
 	// Load existing data from DynamoDB on startup (preserves all existing records)
 	if useDynamoDB {
@@ -3428,6 +3437,30 @@ const indexHTML = `<!DOCTYPE html>
                     <div class="error" id="cryptogram-error" style="margin-top: 10px;">Incorrect answer. Try again!</div>
                 </div>
 
+                <!-- Solid Login (New!) -->
+                <div id="solid-login-section" style="background: linear-gradient(135deg, rgba(76, 175, 80, 0.1), rgba(56, 142, 60, 0.1)); padding: 20px; border-radius: 12px; margin-bottom: 20px; border-left: 4px solid #4caf50;">
+                    <h3 style="color: #4caf50; margin-bottom: 10px; font-size: 16px; font-weight: 700;">🌐 Login with Solid Pod (Beta)</h3>
+                    <p style="color: var(--swiss-gray-500); line-height: 1.5; margin-bottom: 15px; font-size: 13px;">
+                        <strong>Own your data!</strong> Authenticate with your Solid Pod and store your location data in YOUR personal Pod, not our servers.
+                        <a href="https://solidproject.org" target="_blank" style="color: #4caf50; text-decoration: underline;">Learn about Solid →</a>
+                    </p>
+                    <div id="solid-provider-select" style="margin-bottom: 15px;">
+                        <label style="display: block; margin-bottom: 8px; font-weight: 600; color: var(--swiss-black); font-size: 13px;">Select Your Pod Provider:</label>
+                        <select id="solid-provider" style="width: 100%; padding: 12px; border: 2px solid #4caf50; border-radius: 8px; font-size: 14px; background: white; cursor: pointer;">
+                            <option value="">Choose a provider...</option>
+                            <option value="https://login.inrupt.com">Inrupt PodSpaces (Recommended)</option>
+                            <option value="https://solidcommunity.net">SolidCommunity.net</option>
+                            <option value="https://solidweb.me">SolidWeb</option>
+                            <option value="custom">Custom Provider...</option>
+                        </select>
+                    </div>
+                    <input type="url" id="solid-custom-issuer" placeholder="Enter custom issuer URL (e.g., https://mypod.example.com)" style="width: 100%; padding: 12px; border: 2px solid #4caf50; border-radius: 8px; font-size: 14px; margin-bottom: 15px; display: none;">
+                    <button onclick="solidLogin()" style="background: #4caf50; width: 100%;">🔓 Login with Solid Pod</button>
+                    <div style="margin-top: 10px; font-size: 11px; color: var(--swiss-gray-500); text-align: center;">
+                        Don't have a Pod? <a href="https://signup.pod.inrupt.com" target="_blank" style="color: #4caf50; text-decoration: underline;">Get one free</a>
+                    </div>
+                </div>
+
                 <!-- Or Traditional Login -->
                 <div style="text-align: center; margin: 20px 0; color: var(--swiss-gray-500); font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; font-size: 12px;">— OR —</div>
 
@@ -3710,6 +3743,155 @@ const indexHTML = `<!DOCTYPE html>
                 alert('Connection error: ' + e.message);
             }
         }
+
+        // Solid Login Functions
+        async function solidLogin() {
+            const providerSelect = document.getElementById('solid-provider');
+            const customIssuer = document.getElementById('solid-custom-issuer');
+
+            let issuerURL = providerSelect.value;
+
+            if (issuerURL === 'custom') {
+                issuerURL = customIssuer.value.trim();
+                if (!issuerURL || !issuerURL.startsWith('https://')) {
+                    alert('Please enter a valid HTTPS URL for your Pod provider');
+                    return;
+                }
+            }
+
+            if (!issuerURL) {
+                alert('Please select a Pod provider');
+                return;
+            }
+
+            try {
+                console.log('🔐 Initiating Solid login with issuer:', issuerURL);
+                const res = await fetch('/api/solid/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ issuer_url: issuerURL })
+                });
+
+                if (!res.ok) {
+                    const errorData = await res.json().catch(() => ({ message: 'Unknown error' }));
+                    console.error('❌ Solid login failed:', errorData);
+
+                    let errorMessage = errorData.message || 'Failed to initiate Solid login';
+                    if (errorData.help) {
+                        errorMessage += '\n\n' + errorData.help;
+                    }
+                    if (errorData.error === 'solid_not_enabled') {
+                        errorMessage = '⚠️ Solid authentication is currently disabled on this server.\n\n' +
+                                     'The feature is in beta. Contact the administrator to enable it.';
+                    }
+
+                    alert(errorMessage);
+                    return;
+                }
+
+                const data = await res.json();
+                console.log('✅ Received authorization URL:', data.authorization_url);
+
+                // Redirect to provider's login page
+                window.location.href = data.authorization_url;
+            } catch (e) {
+                console.error('❌ Solid login error:', e);
+                alert('Failed to initiate Solid login: ' + e.message + '\n\nPlease check your internet connection and try again.');
+            }
+        }
+
+        // Check for Solid callback on page load
+        async function checkSolidCallback() {
+            const params = new URLSearchParams(window.location.search);
+            if (params.has('solid') && params.get('solid') === 'success') {
+                console.log('✅ Solid authentication successful!');
+                // Check session
+                const res = await fetch('/api/solid/session');
+                const session = await res.json();
+
+                if (session.authenticated && session.auth_type === 'solid') {
+                    console.log('🌐 Logged in with Solid Pod:', session.pod_url);
+                    isLoggedIn = true;
+                    document.getElementById('login').style.display = 'none';
+                    document.getElementById('tracker').style.display = 'block';
+
+                    // Show storage info banner
+                    showSolidBanner(session);
+
+                    refreshLocations();
+                    refreshErrorLogs();
+
+                    // Show location simulator
+                    if (document.getElementById('location-simulator')) {
+                        document.getElementById('location-simulator').style.display = 'block';
+                        initLocationAutocomplete();
+                    }
+
+                    // Auto-refresh
+                    setInterval(() => {
+                        refreshLocations();
+                        refreshErrorLogs();
+                        refreshCommercialRealEstate();
+                    }, 10000);
+
+                    // Clean URL
+                    window.history.replaceState({}, '', '/');
+                }
+            }
+        }
+
+        // Show Solid session banner
+        function showSolidBanner(session) {
+            const banner = document.createElement('div');
+            banner.style.cssText = 'background: linear-gradient(135deg, #4caf50, #45a049); color: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 2px solid #fff; box-shadow: 0 4px 6px rgba(0,0,0,0.1);';
+            banner.innerHTML = '<div style="display: flex; justify-content: space-between; align-items: center;">' +
+                '<div>' +
+                '<strong style="font-size: 16px;">🌐 Connected to Your Solid Pod</strong>' +
+                '<div style="font-size: 12px; margin-top: 5px; opacity: 0.9;">' +
+                'Your data is stored in: <strong>' + session.pod_url + '</strong>' +
+                '</div>' +
+                '<div style="font-size: 11px; margin-top: 3px; opacity: 0.8;">' +
+                'WebID: ' + session.webid +
+                '</div>' +
+                '</div>' +
+                '<button onclick="solidLogout()" style="background: rgba(255,255,255,0.2); color: white; border: 2px solid white; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600;">' +
+                'Logout' +
+                '</button>' +
+                '</div>';
+            document.getElementById('tracker').insertBefore(banner, document.getElementById('tracker').firstChild);
+        }
+
+        // Solid logout
+        async function solidLogout() {
+            if (!confirm('Are you sure you want to logout? Your data remains safe in your Pod.')) {
+                return;
+            }
+
+            try {
+                await fetch('/api/solid/logout', { method: 'POST' });
+                location.reload();
+            } catch (e) {
+                console.error('Error logging out:', e);
+                location.reload();
+            }
+        }
+
+        // Handle custom provider selection
+        document.addEventListener('DOMContentLoaded', () => {
+            const providerSelect = document.getElementById('solid-provider');
+            const customIssuer = document.getElementById('solid-custom-issuer');
+
+            providerSelect.addEventListener('change', (e) => {
+                if (e.target.value === 'custom') {
+                    customIssuer.style.display = 'block';
+                } else {
+                    customIssuer.style.display = 'none';
+                }
+            });
+
+            // Check for Solid callback
+            checkSolidCallback();
+        });
 
         // Handle Enter key on password and cryptogram fields
         document.addEventListener('DOMContentLoaded', () => {

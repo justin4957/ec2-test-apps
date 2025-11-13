@@ -1,0 +1,165 @@
+{
+  "@context": {
+    "@vocab": "http://schema.org/",
+    "geo": "http://www.w3.org/2003/01/geo/wgs84_pos#",
+    "dcterms": "http://purl.org/dc/terms/",
+    "xsd": "http://www.w3.org/2001/XMLSchema#"
+  },
+  "@type": "Report",
+  "@id": "#error-log",
+
+  "name": "Database Connection Timeout",
+  "description": "Connection to PostgreSQL database timed out after 30 seconds",
+  "text": "Full error stack trace: postgresql.connect() timeout exceeded at line 42 in database.go\nConnection string: postgres://user@localhost:5432/appdb\nTimeout: 30s\nRetries attempted: 3",
+
+  "dateCreated": {
+    "@type": "DateTime",
+    "@value": "2025-11-12T18:30:00Z"
+  },
+
+  "reportNumber": "ERR-20251112-183000-ABC123",
+
+  "category": "DatabaseError",
+  "additionalType": "https://schema.org/TechArticle",
+
+  "about": {
+    "@type": "SoftwareApplication",
+    "name": "Location Tracker",
+    "applicationCategory": "UtilitiesApplication",
+    "softwareVersion": "2.0.0",
+    "operatingSystem": "Linux",
+    "url": "https://notspies.org"
+  },
+
+  "location": {
+    "@type": "Place",
+    "geo": {
+      "@type": "GeoCoordinates",
+      "latitude": 37.7749,
+      "longitude": -122.4194
+    },
+    "address": {
+      "@type": "PostalAddress",
+      "addressLocality": "San Francisco",
+      "addressRegion": "CA",
+      "addressCountry": "US"
+    }
+  },
+
+  "associatedMedia": [
+    {
+      "@type": "ImageObject",
+      "contentUrl": "https://media.giphy.com/media/error-frustrated/giphy.gif",
+      "encodingFormat": "image/gif",
+      "name": "Frustrated Computer User GIF",
+      "description": "Someone throwing computer out window",
+      "thumbnail": "https://media.giphy.com/media/error-frustrated/200.gif",
+      "width": 480,
+      "height": 270
+    },
+    {
+      "@type": "ImageObject",
+      "contentUrl": "https://error-generator-memes.s3.amazonaws.com/meme-12345.png",
+      "encodingFormat": "image/png",
+      "name": "Database Timeout Meme",
+      "description": "Absurdist meme about database connections featuring a confused penguin and SQL queries floating in space",
+      "creator": {
+        "@type": "SoftwareApplication",
+        "name": "Vertex AI Imagen",
+        "version": "2.0"
+      },
+      "width": 1024,
+      "height": 1024
+    }
+  ],
+
+  "audio": {
+    "@type": "MusicRecording",
+    "name": "Bohemian Rhapsody",
+    "byArtist": {
+      "@type": "MusicGroup",
+      "name": "Queen"
+    },
+    "url": "https://open.spotify.com/track/7tFiyTwD0nx5a1eklYtX2J",
+    "isrcCode": "GBUM71029604",
+    "duration": "PT5M55S",
+    "genre": "Rock",
+    "inAlbum": {
+      "@type": "MusicAlbum",
+      "name": "A Night at the Opera"
+    }
+  },
+
+  "comment": [
+    {
+      "@type": "Comment",
+      "text": "Once upon a time in Database Land, a little query got lost in the vast forest of connections. 'Help!' cried the query, 'I can't find my way home!' The wise Database Wizard appeared and said, 'Fear not, little query, for you shall learn the magic of connection pooling!' And they all lived happily ever after, with proper timeout settings.",
+      "name": "Children's Story",
+      "author": {
+        "@type": "SoftwareApplication",
+        "name": "Anthropic Claude",
+        "version": "3.5 Sonnet"
+      },
+      "commentTime": "2025-11-12T18:30:05Z"
+    },
+    {
+      "@type": "Comment",
+      "text": "// TODO: Replace database with blockchain and AI\n// This will definitely fix the timeout\nfunc connectToDatabase() {\n    // Step 1: Convert database to NFTs\n    // Step 2: Ask ChatGPT to connect\n    // Step 3: ???\n    // Step 4: Profit!\n    blockchain.mintConnection()\n    ai.thinkReallyHard()\n    return \"Connected!\"\n}",
+      "name": "Satirical Code Fix",
+      "author": {
+        "@type": "SoftwareApplication",
+        "name": "DeepSeek Coder",
+        "version": "v2.5"
+      },
+      "commentTime": "2025-11-12T18:30:10Z"
+    }
+  ],
+
+  "provider": {
+    "@type": "Organization",
+    "name": "Location Tracker Error Generator",
+    "url": "https://notspies.org",
+    "logo": "https://notspies.org/logo.png"
+  },
+
+  "creator": "https://alice.solidcommunity.net/profile/card#me",
+
+  "identifier": {
+    "@type": "PropertyValue",
+    "propertyID": "device_id",
+    "value": "device-abc123"
+  },
+
+  "additionalProperty": [
+    {
+      "@type": "PropertyValue",
+      "propertyID": "error_type",
+      "value": "TIMEOUT"
+    },
+    {
+      "@type": "PropertyValue",
+      "propertyID": "severity",
+      "value": "HIGH"
+    },
+    {
+      "@type": "PropertyValue",
+      "propertyID": "user_hash",
+      "value": "hash-xyz789"
+    },
+    {
+      "@type": "PropertyValue",
+      "propertyID": "moderation_status",
+      "value": "approved"
+    },
+    {
+      "@type": "PropertyValue",
+      "propertyID": "cspan_video_url",
+      "value": "https://www.c-span.org/video/?536891-1/san-francisco-city-council-meeting"
+    },
+    {
+      "@type": "PropertyValue",
+      "propertyID": "cspan_jurisdiction",
+      "value": "San Francisco, CA"
+    }
+  ]
+}

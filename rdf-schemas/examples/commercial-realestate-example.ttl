@@ -1,0 +1,144 @@
+@prefix schema: <http://schema.org/> .
+@prefix geo: <http://www.w3.org/2003/01/geo/wgs84_pos#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix : <#> .
+
+:property a schema:RealEstateListing, schema:Place ;
+    schema:name "Premium Office Space - Downtown San Francisco" ;
+    schema:description "Modern office space with stunning bay views, exposed brick, high ceilings, and natural light. Perfect for tech startups and creative agencies. Recently renovated with sustainable materials." ;
+
+    # Location
+    geo:lat "37.7899"^^xsd:decimal ;
+    geo:long "-122.3988"^^xsd:decimal ;
+    schema:geo [
+        a schema:GeoCoordinates ;
+        schema:latitude 37.7899 ;
+        schema:longitude -122.3988 ;
+    ] ;
+
+    schema:address [
+        a schema:PostalAddress ;
+        schema:streetAddress "100 California St, Suite 1500" ;
+        schema:addressLocality "San Francisco" ;
+        schema:addressRegion "CA" ;
+        schema:postalCode "94111" ;
+        schema:addressCountry "US" ;
+    ] ;
+
+    # Property Details
+    schema:floorSize [
+        a schema:QuantitativeValue ;
+        schema:value 5000 ;
+        schema:unitCode "FTK" ; # square feet
+        schema:unitText "sq ft" ;
+    ] ;
+
+    schema:numberOfRooms 8 ;
+
+    schema:amenityFeature [
+        a schema:LocationFeatureSpecification ;
+        schema:name "High-speed fiber internet" ;
+        schema:value true ;
+    ], [
+        a schema:LocationFeatureSpecification ;
+        schema:name "24/7 building access" ;
+        schema:value true ;
+    ], [
+        a schema:LocationFeatureSpecification ;
+        schema:name "Conference rooms" ;
+        schema:value 3 ;
+    ], [
+        a schema:LocationFeatureSpecification ;
+        schema:name "Parking spaces" ;
+        schema:value 10 ;
+    ] ;
+
+    # Pricing
+    schema:priceRange "$$$$" ;
+    schema:price [
+        a schema:PriceSpecification ;
+        schema:price 12000 ;
+        schema:priceCurrency "USD" ;
+        schema:unitText "per month" ;
+    ] ;
+
+    # Business Type
+    schema:additionalType "https://schema.org/OfficeOrBusinessPlace" ;
+    schema:category "Office Space", "Commercial Real Estate" ;
+
+    # Contact Information
+    schema:telephone "+1-415-555-1234" ;
+    schema:email "leasing@example.com" ;
+    schema:url "https://example.com/listings/12345" ;
+
+    schema:contactPoint [
+        a schema:ContactPoint ;
+        schema:telephone "+1-415-555-1234" ;
+        schema:contactType "Leasing Office" ;
+        schema:email "leasing@example.com" ;
+        schema:availableLanguage "en", "es", "zh" ;
+        schema:hoursAvailable [
+            a schema:OpeningHoursSpecification ;
+            schema:dayOfWeek schema:Monday, schema:Tuesday, schema:Wednesday, schema:Thursday, schema:Friday ;
+            schema:opens "09:00:00" ;
+            schema:closes "18:00:00" ;
+        ] ;
+    ] ;
+
+    # Landlord/Owner
+    schema:landlord [
+        a schema:Organization ;
+        schema:name "Bay Area Properties LLC" ;
+        schema:url "https://bayareaproperties.example.com" ;
+    ] ;
+
+    # Metadata
+    dcterms:created "2025-11-12T18:00:00Z"^^xsd:dateTime ;
+    schema:datePublished "2025-11-12"^^xsd:date ;
+    schema:dateModified "2025-11-12"^^xsd:date ;
+
+    # Query Context (from Perplexity API)
+    schema:keywords "commercial real estate, office space, downtown san francisco, tech office" ;
+    schema:inLanguage "en-US" ;
+
+    # Images
+    schema:photo [
+        a schema:ImageObject ;
+        schema:contentUrl "https://example.com/images/office-exterior.jpg" ;
+        schema:caption "Building exterior" ;
+    ], [
+        a schema:ImageObject ;
+        schema:contentUrl "https://example.com/images/office-interior.jpg" ;
+        schema:caption "Open floor plan with bay views" ;
+    ] ;
+
+    # Nearby businesses/places (from Google Maps)
+    schema:nearbyPlace [
+        a schema:Place ;
+        schema:name "Transbay Terminal" ;
+        schema:additionalType "https://schema.org/TransitStation" ;
+    ], [
+        a schema:Place ;
+        schema:name "Ferry Building Marketplace" ;
+        schema:additionalType "https://schema.org/ShoppingCenter" ;
+    ] ;
+
+    # Additional metadata
+    schema:additionalProperty [
+        a schema:PropertyValue ;
+        schema:propertyID "query_lat" ;
+        schema:value "37.7899"^^xsd:decimal ;
+    ], [
+        a schema:PropertyValue ;
+        schema:propertyID "query_lng" ;
+        schema:value "-122.3988"^^xsd:decimal ;
+    ], [
+        a schema:PropertyValue ;
+        schema:propertyID "query_timestamp" ;
+        schema:value "2025-11-12T18:00:00Z"^^xsd:dateTime ;
+    ], [
+        a schema:PropertyValue ;
+        schema:propertyID "data_source" ;
+        schema:value "Perplexity API + Google Maps" ;
+    ] .
