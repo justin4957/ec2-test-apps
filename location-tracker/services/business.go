@@ -4,9 +4,10 @@ Business discovery and nearby search using Google Places API.
 
 ## Linked Modules
 - [types/business](../types/business.go) - Business data structures
+- [clients/google_places](../clients/google_places.go) - Google Places API client
 
 ## Tags
-business-logic, search, geolocation, api-client
+business-logic, search, geolocation
 
 ## Exports
 BusinessService, NewBusinessService, FetchNearbyBusinesses, GetBusinessType, ExtractLocationKeywords
@@ -20,86 +21,39 @@ BusinessService, NewBusinessService, FetchNearbyBusinesses, GetBusinessType, Ext
         code:name "types/business" ;
         code:path "../types/business.go" ;
         code:relationship "Business data structures"
+    ], [
+        code:name "clients/google_places" ;
+        code:path "../clients/google_places.go" ;
+        code:relationship "Google Places API client"
     ] ;
     code:exports :BusinessService, :NewBusinessService, :FetchNearbyBusinesses, :GetBusinessType, :ExtractLocationKeywords ;
-    code:tags "business-logic", "search", "geolocation", "api-client" .
+    code:tags "business-logic", "search", "geolocation" .
 <!-- End LinkedDoc RDF -->
 */
 package services
 
 import (
-	"encoding/json"
-	"fmt"
-	"io"
-	"log"
-	"net/http"
-	"net/url"
 	"strings"
-	"time"
 
+	"location-tracker/clients"
 	"location-tracker/types"
 )
 
 // BusinessService handles business search and discovery
 type BusinessService struct {
-	googleMapsAPIKey string
-	client           *http.Client
+	placesClient *clients.GooglePlacesClient
 }
 
 // NewBusinessService creates a new BusinessService instance
 func NewBusinessService(googleMapsAPIKey string) *BusinessService {
 	return &BusinessService{
-		googleMapsAPIKey: googleMapsAPIKey,
-		client:           &http.Client{Timeout: 10 * time.Second},
+		placesClient: clients.NewGooglePlacesClient(googleMapsAPIKey),
 	}
 }
 
 // FetchNearbyBusinesses finds businesses near the given coordinates using Google Places API
 func (s *BusinessService) FetchNearbyBusinesses(lat, lng float64) ([]types.Business, error) {
-	if s.googleMapsAPIKey == "" {
-		log.Println("⚠️  Google Maps API key not set, skipping business search")
-		return []types.Business{}, nil
-	}
-
-	baseURL := "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
-	params := url.Values{}
-	params.Add("location", fmt.Sprintf("%.6f,%.6f", lat, lng))
-	params.Add("radius", "500") // 500 meters
-	params.Add("key", s.googleMapsAPIKey)
-
-	fullURL := baseURL + "?" + params.Encode()
-
-	resp, err := s.client.Get(fullURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to call Google Places API: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("Google Places API error (status %d): %s", resp.StatusCode, string(body))
-	}
-
-	var result types.GooglePlacesResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to parse Google Places response: %w", err)
-	}
-
-	businesses := []types.Business{}
-	for _, place := range result.Results {
-		business := types.Business{
-			Name:    place.Name,
-			Type:    s.GetBusinessType(place.Types),
-			Address: place.FormattedAddress,
-			PlaceID: place.PlaceID,
-		}
-		business.Location.Lat = place.Geometry.Location.Lat
-		business.Location.Lng = place.Geometry.Location.Lng
-		businesses = append(businesses, business)
-	}
-
-	log.Printf("🏪 Found %d businesses near location (%.6f, %.6f)", len(businesses), lat, lng)
-	return businesses, nil
+	return s.placesClient.SearchNearby(lat, lng, 500) // 500 meters radius
 }
 
 // GetBusinessType returns a human-readable business type from Google Places types
