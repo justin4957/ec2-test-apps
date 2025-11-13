@@ -5,6 +5,7 @@ WORKDIR /app
 # Copy go module files and source
 COPY go.mod go.sum* ./
 COPY *.go ./
+COPY types/ ./types/
 
 # Tidy dependencies and download
 RUN go mod tidy && go mod download
