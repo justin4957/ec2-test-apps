@@ -110,8 +110,8 @@ func main() {
 		port = "9090"
 	}
 
-	// Serve static files from proof-of-concept directory with logging
-	fs := http.FileServer(http.Dir("../proof-of-concept"))
+	// Serve static files from frontend directory with logging
+	fs := http.FileServer(http.Dir("./frontend"))
 	http.Handle("/", loggingMiddleware(fs))
 
 	// API endpoints for RDF operations
@@ -129,7 +129,7 @@ func main() {
 	go cleanupExpiredSessions()
 
 	log.Printf("🔐 Solid PoC Server starting on port %s", port)
-	log.Printf("📂 Serving proof-of-concept from ../proof-of-concept")
+	log.Printf("📂 Serving frontend from ./frontend")
 	log.Printf("🌐 Access at: http://localhost:%s", port)
 	log.Printf("📝 Logging enabled for all requests")
 	log.Fatal(http.ListenAndServe(":"+port, nil))
