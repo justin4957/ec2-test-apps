@@ -534,8 +534,13 @@
                     });
                     log(`✓ Created container: ${containerUrl}`, 'success');
                 } catch (error) {
-                    // Container might already exist, that's okay
-                    log(`Container exists or created: ${containerUrl}`, 'info');
+                    // Container might already exist (412 Precondition Failed), that's okay
+                    // Only log as info since this is expected behavior
+                    if (error.statusCode === 412 || error.status === 412) {
+                        log(`✓ Container already exists: ${containerUrl}`, 'success');
+                    } else {
+                        log(`Container exists or created: ${containerUrl}`, 'info');
+                    }
                 }
 
                 // Create test location data
@@ -602,8 +607,22 @@
                 document.getElementById('write-result').classList.remove('hidden');
 
             } catch (error) {
-                log(`✗ Failed to write location: ${error.message}`, 'error');
+                // Log detailed error information for debugging
+                console.error('Write location error details:', error);
+
+                // Show user-friendly error message
+                const errorMsg = error.message || JSON.stringify(error);
+                log(`✗ Failed to write location: ${errorMsg}`, 'error');
                 updateStatus('write', false);
+
+                // Show error details in the result area for debugging
+                document.getElementById('write-result').innerHTML = `
+                    <div style="color: #e74c3c;">
+                        <strong>Error:</strong> ${errorMsg}
+                        <pre style="margin-top: 10px; font-size: 11px;">${JSON.stringify(error, null, 2)}</pre>
+                    </div>
+                `;
+                document.getElementById('write-result').classList.remove('hidden');
             }
         }
 

@@ -378,17 +378,8 @@ func main() {
 	http.HandleFunc("/api/tips", handleTips)
 	http.HandleFunc("/api/tips/", handleTipByID)
 
-	// Solid authentication routes (dual-mode: works alongside password auth)
-	http.HandleFunc("/api/solid/providers", handleSolidProviders)
-	http.HandleFunc("/api/solid/login", handleSolidLogin)
-	http.HandleFunc("/api/solid/callback", handleSolidCallback)
-	http.HandleFunc("/api/solid/session", handleSolidSession)
-	http.HandleFunc("/api/solid/logout", handleSolidLogout)
-	http.HandleFunc("/api/storage/info", handleStorageInfo)
-
 	// Start cleanup goroutines
 	go cleanupOldLocations()
-	go cleanupExpiredStates() // Solid OIDC state cleanup
 
 	// Load existing data from DynamoDB on startup (preserves all existing records)
 	if useDynamoDB {
