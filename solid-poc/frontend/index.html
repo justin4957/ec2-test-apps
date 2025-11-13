@@ -889,7 +889,17 @@
                 const profileDataset = await getSolidDataset(webId, { fetch: session.fetch });
                 const profile = getThing(profileDataset, webId);
 
-                const name = getStringNoLocale(profile, 'http://xmlns.com/foaf/0.1/name') || 'Unknown';
+                // Try multiple name predicates in order of preference
+                let name = getStringNoLocale(profile, 'http://xmlns.com/foaf/0.1/name') ||
+                          getStringNoLocale(profile, 'http://www.w3.org/2006/vcard/ns#fn') ||
+                          getStringNoLocale(profile, 'http://schema.org/name');
+
+                // If no name found in profile, extract username from WebID URL
+                if (!name) {
+                    const urlMatch = webId.match(/\/\/[^/]+\/([^/]+)/);
+                    name = urlMatch ? urlMatch[1] : 'User';
+                    log('Name not found in profile, using username from WebID', 'info');
+                }
 
                 updateStatus('status-profile', 'active');
                 document.getElementById('step-3').classList.add('completed');
