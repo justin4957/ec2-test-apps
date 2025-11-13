@@ -772,8 +772,8 @@
     <!-- Load Solid Client Libraries -->
     <script src="dist/solid-client-bundle.js"></script>
     <script>
-        // Import from the bundled library
-        const { login, handleIncomingRedirect, getDefaultSession, fetch: solidFetch } = solidClientAuthentication;
+        // Import from the bundled library (don't import 'login' to avoid naming conflict)
+        const { handleIncomingRedirect, getDefaultSession, fetch: solidFetch } = solidClientAuthentication;
         const {
             getSolidDataset,
             getThing,
@@ -809,8 +809,8 @@
             }
         }
 
-        // Provider Selection
-        function selectProvider(issuer) {
+        // Provider Selection (attach to window for onclick handlers)
+        window.selectProvider = function(issuer) {
             document.getElementById('issuer-input').value = issuer;
             document.querySelectorAll('.provider-card').forEach(card => {
                 card.classList.remove('selected');
@@ -821,8 +821,8 @@
             log(`Selected provider: ${issuer}`, 'success');
         }
 
-        // Login
-        async function login() {
+        // Login (attach to window for onclick handlers)
+        window.login = async function() {
             const issuer = document.getElementById('issuer-input').value.trim();
 
             if (!issuer) {
@@ -850,8 +850,8 @@
             }
         }
 
-        // Logout
-        async function logout() {
+        // Logout (attach to window for onclick handlers)
+        window.logout = async function() {
             log('Logging out...', 'info');
             await session.logout();
             location.reload();
@@ -914,8 +914,8 @@
             }
         }
 
-        // Write Location
-        async function writeLocation() {
+        // Write Location (attach to window for onclick handlers)
+        window.writeLocation = async function() {
             setButtonLoading('btn-write', true);
             updateStatus('status-write', 'loading');
             log('Writing test location to Pod...', 'info');
@@ -972,8 +972,8 @@
             }
         }
 
-        // Read Location
-        async function readLocation() {
+        // Read Location (attach to window for onclick handlers)
+        window.readLocation = async function() {
             if (!lastWrittenLocationUrl) {
                 showAlert('read-result', 'Please write a location first', 'warning');
                 return;
@@ -1094,7 +1094,7 @@
             logDiv.scrollTop = logDiv.scrollHeight;
         }
 
-        function toggleLog() {
+        window.toggleLog = function() {
             const content = document.getElementById('log-content');
             const header = event.target.closest('.collapsible-header');
             content.classList.toggle('collapsed');
