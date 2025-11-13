@@ -1,0 +1,62 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix schema: <http://schema.org/> .
+@prefix geo: <http://www.w3.org/2003/01/geo/wgs84_pos#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix : <#> .
+
+:location a schema:Place, geo:Point ;
+    # Geographic Coordinates
+    geo:lat "37.7749"^^xsd:decimal ;
+    geo:long "-122.4194"^^xsd:decimal ;
+    schema:geo [
+        a schema:GeoCoordinates ;
+        schema:latitude 37.7749 ;
+        schema:longitude -122.4194 ;
+    ] ;
+
+    # Accuracy (meters)
+    schema:accuracy "10.5"^^xsd:decimal ;
+
+    # Timestamp
+    dcterms:created "2025-11-12T18:30:00Z"^^xsd:dateTime ;
+    schema:dateCreated "2025-11-12T18:30:00Z"^^xsd:dateTime ;
+
+    # Device Information
+    schema:identifier "device-abc123" ;
+    schema:device [
+        a schema:Thing ;
+        schema:identifier "device-abc123" ;
+        schema:name "iPhone 13" ;
+    ] ;
+
+    # Address (optional, from reverse geocoding)
+    schema:address [
+        a schema:PostalAddress ;
+        schema:streetAddress "123 Market St" ;
+        schema:addressLocality "San Francisco" ;
+        schema:addressRegion "CA" ;
+        schema:postalCode "94105" ;
+        schema:addressCountry "US" ;
+    ] ;
+
+    # Metadata
+    dcterms:creator <https://alice.solidcommunity.net/profile/card#me> ;
+    schema:creator <https://alice.solidcommunity.net/profile/card#me> ;
+    schema:isAccessibleForFree true ;
+
+    # Application Info
+    schema:applicationCategory "LocationTracking" ;
+    schema:applicationSubCategory "location-tracker" ;
+    schema:softwareVersion "2.0.0" ;
+
+    # Simulation flag (if location was simulated)
+    schema:additionalProperty [
+        a schema:PropertyValue ;
+        schema:propertyID "simulated" ;
+        schema:value "false"^^xsd:boolean ;
+    ] ;
+
+    # Google Maps URL (if available)
+    schema:hasMap "https://www.google.com/maps?q=37.7749,-122.4194" .

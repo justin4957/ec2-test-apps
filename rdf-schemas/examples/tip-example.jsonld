@@ -1,0 +1,111 @@
+{
+  "@context": {
+    "@vocab": "http://schema.org/",
+    "gr": "http://purl.org/goodrelations/v1#"
+  },
+  "@type": "DonateAction",
+  "@id": "#tip-2025-11-12",
+
+  "agent": {
+    "@type": "Person",
+    "@id": "https://alice.solidcommunity.net/profile/card#me",
+    "name": "Alice Smith"
+  },
+
+  "recipient": {
+    "@type": "Organization",
+    "name": "Location Tracker Development",
+    "url": "https://notspies.org",
+    "logo": "https://notspies.org/logo.png",
+    "sameAs": "https://github.com/justin4957/ec2-test-apps"
+  },
+
+  "object": {
+    "@type": "MonetaryAmount",
+    "currency": "USD",
+    "value": 5.00,
+    "minValue": 5.00,
+    "maxValue": 5.00
+  },
+
+  "startTime": "2025-11-12T18:30:00Z",
+  "endTime": "2025-11-12T18:30:05Z",
+
+  "result": {
+    "@type": "PaymentStatusType",
+    "name": "PaymentComplete"
+  },
+
+  "paymentMethod": {
+    "@type": "PaymentMethod",
+    "name": "Stripe",
+    "identifier": "ch_3abc123def456",
+    "url": "https://stripe.com"
+  },
+
+  "price": {
+    "@type": "PriceSpecification",
+    "price": 5.00,
+    "priceCurrency": "USD"
+  },
+
+  "description": "Thank you for this amazing app! The location tracking features are exactly what I needed.",
+
+  "comment": {
+    "@type": "Comment",
+    "text": "Keep up the great work! Love the error logs with GIFs. 😄"
+  },
+
+  "purpose": "Support ongoing development and maintenance",
+
+  "isPartOf": {
+    "@type": "Event",
+    "name": "Monthly Support Program",
+    "startDate": "2025-11-01",
+    "endDate": "2025-11-30",
+    "description": "Monthly recurring donation to support Location Tracker"
+  },
+
+  "additionalProperty": [
+    {
+      "@type": "PropertyValue",
+      "propertyID": "stripe_charge_id",
+      "value": "ch_3abc123def456"
+    },
+    {
+      "@type": "PropertyValue",
+      "propertyID": "stripe_customer_id",
+      "value": "cus_xyz789"
+    },
+    {
+      "@type": "PropertyValue",
+      "propertyID": "receipt_url",
+      "value": "https://pay.stripe.com/receipts/..."
+    },
+    {
+      "@type": "PropertyValue",
+      "propertyID": "transaction_type",
+      "value": "one-time"
+    },
+    {
+      "@type": "PropertyValue",
+      "propertyID": "device_id",
+      "value": "device-abc123"
+    }
+  ],
+
+  "instrument": {
+    "@type": "PaymentCard",
+    "name": "Visa ending in 4242"
+  },
+
+  "location": {
+    "@type": "Place",
+    "address": {
+      "@type": "PostalAddress",
+      "addressLocality": "San Francisco",
+      "addressRegion": "CA",
+      "addressCountry": "US"
+    }
+  }
+}
