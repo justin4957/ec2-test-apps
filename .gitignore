@@ -33,3 +33,6 @@ go.work
 .DS_Store
 Thumbs.db
 solid-poc/solid-poc
+
+# LinkedDoc build cache
+.linkedoc_cache/
