@@ -9,6 +9,11 @@
 **/deploy-fix-*.sh
 **/deploy-*-secrets.sh
 
+# GCP Service Account Keys (NEVER commit these!)
+**/*service-account*.json
+**/*gcp-credentials*.json
+**/gcp-*.json
+
 # Go build artifacts
 *.exe
 *.exe~

@@ -6,7 +6,6 @@ WORKDIR /app
 COPY go.mod go.sum* ./
 
 COPY *.go ./
-COPY gcp-service-account.json ./
 
 RUN GOTOOLCHAIN=go1.23.12 go mod download
 
@@ -20,6 +19,5 @@ RUN apk --no-cache add ca-certificates
 WORKDIR /root/
 
 COPY --from=builder /app/error-generator .
-COPY --from=builder /app/gcp-service-account.json .
 
 CMD ["./error-generator"]
