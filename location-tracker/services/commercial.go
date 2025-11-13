@@ -5,9 +5,10 @@ Commercial real estate search and governance discovery using Perplexity API.
 ## Linked Modules
 - [types/commercial](../types/commercial.go) - Commercial real estate data structures
 - [types/api_types](../types/api_types.go) - Perplexity API types
+- [clients/perplexity](../clients/perplexity.go) - Perplexity API client
 
 ## Tags
-business-logic, commercial, real-estate, governance, api-client
+business-logic, commercial, real-estate, governance
 
 ## Exports
 CommercialService, NewCommercialService, SearchCommercialRealEstate
@@ -25,50 +26,44 @@ CommercialService, NewCommercialService, SearchCommercialRealEstate
         code:name "types/api_types" ;
         code:path "../types/api_types.go" ;
         code:relationship "Perplexity API types"
+    ], [
+        code:name "clients/perplexity" ;
+        code:path "../clients/perplexity.go" ;
+        code:relationship "Perplexity API client"
     ] ;
     code:exports :CommercialService, :NewCommercialService, :SearchCommercialRealEstate ;
-    code:tags "business-logic", "commercial", "real-estate", "governance", "api-client" .
+    code:tags "business-logic", "commercial", "real-estate", "governance" .
 <!-- End LinkedDoc RDF -->
 */
 package services
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"math"
 	mrand "math/rand"
-	"net/http"
 	"strings"
-	"time"
 
+	"location-tracker/clients"
 	"location-tracker/types"
 )
 
 // CommercialService handles commercial real estate and governance queries
 type CommercialService struct {
-	perplexityAPIKey string
-	client           *http.Client
+	perplexityClient *clients.PerplexityClient
 }
 
 // NewCommercialService creates a new CommercialService instance
 func NewCommercialService(perplexityAPIKey string) *CommercialService {
 	return &CommercialService{
-		perplexityAPIKey: perplexityAPIKey,
-		client:           &http.Client{Timeout: 30 * time.Second},
+		perplexityClient: clients.NewPerplexityClient(perplexityAPIKey),
 	}
 }
 
 // SearchCommercialRealEstate searches for commercial properties and governing bodies near coordinates
 // Returns properties, governing bodies, query coordinates, and error
 func (s *CommercialService) SearchCommercialRealEstate(baseLat, baseLng float64, userKeywords []string) ([]types.CommercialPropertyDetails, []types.GoverningBody, float64, float64, error) {
-	if s.perplexityAPIKey == "" {
-		log.Println("⚠️  Perplexity API key not set, skipping commercial real estate search")
-		return []types.CommercialPropertyDetails{}, []types.GoverningBody{}, baseLat, baseLng, nil
-	}
-
 	// Generate random location within 10 mile radius
 	queryLat, queryLng := s.generateRandomLocationInRadius(baseLat, baseLng, 10.0)
 	log.Printf("🎲 Searching for commercial real estate at random location: (%.6f, %.6f) within 10 miles of base", queryLat, queryLng)
@@ -94,55 +89,19 @@ JSON format:
 
 Return ONLY valid JSON.`, queryLat, queryLng, keywordContext)
 
-	reqBody := types.PerplexityRequest{
-		Model: "sonar",
-		Messages: []types.PerplexityMessage{
-			{
-				Role:    "user",
-				Content: prompt,
-			},
+	messages := []types.PerplexityMessage{
+		{
+			Role:    "user",
+			Content: prompt,
 		},
 	}
 
-	jsonData, err := json.Marshal(reqBody)
+	// Use client to make the API call
+	content, err := s.perplexityClient.ChatCompletion("sonar", messages)
 	if err != nil {
-		return nil, nil, queryLat, queryLng, fmt.Errorf("failed to marshal perplexity request: %w", err)
+		log.Printf("⚠️  Perplexity API call failed: %v", err)
+		return []types.CommercialPropertyDetails{}, []types.GoverningBody{}, queryLat, queryLng, nil
 	}
-
-	req, err := http.NewRequest("POST", "https://api.perplexity.ai/chat/completions", bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, nil, queryLat, queryLng, fmt.Errorf("failed to create perplexity request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+s.perplexityAPIKey)
-
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return nil, nil, queryLat, queryLng, fmt.Errorf("failed to call perplexity API: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, nil, queryLat, queryLng, fmt.Errorf("failed to read perplexity response: %w", err)
-	}
-
-	var perplexityResp types.PerplexityResponse
-	if err := json.Unmarshal(body, &perplexityResp); err != nil {
-		return nil, nil, queryLat, queryLng, fmt.Errorf("failed to parse perplexity response: %w", err)
-	}
-
-	if perplexityResp.Error != nil {
-		return nil, nil, queryLat, queryLng, fmt.Errorf("perplexity API error: %s", perplexityResp.Error.Message)
-	}
-
-	if len(perplexityResp.Choices) == 0 {
-		return nil, nil, queryLat, queryLng, fmt.Errorf("no choices in perplexity response")
-	}
-
-	// Parse the JSON response from Perplexity
-	content := perplexityResp.Choices[0].Message.Content
 
 	// Try to extract JSON from response (sometimes wrapped in markdown)
 	jsonStart := strings.Index(content, "{")

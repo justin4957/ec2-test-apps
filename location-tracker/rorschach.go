@@ -1,15 +1,14 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
 	"strings"
 
+	"location-tracker/clients"
 	"location-tracker/types"
 )
 
@@ -22,25 +21,6 @@ type RorschachInterpretRequest struct {
 type RorschachUserResponseRequest struct {
 	ErrorID  string `json:"error_id"`
 	Response string `json:"response"`
-}
-
-// OpenAIRequest represents the request format for OpenAI API
-type OpenAIRequest struct {
-	Model    string          `json:"model"`
-	Messages []OpenAIMessage `json:"messages"`
-}
-
-// OpenAIMessage represents a message in the OpenAI chat format
-type OpenAIMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-// OpenAIResponse represents the response from OpenAI API
-type OpenAIResponse struct {
-	Choices []struct {
-		Message OpenAIMessage `json:"message"`
-	} `json:"choices"`
 }
 
 // handleRorschachInterpret generates an AI interpretation of the Rorschach image
@@ -209,9 +189,7 @@ func handleRorschachUserResponse(w http.ResponseWriter, r *http.Request) {
 // generateRorschachInterpretation calls OpenAI to generate a humorous Freudian interpretation
 func generateRorschachInterpretation(imageNumber int, errorMessage string) (string, error) {
 	apiKey := os.Getenv("OPENAI_API_KEY")
-	if apiKey == "" {
-		return "", fmt.Errorf("OpenAI API key not configured")
-	}
+	openAIClient := clients.NewOpenAIClient(apiKey)
 
 	prompt := fmt.Sprintf(`You are a neurotic patient being shown Rorschach inkblot Card #%d during a psychological evaluation. You are acutely self-aware of your own neuroses and describe them with dark humor.
 
@@ -234,53 +212,12 @@ Example tones:
 - "It's a butterfly, but the wings look... uneven? Like one side followed the instructions perfectly and the other side freelanced. That's basically my internal monologue during every work project. My whole childhood was 'what would disappoint everyone less' - which, ironically, prepared me perfectly for middle management where I can defer every decision upward."
 - "I see a cathedral, or maybe a courthouse - something with rules and structure and people in robes telling you what to do. *sighs* The symmetry is honestly comforting. At least SOMEONE designed this with a rubric I can follow. Is it weird that I find the idea of judgment day kind of... relaxing? Like finally someone with authority will just TELL me if I did it right?"`, imageNumber)
 
-	reqBody := OpenAIRequest{
-		Model: "gpt-4",
-		Messages: []OpenAIMessage{
-			{
-				Role:    "user",
-				Content: prompt,
-			},
+	messages := []clients.OpenAIMessage{
+		{
+			Role:    "user",
+			Content: prompt,
 		},
 	}
 
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := http.NewRequest("POST", "https://api.openai.com/v1/chat/completions", bytes.NewBuffer(jsonData))
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to call OpenAI API: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("OpenAI API error (status %d): %s", resp.StatusCode, string(body))
-	}
-
-	var openAIResp OpenAIResponse
-	if err := json.Unmarshal(body, &openAIResp); err != nil {
-		return "", fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	if len(openAIResp.Choices) == 0 {
-		return "", fmt.Errorf("no response from OpenAI")
-	}
-
-	return openAIResp.Choices[0].Message.Content, nil
+	return openAIClient.ChatCompletion("gpt-4", messages)
 }

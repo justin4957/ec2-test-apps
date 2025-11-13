@@ -8,6 +8,7 @@ COPY *.go ./
 COPY types/ ./types/
 COPY services/ ./services/
 COPY storage/ ./storage/
+COPY clients/ ./clients/
 
 # Tidy dependencies and download
 RUN go mod tidy && go mod download
