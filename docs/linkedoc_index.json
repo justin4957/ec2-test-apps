@@ -1,0 +1,111 @@
+{
+  "_metadata": {
+    "avg_loc": 234,
+    "generated_at": "2025-11-13T08:42:09Z",
+    "module_count": 4,
+    "modules_with_rdf": 4,
+    "total_loc": 939
+  },
+  "modules": {
+    "tools/index_generator.go": {
+      "description": "Generates JSON index for AI-optimized code navigation.",
+      "file_path": "tools/index_generator.go",
+      "links_to": [
+        {
+          "name": "parser",
+          "path": "parser.go",
+          "relationship": "Uses LinkedDocHeader type"
+        }
+      ],
+      "exports": [
+        "IndexGenerator",
+        "NewIndexGenerator",
+        "Generate"
+      ],
+      "tags": [
+        "tooling",
+        "indexing",
+        "linkedoc",
+        "json"
+      ],
+      "lines_of_code": 206,
+      "last_modified": "2025-11-13T08:42:09Z",
+      "has_rdf": true
+    },
+    "tools/linkedoc_build.go": {
+      "description": "Main entry point for LinkedDoc build tool - parses, validates, and generates indices.",
+      "file_path": "tools/linkedoc_build.go",
+      "links_to": [
+        {
+          "name": "parser",
+          "path": "parser.go",
+          "relationship": "LinkedDoc header parser"
+        },
+        {
+          "name": "validator",
+          "path": "validator.go",
+          "relationship": "Link and schema validator"
+        },
+        {
+          "name": "index_generator",
+          "path": "index_generator.go",
+          "relationship": "JSON index generator"
+        }
+      ],
+      "exports": [
+        "main"
+      ],
+      "tags": [
+        "tooling",
+        "validation",
+        "linkedoc"
+      ],
+      "lines_of_code": 149,
+      "last_modified": "2025-11-13T08:40:39Z",
+      "has_rdf": true
+    },
+    "tools/parser.go": {
+      "description": "Parses LinkedDoc headers from Go source files.",
+      "file_path": "tools/parser.go",
+      "links_to": null,
+      "exports": [
+        "Parser",
+        "LinkedDocHeader",
+        "LinkedModule",
+        "NewParser"
+      ],
+      "tags": [
+        "tooling",
+        "parsing",
+        "linkedoc"
+      ],
+      "lines_of_code": 356,
+      "last_modified": "2025-11-13T08:41:14Z",
+      "has_rdf": true
+    },
+    "tools/validator.go": {
+      "description": "Validates LinkedDoc headers and links.",
+      "file_path": "tools/validator.go",
+      "links_to": [
+        {
+          "name": "parser",
+          "path": "parser.go",
+          "relationship": "Uses LinkedDocHeader type"
+        }
+      ],
+      "exports": [
+        "Validator",
+        "NewValidator",
+        "Validate"
+      ],
+      "tags": [
+        "tooling",
+        "validation",
+        "linkedoc"
+      ],
+      "lines_of_code": 228,
+      "last_modified": "2025-11-13T08:41:44Z",
+      "has_rdf": true
+    }
+  }
+}
