@@ -398,12 +398,15 @@ Attempting operations without authentication causes confusing errors.
 - **Best For**: Testing, demos, learning
 
 ### Inrupt PodSpaces
-- **Type**: Commercial provider
-- **Pods**: Multiple per account (paid tiers)
-- **Storage**: 2GB free, paid tiers available
-- **Registration**: Email verification required
-- **Stability**: Production-ready
-- **Best For**: Production applications
+- **Type**: Commercial provider (Developer Preview)
+- **OIDC Issuer**: `https://login.inrupt.com` ⚠️ (not inrupt.net or inrupt.com)
+- **WebID Format**: `https://id.inrupt.com/{username}`
+- **Pod Storage**: `https://storage.inrupt.com/{pod-id}`
+- **Pods**: Multiple per account
+- **Storage**: Check current PodSpaces offering
+- **Registration**: Via https://login.inrupt.com
+- **Stability**: Developer Preview - not for production use yet
+- **Best For**: Testing with production-like infrastructure
 
 ### Community Solid Server (localhost)
 - **Type**: Self-hosted

@@ -59,10 +59,11 @@ You need a Solid Pod to test with. Choose one of:
    - Create a free Pod account
    - Use `https://solidcommunity.net` as your provider
 
-2. **Inrupt PodSpaces** (Commercial option)
+2. **Inrupt PodSpaces** (Developer Preview)
    - Navigate to https://start.inrupt.com
-   - Sign up for a free Pod
-   - Use `https://inrupt.net` as your provider
+   - Sign up for a Pod (register at https://login.inrupt.com)
+   - Use `https://login.inrupt.com` as your OIDC issuer
+   - Note: PodSpaces is in Developer Preview - not for production use
 
 3. **Local Community Solid Server** (For development)
    - See `SOLID_DEV_SETUP.md` for installation instructions
