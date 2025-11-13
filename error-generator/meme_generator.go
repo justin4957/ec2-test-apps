@@ -269,15 +269,16 @@ func generateMemePromptWithGemini(keywords []string) (*MemePrompt, error) {
 }
 
 // getVertexAIAccessToken gets an OAuth2 access token from the service account
+// SECURITY: Now uses GCP_SERVICE_ACCOUNT_JSON environment variable instead of file
 func getVertexAIAccessToken(ctx context.Context) (string, error) {
-	// Read service account JSON from file
-	credsJSON, err := os.ReadFile("gcp-service-account.json")
-	if err != nil {
-		return "", fmt.Errorf("failed to read service account file: %w", err)
+	// Read service account JSON from environment variable
+	credsJSON := os.Getenv("GCP_SERVICE_ACCOUNT_JSON")
+	if credsJSON == "" {
+		return "", fmt.Errorf("GCP_SERVICE_ACCOUNT_JSON environment variable not set")
 	}
 
 	// Create credentials from JSON
-	creds, err := google.CredentialsFromJSON(ctx, credsJSON, "https://www.googleapis.com/auth/cloud-platform")
+	creds, err := google.CredentialsFromJSON(ctx, []byte(credsJSON), "https://www.googleapis.com/auth/cloud-platform")
 	if err != nil {
 		return "", fmt.Errorf("failed to create credentials: %w", err)
 	}
