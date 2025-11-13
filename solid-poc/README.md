@@ -62,7 +62,18 @@ Content-Type: application/json
 }
 ```
 
-### Read from Pod (Server-Side)
+### Read from Pod (Server-Side) ⚠️ NOT FUNCTIONAL
+
+**⚠️ IMPORTANT LIMITATION**: These endpoints are **non-functional** with DPoP authentication.
+
+DPoP tokens are cryptographically bound to the client that created them and cannot be used server-side. The backend doesn't have:
+- The private key to sign DPoP proofs
+- The ability to create request-specific proofs for each HTTP request
+
+**For Pod operations, use the frontend directly** with `session.fetch()` from the Inrupt Solid Client library.
+
+These endpoints are included for architectural reference only and would require a different authentication mechanism (client credentials flow or refresh tokens) to work server-side.
+
 ```bash
 POST /api/pod/read
 Content-Type: application/json
@@ -71,9 +82,13 @@ Content-Type: application/json
   "token": "eyJ0eXAiOiJkcG9wK2p3dCIsImFsZyI6...",
   "url": "https://alice.solidcommunity.net/private/data.ttl"
 }
+# Returns: 401 Unauthorized (DPoP authentication fails)
 ```
 
-### Write to Pod (Server-Side)
+### Write to Pod (Server-Side) ⚠️ NOT FUNCTIONAL
+
+See limitation note above.
+
 ```bash
 POST /api/pod/write
 Content-Type: application/json
@@ -84,6 +99,7 @@ Content-Type: application/json
   "data": "@prefix schema: <http://schema.org/> ...",
   "content_type": "text/turtle"
 }
+# Returns: 401 Unauthorized (DPoP authentication fails)
 ```
 
 ### Serialize to RDF
@@ -181,6 +197,41 @@ This is configured in nginx reverse proxy.
 - Production should implement full JWT signature verification
 - All Pod operations require DPoP authentication
 - Frontend handles authentication, backend validates tokens
+
+## Architecture Notes
+
+### Why Server-Side Pod Operations Don't Work
+
+The `/api/pod/read` and `/api/pod/write` endpoints **cannot authenticate with Solid Pods** because:
+
+1. **DPoP Token Binding**: DPoP tokens are cryptographically bound to the HTTP client that created them
+2. **Private Key Required**: Each request needs a new DPoP proof signed with the client's private key
+3. **Request-Specific Proofs**: DPoP proofs include the HTTP method and URL, signed fresh for each request
+
+### Correct Architecture
+
+**Client-Side Pod Operations** (Current, Recommended):
+```javascript
+// In browser with authenticated session
+const data = await session.fetch(podUrl);  // ✅ Works - has private key
+```
+
+**Server-Side Pod Operations** (Not Supported with DPoP):
+```bash
+curl -X POST /api/pod/read \
+  -d '{"token": "...", "url": "..."}' # ❌ Fails - no private key
+```
+
+### Future Options for Server-Side Access
+
+To enable true server-side Pod operations, you would need:
+
+1. **Client Credentials Flow**: App-level authentication (not user-specific)
+2. **Refresh Token Storage**: Store user's refresh token server-side (security implications)
+3. **Proxy Pattern**: Frontend makes authenticated requests, backend processes data
+4. **Service Worker**: Keep authentication in browser, backend handles business logic
+
+For this PoC, **all Pod operations should be done client-side** in the frontend using the Inrupt Solid Client library.
 
 ## Next Steps
 
