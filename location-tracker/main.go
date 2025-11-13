@@ -32,6 +32,7 @@ import (
 	dynamodbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
 	"location-tracker/services"
+	"location-tracker/storage"
 	"location-tracker/types"
 )
 
@@ -108,6 +109,12 @@ var (
 	businessService   *services.BusinessService
 	commercialService *services.CommercialService
 	contextService    *services.ContextService
+
+	// Repositories
+	errorLogRepo   storage.ErrorLogRepository
+	locationRepo   storage.LocationRepository
+	commercialRepo storage.CommercialRepository
+	tipRepo        storage.TipRepository
 )
 
 func main() {
@@ -2143,6 +2150,14 @@ func initializeDynamoDB() {
 	}
 
 	useDynamoDB = true
+
+	// Initialize repositories
+	errorLogRepo = storage.NewErrorLogDynamoDBRepository(dynamoClient, errorLogsTableName)
+	locationRepo = storage.NewLocationDynamoDBRepository(dynamoClient, locationsTableName)
+	commercialRepo = storage.NewCommercialDynamoDBRepository(dynamoClient, commercialRealEstateTableName)
+	tipRepo = storage.NewTipDynamoDBRepository(dynamoClient, anonymousTipsTableName)
+
+	log.Printf("💾 DynamoDB repositories initialized")
 }
 
 // initializeTipSystem initializes the anonymous tip submission system
