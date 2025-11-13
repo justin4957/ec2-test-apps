@@ -1,0 +1,306 @@
+@prefix code: <https://schema.codedoc.org/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+# ============================================================================
+# LinkedDoc+TTL Schema
+# A semantic ontology for documenting code modules and their relationships
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# Classes
+# ----------------------------------------------------------------------------
+
+code:Module a rdfs:Class ;
+    rdfs:label "Code Module" ;
+    rdfs:comment "A source code module (file) containing related functionality" ;
+    rdfs:isDefinedBy <https://schema.codedoc.org/> .
+
+code:Package a rdfs:Class ;
+    rdfs:label "Package" ;
+    rdfs:comment "A collection of related modules grouped by functionality" ;
+    rdfs:isDefinedBy <https://schema.codedoc.org/> .
+
+code:Function a rdfs:Class ;
+    rdfs:label "Function" ;
+    rdfs:comment "An exported function or method" ;
+    rdfs:isDefinedBy <https://schema.codedoc.org/> .
+
+code:Type a rdfs:Class ;
+    rdfs:label "Type" ;
+    rdfs:comment "An exported data type, struct, or interface" ;
+    rdfs:isDefinedBy <https://schema.codedoc.org/> .
+
+code:Handler a rdfs:Class ;
+    rdfs:subClassOf code:Function ;
+    rdfs:label "HTTP Handler" ;
+    rdfs:comment "An HTTP request handler function" ;
+    rdfs:isDefinedBy <https://schema.codedoc.org/> .
+
+code:Service a rdfs:Class ;
+    rdfs:label "Service" ;
+    rdfs:comment "A business logic service containing orchestration and domain rules" ;
+    rdfs:isDefinedBy <https://schema.codedoc.org/> .
+
+code:Client a rdfs:Class ;
+    rdfs:label "API Client" ;
+    rdfs:comment "A client for interacting with external APIs" ;
+    rdfs:isDefinedBy <https://schema.codedoc.org/> .
+
+# ----------------------------------------------------------------------------
+# Properties - Basic Information
+# ----------------------------------------------------------------------------
+
+code:name a rdf:Property ;
+    rdfs:domain code:Module ;
+    rdfs:range xsd:string ;
+    rdfs:label "Module name" ;
+    rdfs:comment "The name of the module including package path (e.g., 'handlers/location.go')" .
+
+code:description a rdf:Property ;
+    rdfs:domain code:Module ;
+    rdfs:range xsd:string ;
+    rdfs:label "Description" ;
+    rdfs:comment "A concise human-readable description of the module's purpose" .
+
+code:packageName a rdf:Property ;
+    rdfs:domain code:Module ;
+    rdfs:range xsd:string ;
+    rdfs:label "Package name" ;
+    rdfs:comment "The Go package name for this module" .
+
+# ----------------------------------------------------------------------------
+# Properties - Relationships
+# ----------------------------------------------------------------------------
+
+code:dependsOn a rdf:Property ;
+    rdfs:domain code:Module ;
+    rdfs:range code:Module ;
+    rdfs:label "Depends on" ;
+    rdfs:comment "A direct dependency where this module imports and uses another module" .
+
+code:integratesWith a rdf:Property ;
+    rdfs:domain code:Module ;
+    rdfs:range code:Module ;
+    rdfs:label "Integrates with" ;
+    rdfs:comment "An integration relationship where modules work together but aren't direct dependencies" .
+
+code:uses a rdf:Property ;
+    rdfs:domain code:Module ;
+    rdfs:range code:Module ;
+    rdfs:label "Uses" ;
+    rdfs:comment "A usage relationship indicating this module utilizes functionality from another" .
+
+code:implements a rdf:Property ;
+    rdfs:domain code:Module ;
+    rdfs:range code:Type ;
+    rdfs:label "Implements" ;
+    rdfs:comment "Indicates this module implements a specific interface or type" .
+
+code:calledBy a rdf:Property ;
+    rdfs:domain code:Module ;
+    rdfs:range code:Module ;
+    rdfs:label "Called by" ;
+    rdfs:comment "Inverse relationship showing which modules call this module" .
+
+# ----------------------------------------------------------------------------
+# Properties - Exports
+# ----------------------------------------------------------------------------
+
+code:exports a rdf:Property ;
+    rdfs:domain code:Module ;
+    rdfs:label "Exports" ;
+    rdfs:comment "Public functions, types, or symbols exported by this module" .
+
+code:exportsFunction a rdf:Property ;
+    rdfs:subPropertyOf code:exports ;
+    rdfs:range code:Function ;
+    rdfs:label "Exports function" ;
+    rdfs:comment "A function exported by this module" .
+
+code:exportsType a rdf:Property ;
+    rdfs:subPropertyOf code:exports ;
+    rdfs:range code:Type ;
+    rdfs:label "Exports type" ;
+    rdfs:comment "A type or struct exported by this module" .
+
+code:exportsHandler a rdf:Property ;
+    rdfs:subPropertyOf code:exportsFunction ;
+    rdfs:range code:Handler ;
+    rdfs:label "Exports handler" ;
+    rdfs:comment "An HTTP handler exported by this module" .
+
+# ----------------------------------------------------------------------------
+# Properties - Semantic Tags
+# ----------------------------------------------------------------------------
+
+code:tags a rdf:Property ;
+    rdfs:domain code:Module ;
+    rdfs:range xsd:string ;
+    rdfs:label "Tags" ;
+    rdfs:comment "Semantic tags for categorizing the module (e.g., 'http', 'storage', 'api-client')" .
+
+code:category a rdf:Property ;
+    rdfs:domain code:Module ;
+    rdfs:range xsd:string ;
+    rdfs:label "Category" ;
+    rdfs:comment "Primary functional category (e.g., 'handlers', 'services', 'types')" .
+
+# ----------------------------------------------------------------------------
+# Properties - Metadata
+# ----------------------------------------------------------------------------
+
+code:lastUpdated a rdf:Property ;
+    rdfs:domain code:Module ;
+    rdfs:range xsd:dateTime ;
+    rdfs:label "Last updated" ;
+    rdfs:comment "Timestamp of last modification to this module" .
+
+code:linesOfCode a rdf:Property ;
+    rdfs:domain code:Module ;
+    rdfs:range xsd:integer ;
+    rdfs:label "Lines of code" ;
+    rdfs:comment "Total lines of code in this module" .
+
+code:author a rdf:Property ;
+    rdfs:domain code:Module ;
+    rdfs:range xsd:string ;
+    rdfs:label "Author" ;
+    rdfs:comment "Original author or maintainer of this module" .
+
+code:version a rdf:Property ;
+    rdfs:domain code:Module ;
+    rdfs:range xsd:string ;
+    rdfs:label "Version" ;
+    rdfs:comment "Version number or identifier for this module" .
+
+# ----------------------------------------------------------------------------
+# Properties - Quality Metrics
+# ----------------------------------------------------------------------------
+
+code:complexity a rdf:Property ;
+    rdfs:domain code:Module ;
+    rdfs:range xsd:decimal ;
+    rdfs:label "Complexity" ;
+    rdfs:comment "Cyclomatic complexity score (0.0-1.0, lower is better)" .
+
+code:testCoverage a rdf:Property ;
+    rdfs:domain code:Module ;
+    rdfs:range xsd:decimal ;
+    rdfs:label "Test coverage" ;
+    rdfs:comment "Test coverage percentage (0.0-1.0)" .
+
+code:hasTests a rdf:Property ;
+    rdfs:domain code:Module ;
+    rdfs:range xsd:boolean ;
+    rdfs:label "Has tests" ;
+    rdfs:comment "Whether this module has associated test files" .
+
+# ----------------------------------------------------------------------------
+# Tag Taxonomy Definitions
+# ----------------------------------------------------------------------------
+
+# Functional Tags
+code:tag-http a code:Tag ;
+    rdfs:label "http" ;
+    rdfs:comment "HTTP handlers and endpoints" .
+
+code:tag-storage a code:Tag ;
+    rdfs:label "storage" ;
+    rdfs:comment "Data persistence operations" .
+
+code:tag-api-client a code:Tag ;
+    rdfs:label "api-client" ;
+    rdfs:comment "External API integration clients" .
+
+code:tag-business-logic a code:Tag ;
+    rdfs:label "business-logic" ;
+    rdfs:comment "Core business rules and orchestration" .
+
+code:tag-data-types a code:Tag ;
+    rdfs:label "data-types" ;
+    rdfs:comment "Data structures and domain models" .
+
+code:tag-middleware a code:Tag ;
+    rdfs:label "middleware" ;
+    rdfs:comment "HTTP middleware functions" .
+
+code:tag-auth a code:Tag ;
+    rdfs:label "auth" ;
+    rdfs:comment "Authentication and authorization logic" .
+
+code:tag-validation a code:Tag ;
+    rdfs:label "validation" ;
+    rdfs:comment "Input validation and sanitization" .
+
+# Domain Tags
+code:tag-location a code:Tag ;
+    rdfs:label "location" ;
+    rdfs:comment "Location tracking and geolocation features" .
+
+code:tag-errors a code:Tag ;
+    rdfs:label "errors" ;
+    rdfs:comment "Error logging and reporting" .
+
+code:tag-tips a code:Tag ;
+    rdfs:label "tips" ;
+    rdfs:comment "Anonymous tips feature" .
+
+code:tag-commercial a code:Tag ;
+    rdfs:label "commercial" ;
+    rdfs:comment "Commercial real estate features" .
+
+code:tag-social a code:Tag ;
+    rdfs:label "social" ;
+    rdfs:comment "Social sharing and integration" .
+
+code:tag-cryptogram a code:Tag ;
+    rdfs:label "cryptogram" ;
+    rdfs:comment "Cryptogram puzzle features" .
+
+# Technical Tags
+code:tag-dynamodb a code:Tag ;
+    rdfs:label "dynamodb" ;
+    rdfs:comment "DynamoDB database operations" .
+
+code:tag-cache a code:Tag ;
+    rdfs:label "cache" ;
+    rdfs:comment "Caching logic and operations" .
+
+code:tag-rate-limiting a code:Tag ;
+    rdfs:label "rate-limiting" ;
+    rdfs:comment "Rate limiting and throttling" .
+
+code:tag-websocket a code:Tag ;
+    rdfs:label "websocket" ;
+    rdfs:comment "WebSocket connections" .
+
+code:tag-rdf a code:Tag ;
+    rdfs:label "rdf" ;
+    rdfs:comment "RDF and semantic data operations" .
+
+code:tag-solid a code:Tag ;
+    rdfs:label "solid" ;
+    rdfs:comment "Solid Protocol integration" .
+
+# ============================================================================
+# Example Usage
+# ============================================================================
+
+# Example module definition (not part of schema, just for reference)
+#
+# <handlers/location.go> a code:Module ;
+#     code:name "handlers/location.go" ;
+#     code:description "HTTP handlers for location tracking endpoints" ;
+#     code:packageName "handlers" ;
+#     code:dependsOn <types/location.go>, <storage/dynamodb.go> ;
+#     code:integratesWith <services/business_search.go> ;
+#     code:exports :HandleLocation, :HandleLocationByID ;
+#     code:tags "http", "location", "api" ;
+#     code:category "handlers" ;
+#     code:linesOfCode 150 ;
+#     code:lastUpdated "2025-11-13T12:00:00Z"^^xsd:dateTime ;
+#     code:testCoverage 0.85 ;
+#     code:hasTests true .
