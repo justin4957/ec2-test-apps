@@ -14,6 +14,12 @@ This PoC validates the authentication flow and data operations that will be inte
 - ✅ Writing location data to Pods
 - ✅ Reading location data from Pods
 - ✅ Proper error handling
+- ✅ **Offline-first capabilities** (NEW - Issue #56)
+  - Service Worker for asset caching
+  - IndexedDB for local data storage
+  - Operation queue for offline writes
+  - Automatic sync when back online
+  - Online/offline status indicators
 
 ## Quick Start
 
@@ -269,6 +275,150 @@ npm run build
 
 This will regenerate `dist/solid-client-bundle.js`.
 
+## Offline-First Capabilities
+
+### Overview
+
+The application now works offline! All features continue to function without an internet connection:
+
+- **Asset Caching**: The Service Worker caches static assets (HTML, JS, CSS) for offline use
+- **Local Data Storage**: IndexedDB stores location data and Pod operations locally
+- **Operation Queue**: Write operations are queued when offline and synced automatically when back online
+- **Status Indicators**: Real-time online/offline status displayed in the UI
+- **Automatic Sync**: Pending operations sync automatically when connection is restored
+
+### How It Works
+
+#### Service Worker (`sw.js`)
+
+The Service Worker provides:
+- **Cache-first strategy** for static assets (HTML, JS, fonts, images)
+- **Network-first strategy** for API calls
+- **Background sync** support for queued operations
+- **Automatic cache management** and cleanup
+
+#### IndexedDB Storage (`offline.js`)
+
+Four object stores manage offline data:
+
+1. **locations**: Cached location data with sync status
+2. **pendingOps**: Queued operations waiting to sync
+3. **profiles**: Cached WebID profile data
+4. **syncMeta**: Sync metadata (last sync time, etc.)
+
+#### Offline Write Flow
+
+1. User clicks "Write Test Location" while offline
+2. Location data is queued in IndexedDB `pendingOps` store
+3. UI shows "Queued for sync" message
+4. When online, auto-sync triggers automatically
+5. Queued operation executes and writes to Pod
+6. Operation removed from queue on success
+
+#### Conflict Resolution
+
+The current implementation uses **last-write-wins** strategy:
+- Each location has a unique timestamp-based filename
+- No conflicts occur as each write creates a new file
+- Future enhancement: Detect concurrent edits to same resource
+
+#### Retry Logic
+
+Failed operations are automatically retried:
+- **Max retries**: 5 attempts per operation
+- **Retry interval**: Triggered on each online event or manual sync
+- **Failure handling**: After 5 failures, operation marked as "failed" (not retried)
+
+### Using Offline Features
+
+#### 1. Monitor Online/Offline Status
+
+Two status indicators show in the header:
+- **Solid Authentication**: Connection to Pod provider
+- **Online Status**: Internet connectivity
+
+#### 2. Write Data Offline
+
+1. Disconnect from internet (airplane mode or disable WiFi)
+2. Click "Write Test Location"
+3. Location is queued for sync (shown in UI)
+4. Reconnect to internet
+5. Auto-sync runs and saves location to Pod
+
+#### 3. Manual Sync
+
+The "Offline Sync Status" section provides:
+- **Sync Stats**: View pending/failed operations
+- **Sync Now**: Manually trigger sync
+- **View Queue**: See all pending operations
+- **Clear Cache**: Reset offline storage
+
+#### 4. Test Offline Mode
+
+**Test Scenario:**
+```
+1. Login to Solid Pod (online)
+2. Disconnect internet
+3. Write test location → Queued
+4. Write another location → Queued
+5. Reconnect internet
+6. Auto-sync runs → Both locations saved
+7. Check Pod → See both files
+```
+
+### Sync Statistics
+
+The sync status section shows:
+- 📋 **Pending Operations**: Operations waiting to sync
+- ❌ **Failed Operations**: Operations that failed after retries
+- 💾 **Cached Locations**: Total locations in local cache
+- ✅ **Synced Locations**: Locations successfully synced to Pod
+- ⏱️ **Last Sync**: Timestamp of last successful sync
+
+### Browser Storage
+
+**IndexedDB Database**: `SolidPoCDB`
+
+You can inspect offline data in browser DevTools:
+- **Chrome/Edge**: DevTools → Application → IndexedDB → SolidPoCDB
+- **Firefox**: DevTools → Storage → IndexedDB → SolidPoCDB
+- **Safari**: Develop → Show Web Inspector → Storage → IndexedDB
+
+**Service Worker Cache**: `solid-poc-v1-static`, `solid-poc-v1-dynamic`
+
+View cached assets:
+- **Chrome/Edge**: DevTools → Application → Cache Storage
+- **Firefox**: DevTools → Storage → Cache Storage
+
+### Known Limitations
+
+1. **No conflict detection**: Concurrent writes to same file not handled
+2. **Cache size limits**: Browser may evict cache if storage full
+3. **No differential sync**: Full operations replayed (not deltas)
+4. **Authentication required**: Must login once online before offline use works
+5. **No background sync on iOS**: Safari doesn't support Background Sync API
+
+### Clearing Offline Data
+
+**Manual Clear:**
+1. Click "Clear Cache" in Offline Sync Status section
+2. Confirms before clearing all offline data
+
+**Browser Clear:**
+- Chrome/Edge: Settings → Privacy → Clear browsing data → Cached images and files
+- Firefox: Settings → Privacy → Clear Data → Cached Web Content
+- Safari: Develop → Empty Caches
+
+**Programmatic Clear:**
+```javascript
+// Clear all offline data
+await offlineStorage.clearAll();
+
+// Clear Service Worker cache
+const caches = await caches.keys();
+caches.forEach(cache => caches.delete(cache));
+```
+
 ## Next Steps
 
 After validating this PoC:
@@ -277,6 +427,7 @@ After validating this PoC:
 2. **Issue #50**: Add Solid authentication endpoints to Location Tracker backend
 3. **Issue #51**: Create data storage abstraction layer
 4. **Issue #52**: Implement Pod read/write operations in production code
+5. **Phase 5**: Integrate offline-first patterns into location-tracker main app
 
 ## Resources
 
