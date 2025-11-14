@@ -14,12 +14,19 @@ This PoC validates the authentication flow and data operations that will be inte
 - ✅ Writing location data to Pods
 - ✅ Reading location data from Pods
 - ✅ Proper error handling
-- ✅ **Offline-first capabilities** (NEW - Issue #56)
+- ✅ **Offline-first capabilities** (Issue #56)
   - Service Worker for asset caching
   - IndexedDB for local data storage
   - Operation queue for offline writes
   - Automatic sync when back online
   - Online/offline status indicators
+- ✅ **Data Sharing & Permissions** (NEW - Issue #57)
+  - WAC/ACP universal access control
+  - Grant read/write permissions to individuals
+  - Public/private access management
+  - View current permissions
+  - Revoke access from users
+  - Generate shareable links
 
 ## Quick Start
 
@@ -419,6 +426,170 @@ const caches = await caches.keys();
 caches.forEach(cache => caches.delete(cache));
 ```
 
+## Data Sharing & Permissions
+
+### Overview
+
+The application supports full access control for your location data using Solid's Universal Access API. This works with both WAC (Web Access Control) and ACP (Access Control Policies), depending on your Pod provider.
+
+### Features
+
+#### 1. View Current Permissions
+
+Navigate to **Settings & Preferences → Privacy** to:
+- See public access status (Private, Public Read-Only, or Public Read-Write)
+- View all individuals who have access to your data
+- See what level of access each person has (Read, Append, Write)
+
+#### 2. Grant Public Access
+
+Make your location data publicly accessible:
+
+**Make Public (Read-Only):**
+- Anyone can view your location data
+- No authentication required
+- Cannot modify your data
+
+**Make Public (Read-Write):**
+- Anyone can view AND modify your location data
+- ⚠️ Use with caution - allows anonymous writes
+
+**Make Private:**
+- Revoke all public access
+- Only you and specifically granted users can access
+
+#### 3. Grant Access to Individuals
+
+Share with specific people by their WebID:
+
+1. Enter their WebID (e.g., `https://alice.solidcommunity.net/profile/card#me`)
+2. Choose access level:
+   - **Read Access**: They can view your location data
+   - **Write Access**: They can view AND modify your location data
+3. Click "Grant Read Access" or "Grant Write Access"
+
+#### 4. Revoke Access
+
+Remove access from a specific person:
+
+1. Enter their WebID in the "Revoke Access" section
+2. Click "Revoke All Access"
+3. All their permissions (read, write, append) are removed
+
+#### 5. Generate Share Links
+
+Create shareable links to your location data container:
+
+1. Click "Generate Share Link"
+2. Copy the generated URL
+3. Share it with others (they'll need permissions to access)
+
+**Note**: The link alone doesn't grant access - you must explicitly grant permissions using the steps above.
+
+### Access Levels Explained
+
+Solid supports three main access modes:
+
+- **Read**: View data in your Pod
+- **Append**: Add new data to your Pod
+- **Write**: Modify or delete existing data
+
+The UI simplifies this to:
+- **Read-Only**: Read access only
+- **Read-Write**: Read + Append + Write access
+
+### Permission Inheritance
+
+- Permissions apply to the `/private/location-tracker/` container
+- All files in the container inherit these permissions
+- You can override permissions on individual files (future feature)
+
+### Testing Permissions
+
+**Test Scenario 1: Share with a Friend**
+```
+1. Login to your Solid Pod
+2. Go to Settings → Privacy
+3. Enter your friend's WebID
+4. Grant Read Access
+5. Send them the share link
+6. They can now view your location data
+```
+
+**Test Scenario 2: Make Data Public**
+```
+1. Login to your Solid Pod
+2. Go to Settings → Privacy
+3. Click "Make Public (Read-Only)"
+4. Generate Share Link
+5. Anyone with the link can view (no login required)
+```
+
+**Test Scenario 3: Revoke Access**
+```
+1. View "Current Access Permissions"
+2. Copy the WebID of person to remove
+3. Paste in "Revoke Access" section
+4. Click "Revoke All Access"
+5. They can no longer access your data
+```
+
+### Security Best Practices
+
+1. **Default to Private**: Only share when necessary
+2. **Audit Regularly**: Check "Current Access Permissions" periodically
+3. **Use Read-Only**: Grant read access unless write is required
+4. **Verify WebIDs**: Double-check WebIDs before granting access
+5. **Avoid Public Write**: Never make data public with write access unless you understand the risks
+
+### Compatibility
+
+**Supported Pod Providers:**
+- ✅ SolidCommunity.net (WAC)
+- ✅ Inrupt PodSpaces (ACP)
+- ✅ Community Solid Server (WAC or ACP)
+
+**Universal Access API Benefits:**
+- Works with both WAC and ACP automatically
+- Provider-agnostic code
+- Future-proof as Solid specification evolves
+
+### Known Limitations
+
+1. **Direct access only**: Shows only explicitly-set permissions, not inherited access
+2. **Container-level**: Permissions apply to whole container (not individual files yet)
+3. **No group support**: Can only grant to individual WebIDs (not groups)
+4. **No inheritance display**: Doesn't show permissions inherited from parent containers
+
+### Troubleshooting Permissions
+
+**Problem**: "Failed to update access"
+
+**Possible Causes:**
+- You don't own the resource
+- Pod provider doesn't support access control
+- Network connection issue
+
+**Solution:**
+- Verify you're logged in with correct Pod
+- Check browser console for detailed errors
+- Try refreshing access info
+
+**Problem**: Permissions not showing
+
+**Solution:**
+- Click "Refresh Access Info"
+- Verify the container exists (`/private/location-tracker/`)
+- Check that you've written at least one location
+
+**Problem**: Granted access but friend can't view
+
+**Solution:**
+- Verify WebID is correct (copy from their profile)
+- Ensure they're logged into their Solid Pod
+- Check they're accessing the correct URL
+- Confirm permissions with "Refresh Access Info"
+
 ## Next Steps
 
 After validating this PoC:
@@ -427,7 +598,8 @@ After validating this PoC:
 2. **Issue #50**: Add Solid authentication endpoints to Location Tracker backend
 3. **Issue #51**: Create data storage abstraction layer
 4. **Issue #52**: Implement Pod read/write operations in production code
-5. **Phase 5**: Integrate offline-first patterns into location-tracker main app
+5. **Phase 5**: Integrate sharing and permissions patterns into location-tracker main app
+6. **Phase 5**: Integrate offline-first patterns into location-tracker main app
 
 ## Resources
 

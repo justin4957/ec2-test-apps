@@ -1021,32 +1021,85 @@
             <!-- Privacy Tab -->
             <div class="settings-tab-content" id="settings-privacy">
                 <div class="settings-group">
-                    <h3>Access Control</h3>
+                    <h3>Container Access Overview</h3>
                     <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
-                        Manage who can access your location data.
+                        Your location data is stored in <code>/private/location-tracker/</code>
                     </p>
                     <div id="settings-privacy-info" class="info-message">
-                        <p><strong>Current Access Level:</strong> Private</p>
-                        <p style="margin-top: 10px; font-size: 13px;">
-                            Your location data is stored in <code>/private/location-tracker/</code>
-                            and is only accessible to you by default.
-                        </p>
+                        <p>Loading access information...</p>
+                    </div>
+                    <button id="btn-refresh-access" onclick="refreshAccessInfo()" class="secondary" style="margin-top: 15px;">
+                        🔄 Refresh Access Info
+                    </button>
+                </div>
+
+                <div class="settings-group">
+                    <h3>Grant Access to Others</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Share your location data with specific people or make it public.
+                    </p>
+
+                    <div style="margin-bottom: 15px;">
+                        <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #444;">Grant Public Access:</label>
+                        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                            <button onclick="setPublicAccess('read')" class="secondary">
+                                👁️ Make Public (Read-Only)
+                            </button>
+                            <button onclick="setPublicAccess('write')" class="secondary">
+                                ✏️ Make Public (Read-Write)
+                            </button>
+                            <button onclick="setPublicAccess('none')" class="secondary">
+                                🔒 Make Private
+                            </button>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 20px;">
+                        <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #444;">Grant Access to Specific Person:</label>
+                        <input type="text" id="input-grant-webid" placeholder="Enter WebID (e.g., https://example.solidcommunity.net/profile/card#me)">
+                        <div style="display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap;">
+                            <button id="btn-grant-read" onclick="grantAgentAccess('read')" class="secondary">
+                                ➕ Grant Read Access
+                            </button>
+                            <button id="btn-grant-write" onclick="grantAgentAccess('write')" class="secondary">
+                                ➕ Grant Write Access
+                            </button>
+                        </div>
+                    </div>
+                    <div id="grant-result"></div>
+                </div>
+
+                <div class="settings-group">
+                    <h3>Current Access Permissions</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        People who currently have access to your location data.
+                    </p>
+                    <div id="current-permissions-list" class="info-message">
+                        <p>Loading permissions...</p>
                     </div>
                 </div>
 
                 <div class="settings-group">
-                    <h3>Grant Access</h3>
+                    <h3>Revoke Access</h3>
                     <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
-                        Allow specific people to view your location data (future feature).
+                        Remove access from a specific person.
                     </p>
-                    <input type="text" id="input-grant-webid" placeholder="Enter WebID to grant access (e.g., https://example.solidcommunity.net/profile/card#me)" disabled>
-                    <button id="btn-grant-access" onclick="grantAccess()" disabled class="secondary">
-                        ➕ Grant Read Access
+                    <input type="text" id="input-revoke-webid" placeholder="Enter WebID to revoke access">
+                    <button id="btn-revoke-access" onclick="revokeAgentAccess()" class="secondary">
+                        ❌ Revoke All Access
                     </button>
-                    <div id="grant-result"></div>
-                    <div class="info-message" style="margin-top: 15px;">
-                        <p><strong>Note:</strong> Access control management is a planned feature.</p>
-                    </div>
+                    <div id="revoke-result"></div>
+                </div>
+
+                <div class="settings-group">
+                    <h3>Share Link</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Generate a link to share your location data container.
+                    </p>
+                    <button onclick="generateShareLink()" class="secondary">
+                        🔗 Generate Share Link
+                    </button>
+                    <div id="share-link-result"></div>
                 </div>
             </div>
 
@@ -1571,6 +1624,7 @@
             document.getElementById('btn-delete-all').disabled = false;
             document.getElementById('btn-refresh-session').disabled = false;
             document.getElementById('btn-logout-settings').disabled = false;
+            document.getElementById('btn-refresh-access').disabled = false;
 
             updateStatus('status-settings', 'active');
 
@@ -1582,6 +1636,9 @@
 
             // Populate session info
             updateSessionSettings();
+
+            // Populate access control info
+            await refreshAccessInfo();
         }
 
         // Update profile settings tab
@@ -1971,11 +2028,311 @@
             }
         }
 
-        // Grant access (placeholder)
-        window.grantAccess = function() {
-            showAlert('grant-result', 'Access control management is a planned feature', 'info');
-            log('Access control management is not yet implemented', 'warning');
+        // ========================================
+        // PERMISSIONS & ACCESS CONTROL FUNCTIONS
+        // ========================================
+
+        // Get location-tracker container URL
+        async function getLocationContainerUrl() {
+            const webId = session.info.webId;
+            const profileDataset = await solidClient.getSolidDataset(webId, { fetch: session.fetch });
+            const profileThing = solidClient.getThing(profileDataset, webId);
+            const storage = solidClient.getUrl(profileThing, 'http://www.w3.org/ns/pim/space#storage');
+
+            if (!storage) {
+                throw new Error('No storage location found in profile');
+            }
+
+            return `${storage}private/location-tracker/`;
         }
+
+        // Refresh access information display
+        window.refreshAccessInfo = async function() {
+            if (!session || !session.info.isLoggedIn) {
+                showAlert('grant-result', 'Please log in first', 'warning');
+                return;
+            }
+
+            log('Refreshing access information...', 'info');
+            setButtonLoading('btn-refresh-access', true);
+
+            try {
+                const containerUrl = await getLocationContainerUrl();
+
+                // Get public access
+                const publicAccess = await solidClient.universalAccess.getPublicAccess(
+                    containerUrl,
+                    { fetch: session.fetch }
+                );
+
+                // Get all agent access
+                const agentAccessAll = await solidClient.universalAccess.getAgentAccessAll(
+                    containerUrl,
+                    { fetch: session.fetch }
+                );
+
+                // Display public access
+                let publicStatus = '🔒 Private';
+                if (publicAccess) {
+                    if (publicAccess.read && publicAccess.write) {
+                        publicStatus = '🌐 Public (Read-Write)';
+                    } else if (publicAccess.read) {
+                        publicStatus = '👁️ Public (Read-Only)';
+                    }
+                }
+
+                document.getElementById('settings-privacy-info').innerHTML = `
+                    <p><strong>Public Access:</strong> ${publicStatus}</p>
+                    <p style="margin-top: 10px; font-size: 13px;">
+                        Container: <code>${containerUrl}</code>
+                    </p>
+                `;
+
+                // Display agent permissions
+                await displayCurrentPermissions(agentAccessAll);
+
+                log('✓ Access information refreshed', 'success');
+            } catch (error) {
+                log(`✗ Failed to load access info: ${error.message}`, 'error');
+                document.getElementById('settings-privacy-info').innerHTML = `
+                    <p style="color: #f44336;">Failed to load access information: ${error.message}</p>
+                `;
+            } finally {
+                setButtonLoading('btn-refresh-access', false);
+            }
+        }
+
+        // Display current permissions list
+        async function displayCurrentPermissions(agentAccessAll) {
+            const permissionsDiv = document.getElementById('current-permissions-list');
+
+            if (!agentAccessAll || Object.keys(agentAccessAll).length === 0) {
+                permissionsDiv.innerHTML = '<p style="color: #666;">No individual permissions granted yet.</p>';
+                return;
+            }
+
+            let html = '<ul style="list-style: none; padding: 0; margin: 0;">';
+            for (const [agent, access] of Object.entries(agentAccessAll)) {
+                const permissions = [];
+                if (access.read) permissions.push('Read');
+                if (access.append) permissions.push('Append');
+                if (access.write) permissions.push('Write');
+
+                const permStr = permissions.length > 0 ? permissions.join(', ') : 'None';
+
+                html += `
+                    <li style="padding: 10px; margin-bottom: 10px; background: #f9f9f9; border-radius: 8px; border-left: 4px solid #667eea;">
+                        <div style="font-weight: 600; color: #333; margin-bottom: 5px; word-break: break-all;">
+                            ${agent}
+                        </div>
+                        <div style="font-size: 13px; color: #666;">
+                            Permissions: <strong>${permStr}</strong>
+                        </div>
+                    </li>
+                `;
+            }
+            html += '</ul>';
+
+            permissionsDiv.innerHTML = html;
+        }
+
+        // Set public access
+        window.setPublicAccess = async function(accessType) {
+            if (!session || !session.info.isLoggedIn) {
+                showAlert('grant-result', 'Please log in first', 'warning');
+                return;
+            }
+
+            const accessMap = {
+                'read': { read: true, write: false },
+                'write': { read: true, write: true },
+                'none': { read: false, write: false }
+            };
+
+            const access = accessMap[accessType];
+            const actionName = accessType === 'none' ? 'Making private' : `Making public (${accessType})`;
+
+            log(`${actionName}...`, 'info');
+            document.getElementById('grant-result').innerHTML = '';
+
+            try {
+                const containerUrl = await getLocationContainerUrl();
+
+                const newAccess = await solidClient.universalAccess.setPublicAccess(
+                    containerUrl,
+                    access,
+                    { fetch: session.fetch }
+                );
+
+                if (newAccess === null) {
+                    throw new Error('Failed to update public access');
+                }
+
+                log(`✓ Public access updated`, 'success');
+                showAlert('grant-result', `Successfully updated public access`, 'success');
+
+                // Refresh access info
+                await refreshAccessInfo();
+            } catch (error) {
+                log(`✗ Failed to update public access: ${error.message}`, 'error');
+                showAlert('grant-result', `Failed: ${error.message}`, 'error');
+            }
+        }
+
+        // Grant access to specific agent
+        window.grantAgentAccess = async function(accessType) {
+            if (!session || !session.info.isLoggedIn) {
+                showAlert('grant-result', 'Please log in first', 'warning');
+                return;
+            }
+
+            const webIdInput = document.getElementById('input-grant-webid');
+            const targetWebId = webIdInput.value.trim();
+
+            if (!targetWebId) {
+                showAlert('grant-result', 'Please enter a WebID', 'warning');
+                return;
+            }
+
+            if (!targetWebId.startsWith('http://') && !targetWebId.startsWith('https://')) {
+                showAlert('grant-result', 'WebID must be a valid URL (starting with http:// or https://)', 'warning');
+                return;
+            }
+
+            const access = accessType === 'read'
+                ? { read: true, write: false }
+                : { read: true, write: true };
+
+            log(`Granting ${accessType} access to ${targetWebId}...`, 'info');
+            setButtonLoading(`btn-grant-${accessType}`, true);
+            document.getElementById('grant-result').innerHTML = '';
+
+            try {
+                const containerUrl = await getLocationContainerUrl();
+
+                const newAccess = await solidClient.universalAccess.setAgentAccess(
+                    containerUrl,
+                    targetWebId,
+                    access,
+                    { fetch: session.fetch }
+                );
+
+                if (newAccess === null) {
+                    throw new Error('Failed to grant access');
+                }
+
+                log(`✓ Access granted to ${targetWebId}`, 'success');
+                showAlert('grant-result', `Successfully granted ${accessType} access to ${targetWebId}`, 'success');
+
+                // Clear input and refresh
+                webIdInput.value = '';
+                await refreshAccessInfo();
+            } catch (error) {
+                log(`✗ Failed to grant access: ${error.message}`, 'error');
+                showAlert('grant-result', `Failed: ${error.message}`, 'error');
+            } finally {
+                setButtonLoading(`btn-grant-${accessType}`, false);
+            }
+        }
+
+        // Revoke access from specific agent
+        window.revokeAgentAccess = async function() {
+            if (!session || !session.info.isLoggedIn) {
+                showAlert('revoke-result', 'Please log in first', 'warning');
+                return;
+            }
+
+            const webIdInput = document.getElementById('input-revoke-webid');
+            const targetWebId = webIdInput.value.trim();
+
+            if (!targetWebId) {
+                showAlert('revoke-result', 'Please enter a WebID', 'warning');
+                return;
+            }
+
+            log(`Revoking access from ${targetWebId}...`, 'info');
+            setButtonLoading('btn-revoke-access', true);
+            document.getElementById('revoke-result').innerHTML = '';
+
+            try {
+                const containerUrl = await getLocationContainerUrl();
+
+                const newAccess = await solidClient.universalAccess.setAgentAccess(
+                    containerUrl,
+                    targetWebId,
+                    { read: false, write: false },
+                    { fetch: session.fetch }
+                );
+
+                if (newAccess === null) {
+                    throw new Error('Failed to revoke access');
+                }
+
+                log(`✓ Access revoked from ${targetWebId}`, 'success');
+                showAlert('revoke-result', `Successfully revoked access from ${targetWebId}`, 'success');
+
+                // Clear input and refresh
+                webIdInput.value = '';
+                await refreshAccessInfo();
+            } catch (error) {
+                log(`✗ Failed to revoke access: ${error.message}`, 'error');
+                showAlert('revoke-result', `Failed: ${error.message}`, 'error');
+            } finally {
+                setButtonLoading('btn-revoke-access', false);
+            }
+        }
+
+        // Generate share link
+        window.generateShareLink = async function() {
+            if (!session || !session.info.isLoggedIn) {
+                showAlert('share-link-result', 'Please log in first', 'warning');
+                return;
+            }
+
+            log('Generating share link...', 'info');
+            document.getElementById('share-link-result').innerHTML = '';
+
+            try {
+                const containerUrl = await getLocationContainerUrl();
+
+                const linkHtml = `
+                    <div style="margin-top: 15px; padding: 15px; background: #f0f7ff; border-radius: 8px; border: 2px solid #667eea;">
+                        <p style="margin-bottom: 10px; font-weight: 600; color: #333;">Share this link:</p>
+                        <input type="text" value="${containerUrl}" readonly
+                            style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px; font-family: monospace; font-size: 13px;"
+                            onclick="this.select()">
+                        <p style="margin-top: 10px; font-size: 13px; color: #666;">
+                            ⚠️ Note: Recipients will need appropriate permissions to access this container.
+                            Grant them access using the "Grant Access to Others" section above.
+                        </p>
+                        <button onclick="copyShareLink('${containerUrl}')" class="secondary" style="margin-top: 10px;">
+                            📋 Copy Link
+                        </button>
+                    </div>
+                `;
+
+                document.getElementById('share-link-result').innerHTML = linkHtml;
+                log('✓ Share link generated', 'success');
+            } catch (error) {
+                log(`✗ Failed to generate share link: ${error.message}`, 'error');
+                showAlert('share-link-result', `Failed: ${error.message}`, 'error');
+            }
+        }
+
+        // Copy share link to clipboard
+        window.copyShareLink = async function(url) {
+            try {
+                await navigator.clipboard.writeText(url);
+                showAlert('share-link-result', 'Link copied to clipboard!', 'success');
+                log('✓ Link copied to clipboard', 'success');
+            } catch (error) {
+                showAlert('share-link-result', 'Failed to copy link', 'error');
+            }
+        }
+
+        // ========================================
+        // END PERMISSIONS & ACCESS CONTROL
+        // ========================================
 
         // Refresh session
         window.refreshSession = async function() {
