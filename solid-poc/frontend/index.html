@@ -2059,17 +2059,35 @@
             try {
                 const containerUrl = await getLocationContainerUrl();
 
-                // Get public access
-                const publicAccess = await solidClient.universalAccess.getPublicAccess(
-                    containerUrl,
-                    { fetch: session.fetch }
-                );
+                // Get public access (may return null if no ACL exists yet)
+                let publicAccess = null;
+                try {
+                    publicAccess = await solidClient.universalAccess.getPublicAccess(
+                        containerUrl,
+                        { fetch: session.fetch }
+                    );
+                } catch (error) {
+                    // Silently handle 404s for missing ACL files - this is normal
+                    if (!error.message.includes('404') && !error.message.includes('Not Found')) {
+                        throw error; // Re-throw non-404 errors
+                    }
+                    console.log('[Access Control] No ACL file found - using defaults');
+                }
 
-                // Get all agent access
-                const agentAccessAll = await solidClient.universalAccess.getAgentAccessAll(
-                    containerUrl,
-                    { fetch: session.fetch }
-                );
+                // Get all agent access (may return empty if no ACL exists yet)
+                let agentAccessAll = {};
+                try {
+                    agentAccessAll = await solidClient.universalAccess.getAgentAccessAll(
+                        containerUrl,
+                        { fetch: session.fetch }
+                    );
+                } catch (error) {
+                    // Silently handle 404s for missing ACL files - this is normal
+                    if (!error.message.includes('404') && !error.message.includes('Not Found')) {
+                        throw error; // Re-throw non-404 errors
+                    }
+                    console.log('[Access Control] No ACL file found - using defaults');
+                }
 
                 // Display public access
                 let publicStatus = '🔒 Private';
@@ -2086,6 +2104,8 @@
                     <p style="margin-top: 10px; font-size: 13px;">
                         Container: <code>${containerUrl}</code>
                     </p>
+                    ${!publicAccess && Object.keys(agentAccessAll || {}).length === 0 ?
+                        '<p style="margin-top: 10px; font-size: 12px; color: #888;"><em>No ACL file exists yet. Permissions will be created when you first grant access.</em></p>' : ''}
                 `;
 
                 // Display agent permissions
@@ -2401,13 +2421,42 @@
             try {
                 const stats = await offlineStorage.getSyncStats();
 
+                // Format last sync time more nicely
+                let lastSyncDisplay = stats.lastSync;
+                if (stats.lastSync !== 'Never') {
+                    try {
+                        const syncDate = new Date(stats.lastSync);
+                        const now = new Date();
+                        const diffMs = now - syncDate;
+                        const diffSecs = Math.floor(diffMs / 1000);
+                        const diffMins = Math.floor(diffSecs / 60);
+                        const diffHours = Math.floor(diffMins / 60);
+                        const diffDays = Math.floor(diffHours / 24);
+
+                        if (diffSecs < 60) {
+                            lastSyncDisplay = 'Just now';
+                        } else if (diffMins < 60) {
+                            lastSyncDisplay = `${diffMins} minute${diffMins !== 1 ? 's' : ''} ago`;
+                        } else if (diffHours < 24) {
+                            lastSyncDisplay = `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
+                        } else if (diffDays < 7) {
+                            lastSyncDisplay = `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
+                        } else {
+                            lastSyncDisplay = syncDate.toLocaleString();
+                        }
+                    } catch (dateError) {
+                        // If date parsing fails, use the raw value
+                        console.warn('Failed to parse lastSync date:', dateError);
+                    }
+                }
+
                 document.getElementById('sync-stats-content').innerHTML = `
                     <ul style="list-style: none; padding: 0; margin: 10px 0 0 0;">
                         <li>📋 Pending Operations: <strong>${stats.pendingOperations}</strong></li>
                         <li>❌ Failed Operations: <strong>${stats.failedOperations}</strong></li>
                         <li>💾 Cached Locations: <strong>${stats.cachedLocations}</strong></li>
                         <li>✅ Synced Locations: <strong>${stats.syncedLocations}</strong></li>
-                        <li>⏱️ Last Sync: <strong>${stats.lastSync}</strong></li>
+                        <li>⏱️ Last Sync: <strong>${lastSyncDisplay}</strong></li>
                     </ul>
                 `;
 
