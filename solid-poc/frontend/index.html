@@ -815,9 +815,15 @@
         <!-- Header with Connection Status -->
         <div class="header">
             <h1>🔐 Solid Authentication</h1>
-            <div class="connection-status">
-                <div class="connection-dot" id="connection-dot"></div>
-                <span id="connection-text">Not Connected</span>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <div class="connection-status">
+                    <div class="connection-dot" id="connection-dot"></div>
+                    <span id="connection-text">Not Connected</span>
+                </div>
+                <div class="connection-status" id="offline-status">
+                    <div class="connection-dot" id="offline-dot"></div>
+                    <span id="offline-text">Checking...</span>
+                </div>
             </div>
         </div>
         <p class="subtitle">Location Tracker - Solid Pod Integration Proof-of-Concept</p>
@@ -1082,6 +1088,31 @@
             </div>
         </div>
 
+        <!-- Offline Sync Status -->
+        <div class="section" id="section-sync">
+            <h2>
+                <span class="step-number">🔄</span>
+                <span>Offline Sync Status</span>
+                <span class="status-indicator" id="status-sync"></span>
+            </h2>
+            <div id="sync-stats" class="info-message" style="margin-bottom: 15px;">
+                <p><strong>Sync Statistics:</strong></p>
+                <p id="sync-stats-content">Initializing...</p>
+            </div>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <button id="btn-sync" onclick="manualSync()" style="flex: 1; min-width: 150px;">
+                    🔄 Sync Now
+                </button>
+                <button id="btn-view-queue" onclick="viewSyncQueue()" style="flex: 1; min-width: 150px;">
+                    📋 View Queue
+                </button>
+                <button id="btn-clear-cache" onclick="clearOfflineCache()" class="danger" style="flex: 1; min-width: 150px;">
+                    🗑️ Clear Cache
+                </button>
+            </div>
+            <div id="sync-result" style="margin-top: 15px;"></div>
+        </div>
+
         <!-- Activity Log -->
         <div class="section">
             <h2 class="collapsible-header" onclick="toggleLog()">
@@ -1095,6 +1126,8 @@
 
     <!-- Load Solid Client Libraries -->
     <script src="dist/solid-client-bundle.js"></script>
+    <!-- Load Offline Storage Module -->
+    <script src="offline.js"></script>
     <script>
         // Import from the bundled library (don't import 'login' to avoid naming conflict)
         const { handleIncomingRedirect, getDefaultSession, fetch: solidFetch } = solidClientAuthentication;
@@ -1117,12 +1150,41 @@
 
         let session = null;
         let lastWrittenLocationUrl = null;
+        let isOnline = navigator.onLine;
+        let serviceWorkerRegistration = null;
 
         // Initialize
         async function init() {
             session = getDefaultSession();
 
             log('Initializing Solid authentication...', 'info');
+
+            // Initialize offline storage
+            try {
+                await offlineStorage.init();
+                log('Offline storage initialized', 'success');
+                await updateSyncStats();
+            } catch (error) {
+                log(`Offline storage initialization failed: ${error.message}`, 'error');
+            }
+
+            // Register Service Worker
+            if ('serviceWorker' in navigator) {
+                try {
+                    serviceWorkerRegistration = await navigator.serviceWorker.register('/sw.js');
+                    log('Service Worker registered successfully', 'success');
+
+                    // Listen for messages from Service Worker
+                    navigator.serviceWorker.addEventListener('message', handleServiceWorkerMessage);
+                } catch (error) {
+                    log(`Service Worker registration failed: ${error.message}`, 'warning');
+                }
+            }
+
+            // Set up online/offline event listeners
+            window.addEventListener('online', handleOnlineStatusChange);
+            window.addEventListener('offline', handleOnlineStatusChange);
+            updateOnlineStatus();
 
             // Handle OAuth redirect
             await handleIncomingRedirect();
@@ -1133,6 +1195,11 @@
             } else {
                 updateConnectionStatus('disconnected');
                 log('Ready to login', 'info');
+            }
+
+            // Auto-sync when coming online
+            if (isOnline) {
+                setTimeout(() => autoSync(), 2000);
             }
         }
 
@@ -1260,103 +1327,82 @@
             updateStatus('status-write', 'loading');
             log('Writing test location to Pod...', 'info');
 
+            const locationData = {
+                latitude: 37.7749,
+                longitude: -122.4194,
+                accuracy: 10.5,
+                deviceId: 'poc-test-device',
+                timestamp: Date.now()
+            };
+
             try {
-                const webId = session.info.webId;
+                // If online, try to write directly
+                if (isOnline) {
+                    try {
+                        const locationUrl = await writeLocationToPod(locationData);
+                        lastWrittenLocationUrl = locationUrl;
 
-                // Get storage location from profile
-                const profileDataset = await getSolidDataset(webId, { fetch: session.fetch });
-                const profile = getThing(profileDataset, webId);
-                const storage = getUrl(profile, 'http://www.w3.org/ns/pim/space#storage');
+                        // Cache the location data
+                        await offlineStorage.cacheLocation(locationUrl, locationData, true);
 
-                if (!storage) {
-                    throw new Error('No storage location found in WebID profile');
-                }
+                        updateStatus('status-write', 'active');
+                        document.getElementById('step-4').classList.add('completed');
+                        log(`✓ Location written to ${locationUrl}`, 'success');
 
-                log(`✓ Found storage: ${storage}`, 'success');
+                        const resultHtml = `
+                            <div class="alert success">
+                                <span class="alert-icon">✓</span>
+                                <div>
+                                    <strong>Location saved successfully!</strong><br>
+                                    <a href="${locationUrl}" target="_blank" style="color: inherit;">${locationUrl}</a>
+                                </div>
+                            </div>
+                        `;
+                        document.getElementById('write-result').innerHTML = resultHtml;
 
-                // Create container path
-                const containerUrl = `${storage}private/location-tracker/`;
-                const timestamp = Date.now();
-                const locationUrl = `${containerUrl}test-location-${timestamp}.ttl`;
-
-                // Ensure the container exists (create if it doesn't)
-                try {
-                    log('Ensuring /private/location-tracker/ container exists...', 'info');
-                    await createContainerAt(containerUrl, { fetch: session.fetch });
-                    log('✓ Container created', 'success');
-                } catch (containerError) {
-                    // Container might already exist (412 Precondition Failed), which is fine
-                    if (containerError.statusCode === 412 || containerError.status === 412) {
-                        log('✓ Container already exists', 'success');
-                    } else {
-                        log(`Container exists or created`, 'info');
+                        await updateSyncStats();
+                    } catch (writeError) {
+                        // If write fails while online, queue for later
+                        log(`Direct write failed, queueing for sync: ${writeError.message}`, 'warning');
+                        throw writeError; // Let outer catch handle queueing
                     }
+                } else {
+                    // Offline - queue the operation
+                    throw new Error('Offline');
                 }
-
-                // Create Turtle data (matches original format)
-                const timestampISO = new Date().toISOString();
-                const locationData = `@prefix schema: <http://schema.org/> .
-@prefix geo: <http://www.w3.org/2003/01/geo/wgs84_pos#> .
-@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
-@prefix dcterms: <http://purl.org/dc/terms/> .
-
-<#location> a schema:Place, geo:Point ;
-    geo:lat "37.7749"^^xsd:decimal ;
-    geo:long "-122.4194"^^xsd:decimal ;
-    schema:geo [
-        a schema:GeoCoordinates ;
-        schema:latitude 37.7749 ;
-        schema:longitude -122.4194 ;
-    ] ;
-    schema:accuracy "10.5"^^xsd:decimal ;
-    dcterms:created "${timestampISO}"^^xsd:dateTime ;
-    schema:identifier "poc-test-device" ;
-    schema:address [
-        a schema:PostalAddress ;
-        schema:addressLocality "San Francisco" ;
-        schema:addressRegion "CA" ;
-        schema:addressCountry "US" ;
-    ] ;
-    schema:name "Test Location from PoC" ;
-    schema:description "This is a test location written by the Solid authentication proof-of-concept application." .
-`;
-
-                // Write the file
-                await overwriteFile(
-                    locationUrl,
-                    new Blob([locationData], { type: 'text/turtle' }),
-                    {
-                        fetch: session.fetch,
-                        contentType: 'text/turtle'
-                    }
-                );
-
-                lastWrittenLocationUrl = locationUrl;
-
-                updateStatus('status-write', 'active');
-                document.getElementById('step-4').classList.add('completed');
-                log(`✓ Location written to ${locationUrl}`, 'success');
-
-                const resultHtml = `
-                    <div class="alert success">
-                        <span class="alert-icon">✓</span>
-                        <div>
-                            <strong>Location saved successfully!</strong><br>
-                            <a href="${locationUrl}" target="_blank" style="color: inherit;">${locationUrl}</a>
-                        </div>
-                    </div>
-                `;
-                document.getElementById('write-result').innerHTML = resultHtml;
 
             } catch (error) {
-                log(`Write error: ${error.message}`, 'error');
-                updateStatus('status-write', 'error');
-                document.getElementById('write-result').innerHTML = `
-                    <div class="alert error">
-                        <span class="alert-icon">✗</span>
-                        <div><strong>Error:</strong> ${error.message}</div>
-                    </div>
-                `;
+                // Queue the operation for later sync
+                try {
+                    await offlineStorage.queueOperation({
+                        type: 'writeLocation',
+                        data: locationData
+                    });
+
+                    log(`⚠ Offline - location queued for sync`, 'warning');
+                    updateStatus('status-write', 'loading');
+
+                    document.getElementById('write-result').innerHTML = `
+                        <div class="alert warning">
+                            <span class="alert-icon">⏳</span>
+                            <div>
+                                <strong>Queued for sync</strong><br>
+                                Location will be saved when you're back online
+                            </div>
+                        </div>
+                    `;
+
+                    await updateSyncStats();
+                } catch (queueError) {
+                    log(`Failed to queue operation: ${queueError.message}`, 'error');
+                    updateStatus('status-write', 'error');
+                    document.getElementById('write-result').innerHTML = `
+                        <div class="alert error">
+                            <span class="alert-icon">✗</span>
+                            <div><strong>Error:</strong> ${queueError.message}</div>
+                        </div>
+                    `;
+                }
             } finally {
                 setButtonLoading('btn-write', false);
             }
@@ -1950,6 +1996,259 @@
 
         // ========================================
         // END SETTINGS UI FUNCTIONS
+        // ========================================
+
+        // ========================================
+        // OFFLINE/SYNC FUNCTIONS
+        // ========================================
+
+        // Update online/offline status indicator
+        function updateOnlineStatus() {
+            isOnline = navigator.onLine;
+            const dot = document.getElementById('offline-dot');
+            const text = document.getElementById('offline-text');
+
+            if (isOnline) {
+                dot.className = 'connection-dot connected';
+                text.textContent = 'Online';
+                log('Connection restored - you are online', 'success');
+            } else {
+                dot.className = 'connection-dot error';
+                text.textContent = 'Offline';
+                log('Connection lost - working offline', 'warning');
+            }
+        }
+
+        // Handle online/offline status changes
+        async function handleOnlineStatusChange() {
+            updateOnlineStatus();
+
+            if (isOnline) {
+                // Auto-sync when coming back online
+                setTimeout(() => autoSync(), 1000);
+            }
+        }
+
+        // Handle messages from Service Worker
+        function handleServiceWorkerMessage(event) {
+            const { data } = event;
+
+            if (data.type === 'SYNC_TRIGGERED') {
+                log('Background sync triggered by Service Worker', 'info');
+                autoSync();
+            }
+        }
+
+        // Update sync statistics display
+        async function updateSyncStats() {
+            try {
+                const stats = await offlineStorage.getSyncStats();
+
+                document.getElementById('sync-stats-content').innerHTML = `
+                    <ul style="list-style: none; padding: 0; margin: 10px 0 0 0;">
+                        <li>📋 Pending Operations: <strong>${stats.pendingOperations}</strong></li>
+                        <li>❌ Failed Operations: <strong>${stats.failedOperations}</strong></li>
+                        <li>💾 Cached Locations: <strong>${stats.cachedLocations}</strong></li>
+                        <li>✅ Synced Locations: <strong>${stats.syncedLocations}</strong></li>
+                        <li>⏱️ Last Sync: <strong>${stats.lastSync}</strong></li>
+                    </ul>
+                `;
+
+                // Update status indicator
+                if (stats.failedOperations > 0) {
+                    updateStatus('status-sync', 'error');
+                } else if (stats.pendingOperations > 0) {
+                    updateStatus('status-sync', 'loading');
+                } else {
+                    updateStatus('status-sync', 'success');
+                }
+            } catch (error) {
+                console.error('Failed to update sync stats:', error);
+            }
+        }
+
+        // Manual sync trigger
+        window.manualSync = async function() {
+            log('Manual sync triggered...', 'info');
+            setButtonLoading('btn-sync', true);
+            document.getElementById('sync-result').innerHTML = '';
+
+            try {
+                if (!isOnline) {
+                    throw new Error('Cannot sync while offline');
+                }
+
+                if (!session || !session.info.isLoggedIn) {
+                    throw new Error('Must be logged in to sync');
+                }
+
+                const result = await offlineStorage.syncPendingOperations(executeQueuedOperation);
+
+                log(`✓ Sync complete - ${result.succeeded} succeeded, ${result.failed} failed`, 'success');
+                showAlert('sync-result', `Sync complete: ${result.succeeded} succeeded, ${result.failed} failed`, result.failed > 0 ? 'warning' : 'success');
+
+                await updateSyncStats();
+            } catch (error) {
+                log(`✗ Sync failed: ${error.message}`, 'error');
+                showAlert('sync-result', `Sync failed: ${error.message}`, 'error');
+            } finally {
+                setButtonLoading('btn-sync', false);
+            }
+        }
+
+        // Auto-sync (silent)
+        async function autoSync() {
+            try {
+                if (!isOnline || !session || !session.info.isLoggedIn) {
+                    return;
+                }
+
+                const stats = await offlineStorage.getSyncStats();
+                if (stats.pendingOperations === 0) {
+                    return;
+                }
+
+                log(`Auto-syncing ${stats.pendingOperations} pending operation(s)...`, 'info');
+
+                const result = await offlineStorage.syncPendingOperations(executeQueuedOperation);
+
+                if (result.succeeded > 0) {
+                    log(`✓ Auto-sync complete - ${result.succeeded} operations synced`, 'success');
+                }
+
+                await updateSyncStats();
+            } catch (error) {
+                console.error('Auto-sync failed:', error);
+            }
+        }
+
+        // Execute a queued operation
+        async function executeQueuedOperation(operation) {
+            switch (operation.type) {
+                case 'writeLocation':
+                    return await writeLocationToPod(operation.data);
+                default:
+                    throw new Error(`Unknown operation type: ${operation.type}`);
+            }
+        }
+
+        // Write location to Pod (extracted for reuse)
+        async function writeLocationToPod(locationData) {
+            const webId = session.info.webId;
+            const profileDataset = await getSolidDataset(webId, { fetch: session.fetch });
+            const profileThing = getThing(profileDataset, webId);
+            const storage = getUrl(profileThing, 'http://www.w3.org/ns/pim/space#storage');
+
+            if (!storage) {
+                throw new Error('No storage location found in profile');
+            }
+
+            const containerUrl = `${storage}private/location-tracker/`;
+
+            // Ensure container exists
+            try {
+                await createContainerAt(containerUrl, { fetch: session.fetch });
+            } catch (error) {
+                // Container might already exist
+            }
+
+            // Generate unique filename
+            const timestamp = locationData.timestamp || Date.now();
+            const locationFileName = `location-${timestamp}.ttl`;
+            const locationUrl = `${containerUrl}${locationFileName}`;
+
+            // Create Turtle data
+            const turtleData = `@prefix schema: <http://schema.org/> .
+@prefix geo: <http://www.w3.org/2003/01/geo/wgs84_pos#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+<#location> a schema:Place, geo:Point ;
+    geo:lat "${locationData.latitude}"^^xsd:decimal ;
+    geo:long "${locationData.longitude}"^^xsd:decimal ;
+    schema:accuracy "${locationData.accuracy}"^^xsd:decimal ;
+    dcterms:created "${new Date(timestamp).toISOString()}"^^xsd:dateTime ;
+    schema:identifier "${locationData.deviceId}" .
+`;
+
+            // Write file to Pod
+            await overwriteFile(
+                locationUrl,
+                new Blob([turtleData], { type: 'text/turtle' }),
+                { fetch: session.fetch, contentType: 'text/turtle' }
+            );
+
+            return locationUrl;
+        }
+
+        // View sync queue
+        window.viewSyncQueue = async function() {
+            log('Loading sync queue...', 'info');
+
+            try {
+                const pendingOps = await offlineStorage.getPendingOperations();
+
+                if (pendingOps.length === 0) {
+                    showAlert('sync-result', 'No pending operations in queue', 'info');
+                    return;
+                }
+
+                let queueHtml = '<div class="info-message"><ul style="list-style: none; padding: 0;">';
+
+                pendingOps.forEach((op, index) => {
+                    const date = new Date(op.timestamp).toLocaleString();
+                    const retryInfo = op.retryCount > 0 ? ` (${op.retryCount} retries)` : '';
+
+                    queueHtml += `
+                        <li style="margin-bottom: 10px; padding: 10px; background: #f5f5f5; border-radius: 5px;">
+                            <strong>#${index + 1}</strong> - ${op.type}${retryInfo}<br/>
+                            <small>Queued: ${date}</small>
+                            ${op.error ? `<br/><small style="color: #d32f2f;">Error: ${op.error}</small>` : ''}
+                        </li>
+                    `;
+                });
+
+                queueHtml += '</ul></div>';
+
+                document.getElementById('sync-result').innerHTML = queueHtml;
+                log(`Showing ${pendingOps.length} pending operation(s)`, 'info');
+            } catch (error) {
+                log(`✗ Failed to load queue: ${error.message}`, 'error');
+                showAlert('sync-result', `Failed to load queue: ${error.message}`, 'error');
+            }
+        }
+
+        // Clear offline cache
+        window.clearOfflineCache = async function() {
+            if (!confirm('⚠️ This will clear all offline cached data and pending operations. Continue?')) {
+                return;
+            }
+
+            log('Clearing offline cache...', 'info');
+            setButtonLoading('btn-clear-cache', true);
+
+            try {
+                await offlineStorage.clearAll();
+                log('✓ Offline cache cleared', 'success');
+                showAlert('sync-result', 'Offline cache cleared successfully', 'success');
+
+                // Clear Service Worker cache
+                if (serviceWorkerRegistration) {
+                    const sw = await navigator.serviceWorker.ready;
+                    sw.active.postMessage({ type: 'CLEAR_CACHE' });
+                }
+
+                await updateSyncStats();
+            } catch (error) {
+                log(`✗ Failed to clear cache: ${error.message}`, 'error');
+                showAlert('sync-result', `Failed to clear cache: ${error.message}`, 'error');
+            } finally {
+                setButtonLoading('btn-clear-cache', false);
+            }
+        }
+
+        // ========================================
+        // END OFFLINE/SYNC FUNCTIONS
         // ========================================
 
         // Initialize on load
