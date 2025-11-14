@@ -657,6 +657,157 @@
         .collapsible-content.collapsed {
             max-height: 0;
         }
+
+        /* Settings UI Styles */
+        .settings-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 25px;
+            flex-wrap: wrap;
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 10px;
+        }
+
+        .settings-tab {
+            background: transparent;
+            color: #666;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px 8px 0 0;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border-bottom: 3px solid transparent;
+        }
+
+        .settings-tab:hover {
+            background: #f5f5f5;
+            color: #333;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .settings-tab.active {
+            background: #f5f5f5;
+            color: #667eea;
+            border-bottom: 3px solid #667eea;
+        }
+
+        .settings-tab-content {
+            display: none;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .settings-tab-content.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .settings-group {
+            background: #f9f9f9;
+            border: 1px solid #e0e0e0;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .settings-group h3 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 16px;
+        }
+
+        .settings-group.danger-zone {
+            border-color: #ffebee;
+            background: #fff5f5;
+        }
+
+        .settings-group.danger-zone h3 {
+            color: #d32f2f;
+        }
+
+        .info-message {
+            background: white;
+            border: 1px solid #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+
+        .info-message p {
+            color: #666;
+            font-size: 14px;
+            line-height: 1.6;
+            margin: 0;
+        }
+
+        .info-message p + p {
+            margin-top: 10px;
+        }
+
+        .info-message code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            color: #d32f2f;
+        }
+
+        .info-message ul {
+            margin: 0;
+            padding-left: 20px;
+        }
+
+        .info-message li {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 5px;
+        }
+
+        .info-message strong {
+            color: #333;
+        }
+
+        /* Responsive Settings Tabs */
+        @media (max-width: 768px) {
+            .settings-tabs {
+                gap: 5px;
+            }
+
+            .settings-tab {
+                padding: 8px 12px;
+                font-size: 12px;
+                flex: 1;
+                min-width: 80px;
+                text-align: center;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .settings-tabs {
+                flex-direction: column;
+                gap: 5px;
+            }
+
+            .settings-tab {
+                width: 100%;
+                border-radius: 8px;
+                border-bottom: none;
+                border-left: 3px solid transparent;
+            }
+
+            .settings-tab.active {
+                border-bottom: none;
+                border-left: 3px solid #667eea;
+            }
+        }
     </style>
 </head>
 <body>
@@ -756,6 +907,179 @@
             </h2>
             <button id="btn-read" onclick="readLocation()" disabled>Read Location Data</button>
             <div id="read-result"></div>
+        </div>
+
+        <!-- Step 6: Settings & Preferences -->
+        <div class="section" id="section-settings">
+            <h2>
+                <span class="step-number" id="step-6">⚙️</span>
+                <span>Settings & Preferences</span>
+                <span class="status-indicator" id="status-settings"></span>
+            </h2>
+            <p style="color: #666; margin-bottom: 20px; font-size: 14px;">
+                Manage your Solid Pod connection, data, and privacy preferences
+            </p>
+
+            <!-- Settings Tabs -->
+            <div class="settings-tabs">
+                <button class="settings-tab active" onclick="switchSettingsTab('profile')">
+                    👤 Profile
+                </button>
+                <button class="settings-tab" onclick="switchSettingsTab('storage')">
+                    💾 Storage
+                </button>
+                <button class="settings-tab" onclick="switchSettingsTab('data')">
+                    📦 Data Management
+                </button>
+                <button class="settings-tab" onclick="switchSettingsTab('privacy')">
+                    🔒 Privacy
+                </button>
+                <button class="settings-tab" onclick="switchSettingsTab('session')">
+                    🔑 Session
+                </button>
+            </div>
+
+            <!-- Profile Tab -->
+            <div class="settings-tab-content active" id="settings-profile">
+                <div class="settings-group">
+                    <h3>WebID Profile Information</h3>
+                    <div id="settings-profile-info" class="info-message">
+                        <p>Please log in to view your profile information.</p>
+                    </div>
+                    <button id="btn-refresh-profile" onclick="refreshProfile()" disabled class="secondary">
+                        🔄 Refresh Profile
+                    </button>
+                </div>
+            </div>
+
+            <!-- Storage Tab -->
+            <div class="settings-tab-content" id="settings-storage">
+                <div class="settings-group">
+                    <h3>Pod Storage Location</h3>
+                    <div id="settings-storage-info" class="info-message">
+                        <p>Please log in to view your storage information.</p>
+                    </div>
+                    <button id="btn-view-pod" onclick="viewPodInBrowser()" disabled class="secondary">
+                        🌐 Open Pod in Browser
+                    </button>
+                </div>
+
+                <div class="settings-group">
+                    <h3>Storage Usage</h3>
+                    <div id="settings-storage-usage" class="info-message">
+                        <p>Storage usage information is not available via the Solid protocol.</p>
+                        <p style="margin-top: 10px; font-size: 13px;">
+                            Visit your Pod provider's dashboard to view storage details.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Data Management Tab -->
+            <div class="settings-tab-content" id="settings-data">
+                <div class="settings-group">
+                    <h3>Export Location Data</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Download all your location data from the Pod in JSON format.
+                    </p>
+                    <button id="btn-export-data" onclick="exportLocationData()" disabled class="secondary">
+                        📥 Export All Locations
+                    </button>
+                    <div id="export-result"></div>
+                </div>
+
+                <div class="settings-group">
+                    <h3>Import Location Data</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Upload location data to your Pod (JSON or Turtle format).
+                    </p>
+                    <input type="file" id="file-import" accept=".json,.ttl,.turtle" style="margin-bottom: 10px;" disabled>
+                    <button id="btn-import-data" onclick="importLocationData()" disabled class="secondary">
+                        📤 Import Locations
+                    </button>
+                    <div id="import-result"></div>
+                </div>
+
+                <div class="settings-group danger-zone">
+                    <h3>⚠️ Danger Zone</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Delete all location data from your Pod. This action cannot be undone.
+                    </p>
+                    <button id="btn-delete-all" onclick="confirmDeleteAll()" disabled class="danger">
+                        🗑️ Delete All Location Data
+                    </button>
+                    <div id="delete-result"></div>
+                </div>
+            </div>
+
+            <!-- Privacy Tab -->
+            <div class="settings-tab-content" id="settings-privacy">
+                <div class="settings-group">
+                    <h3>Access Control</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Manage who can access your location data.
+                    </p>
+                    <div id="settings-privacy-info" class="info-message">
+                        <p><strong>Current Access Level:</strong> Private</p>
+                        <p style="margin-top: 10px; font-size: 13px;">
+                            Your location data is stored in <code>/private/location-tracker/</code>
+                            and is only accessible to you by default.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="settings-group">
+                    <h3>Grant Access</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Allow specific people to view your location data (future feature).
+                    </p>
+                    <input type="text" id="input-grant-webid" placeholder="Enter WebID to grant access (e.g., https://example.solidcommunity.net/profile/card#me)" disabled>
+                    <button id="btn-grant-access" onclick="grantAccess()" disabled class="secondary">
+                        ➕ Grant Read Access
+                    </button>
+                    <div id="grant-result"></div>
+                    <div class="info-message" style="margin-top: 15px;">
+                        <p><strong>Note:</strong> Access control management is a planned feature.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Session Tab -->
+            <div class="settings-tab-content" id="settings-session">
+                <div class="settings-group">
+                    <h3>Active Session</h3>
+                    <div id="settings-session-info" class="info-message">
+                        <p>No active session.</p>
+                    </div>
+                </div>
+
+                <div class="settings-group">
+                    <h3>Session Management</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Manage your current authentication session.
+                    </p>
+                    <button id="btn-refresh-session" onclick="refreshSession()" disabled class="secondary">
+                        🔄 Refresh Session
+                    </button>
+                    <button id="btn-logout-settings" onclick="logout()" disabled class="danger" style="margin-left: 10px;">
+                        🚪 Logout
+                    </button>
+                </div>
+
+                <div class="settings-group">
+                    <h3>Connected Applications</h3>
+                    <div class="info-message">
+                        <p><strong>Currently Connected:</strong></p>
+                        <ul style="margin-top: 10px; padding-left: 20px;">
+                            <li>Location Tracker PoC</li>
+                        </ul>
+                        <p style="margin-top: 15px; font-size: 13px; color: #666;">
+                            To revoke access to this application, use your Pod provider's
+                            authorization management interface.
+                        </p>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Activity Log -->
@@ -880,6 +1204,9 @@
             // Enable write/read buttons
             document.getElementById('btn-write').disabled = false;
             document.getElementById('btn-read').disabled = false;
+
+            // Populate settings UI
+            await populateSettings();
         }
 
         // Read Profile
@@ -1163,6 +1490,467 @@
             content.classList.toggle('collapsed');
             header.classList.toggle('collapsed');
         }
+
+        // ========================================
+        // SETTINGS UI FUNCTIONS
+        // ========================================
+
+        // Switch between settings tabs
+        window.switchSettingsTab = function(tabName) {
+            // Remove active class from all tabs and contents
+            document.querySelectorAll('.settings-tab').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.settings-tab-content').forEach(content => content.classList.remove('active'));
+
+            // Add active class to selected tab and content
+            event.target.classList.add('active');
+            document.getElementById(`settings-${tabName}`).classList.add('active');
+
+            log(`Switched to ${tabName} settings tab`, 'info');
+        }
+
+        // Populate settings when user logs in
+        async function populateSettings() {
+            if (!session || !session.info.isLoggedIn) {
+                return;
+            }
+
+            log('Populating settings...', 'info');
+
+            // Enable all settings buttons
+            document.getElementById('btn-refresh-profile').disabled = false;
+            document.getElementById('btn-view-pod').disabled = false;
+            document.getElementById('btn-export-data').disabled = false;
+            document.getElementById('file-import').disabled = false;
+            document.getElementById('btn-import-data').disabled = false;
+            document.getElementById('btn-delete-all').disabled = false;
+            document.getElementById('btn-refresh-session').disabled = false;
+            document.getElementById('btn-logout-settings').disabled = false;
+
+            updateStatus('status-settings', 'active');
+
+            // Populate profile info
+            await updateProfileSettings();
+
+            // Populate storage info
+            await updateStorageSettings();
+
+            // Populate session info
+            updateSessionSettings();
+        }
+
+        // Update profile settings tab
+        async function updateProfileSettings() {
+            try {
+                const webId = session.info.webId;
+                const profileDataset = await solidClient.getSolidDataset(webId, { fetch: session.fetch });
+                const profileThing = solidClient.getThing(profileDataset, webId);
+
+                // Try multiple predicates for name
+                let name = solidClient.getStringNoLocale(profileThing, 'http://xmlns.com/foaf/0.1/name') ||
+                           solidClient.getStringNoLocale(profileThing, 'http://www.w3.org/2006/vcard/ns#fn') ||
+                           solidClient.getStringNoLocale(profileThing, 'http://schema.org/name');
+
+                // Fallback to username from WebID
+                if (!name) {
+                    const match = webId.match(/\/\/([^.]+)\./);
+                    name = match ? match[1] : 'Unknown';
+                }
+
+                const storage = solidClient.getUrl(profileThing, 'http://www.w3.org/ns/pim/space#storage');
+
+                document.getElementById('settings-profile-info').innerHTML = `
+                    <div class="profile-card" style="margin: 0;">
+                        <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&size=80&background=667eea&color=fff" alt="Avatar">
+                        <div class="profile-info">
+                            <h3 style="margin-bottom: 8px;">${name}</h3>
+                            <p style="margin-bottom: 5px;"><strong>WebID:</strong> ${webId}</p>
+                            <p><strong>Provider:</strong> ${new URL(webId).hostname}</p>
+                        </div>
+                    </div>
+                `;
+
+                log('✓ Profile settings updated', 'success');
+            } catch (error) {
+                log(`✗ Failed to update profile settings: ${error.message}`, 'error');
+                document.getElementById('settings-profile-info').innerHTML = `
+                    <div class="alert error">
+                        <span class="alert-icon">✗</span>
+                        <div>Failed to load profile: ${error.message}</div>
+                    </div>
+                `;
+            }
+        }
+
+        // Update storage settings tab
+        async function updateStorageSettings() {
+            try {
+                const webId = session.info.webId;
+                const profileDataset = await solidClient.getSolidDataset(webId, { fetch: session.fetch });
+                const profileThing = solidClient.getThing(profileDataset, webId);
+                const storage = solidClient.getUrl(profileThing, 'http://www.w3.org/ns/pim/space#storage');
+
+                if (storage) {
+                    const containerUrl = `${storage}private/location-tracker/`;
+                    document.getElementById('settings-storage-info').innerHTML = `
+                        <p><strong>Pod Storage Root:</strong></p>
+                        <p style="margin-top: 8px; word-break: break-all; font-family: 'Courier New', monospace; font-size: 13px; background: #f5f5f5; padding: 10px; border-radius: 5px;">
+                            ${storage}
+                        </p>
+                        <p style="margin-top: 15px;"><strong>Location Data Container:</strong></p>
+                        <p style="margin-top: 8px; word-break: break-all; font-family: 'Courier New', monospace; font-size: 13px; background: #f5f5f5; padding: 10px; border-radius: 5px;">
+                            ${containerUrl}
+                        </p>
+                    `;
+                } else {
+                    document.getElementById('settings-storage-info').innerHTML = `
+                        <div class="alert warning">
+                            <span class="alert-icon">⚠</span>
+                            <div>No storage location found in profile</div>
+                        </div>
+                    `;
+                }
+
+                log('✓ Storage settings updated', 'success');
+            } catch (error) {
+                log(`✗ Failed to update storage settings: ${error.message}`, 'error');
+                document.getElementById('settings-storage-info').innerHTML = `
+                    <div class="alert error">
+                        <span class="alert-icon">✗</span>
+                        <div>Failed to load storage info: ${error.message}</div>
+                    </div>
+                `;
+            }
+        }
+
+        // Update session settings tab
+        function updateSessionSettings() {
+            const webId = session.info.webId;
+            const sessionStart = session.info.sessionId ? 'Active' : 'Unknown';
+
+            document.getElementById('settings-session-info').innerHTML = `
+                <p><strong>Status:</strong> <span style="color: #4caf50;">● Connected</span></p>
+                <p style="margin-top: 10px;"><strong>WebID:</strong></p>
+                <p style="margin-top: 5px; word-break: break-all; font-family: 'Courier New', monospace; font-size: 13px; background: #f5f5f5; padding: 10px; border-radius: 5px;">
+                    ${webId}
+                </p>
+                <p style="margin-top: 15px;"><strong>Session ID:</strong> ${session.info.sessionId || 'N/A'}</p>
+                <p style="margin-top: 10px;"><strong>Client ID:</strong> ${session.info.clientAppId || 'Location Tracker PoC'}</p>
+            `;
+
+            log('✓ Session settings updated', 'success');
+        }
+
+        // Refresh profile
+        window.refreshProfile = async function() {
+            log('Refreshing profile...', 'info');
+            setButtonLoading('btn-refresh-profile', true);
+
+            try {
+                await updateProfileSettings();
+                showAlert('settings-profile', 'Profile refreshed successfully', 'success');
+            } catch (error) {
+                showAlert('settings-profile', `Failed to refresh profile: ${error.message}`, 'error');
+            } finally {
+                setButtonLoading('btn-refresh-profile', false);
+            }
+        }
+
+        // Open Pod in browser
+        window.viewPodInBrowser = async function() {
+            try {
+                const webId = session.info.webId;
+                const profileDataset = await solidClient.getSolidDataset(webId, { fetch: session.fetch });
+                const profileThing = solidClient.getThing(profileDataset, webId);
+                const storage = solidClient.getUrl(profileThing, 'http://www.w3.org/ns/pim/space#storage');
+
+                if (storage) {
+                    const containerUrl = `${storage}private/location-tracker/`;
+                    window.open(containerUrl, '_blank');
+                    log(`✓ Opening Pod in browser: ${containerUrl}`, 'success');
+                } else {
+                    log('✗ No storage location found', 'error');
+                }
+            } catch (error) {
+                log(`✗ Failed to open Pod: ${error.message}`, 'error');
+            }
+        }
+
+        // Export location data
+        window.exportLocationData = async function() {
+            log('Exporting location data...', 'info');
+            setButtonLoading('btn-export-data', true);
+            document.getElementById('export-result').innerHTML = '';
+
+            try {
+                const webId = session.info.webId;
+                const profileDataset = await solidClient.getSolidDataset(webId, { fetch: session.fetch });
+                const profileThing = solidClient.getThing(profileDataset, webId);
+                const storage = solidClient.getUrl(profileThing, 'http://www.w3.org/ns/pim/space#storage');
+
+                if (!storage) {
+                    throw new Error('No storage location found in profile');
+                }
+
+                const containerUrl = `${storage}private/location-tracker/`;
+
+                // Try to get container contents
+                let dataset;
+                try {
+                    dataset = await solidClient.getSolidDataset(containerUrl, { fetch: session.fetch });
+                } catch (error) {
+                    // Container might not exist yet
+                    log('✗ No location data found in Pod', 'warning');
+                    showAlert('export-result', 'No location data found. Write a location first!', 'warning');
+                    return;
+                }
+
+                // Get all contained resources
+                const resources = solidClient.getContainedResourceUrlAll(dataset);
+                const locations = [];
+
+                for (const resourceUrl of resources) {
+                    if (resourceUrl.endsWith('.ttl')) {
+                        try {
+                            const locationDataset = await solidClient.getSolidDataset(resourceUrl, { fetch: session.fetch });
+                            const locationThing = solidClient.getThing(locationDataset, `${resourceUrl}#location`);
+
+                            if (locationThing) {
+                                const latitude = solidClient.getDecimal(locationThing, 'http://www.w3.org/2003/01/geo/wgs84_pos#lat');
+                                const longitude = solidClient.getDecimal(locationThing, 'http://www.w3.org/2003/01/geo/wgs84_pos#long');
+                                const accuracy = solidClient.getDecimal(locationThing, 'http://schema.org/accuracy');
+                                const created = solidClient.getDatetime(locationThing, 'http://purl.org/dc/terms/created');
+                                const name = solidClient.getStringNoLocale(locationThing, 'http://schema.org/name');
+                                const description = solidClient.getStringNoLocale(locationThing, 'http://schema.org/description');
+
+                                locations.push({
+                                    url: resourceUrl,
+                                    name: name,
+                                    description: description,
+                                    latitude: latitude,
+                                    longitude: longitude,
+                                    accuracy: accuracy,
+                                    timestamp: created
+                                });
+                            }
+                        } catch (error) {
+                            log(`⚠ Skipped ${resourceUrl}: ${error.message}`, 'warning');
+                        }
+                    }
+                }
+
+                if (locations.length === 0) {
+                    log('✗ No location data found', 'warning');
+                    showAlert('export-result', 'No location data found in your Pod', 'warning');
+                    return;
+                }
+
+                // Create JSON export
+                const exportData = {
+                    exported: new Date().toISOString(),
+                    webId: webId,
+                    count: locations.length,
+                    locations: locations
+                };
+
+                // Download as JSON file
+                const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `location-data-export-${Date.now()}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                log(`✓ Exported ${locations.length} location(s)`, 'success');
+                showAlert('export-result', `Successfully exported ${locations.length} location(s)`, 'success');
+
+            } catch (error) {
+                log(`✗ Export failed: ${error.message}`, 'error');
+                showAlert('export-result', `Export failed: ${error.message}`, 'error');
+            } finally {
+                setButtonLoading('btn-export-data', false);
+            }
+        }
+
+        // Import location data
+        window.importLocationData = async function() {
+            const fileInput = document.getElementById('file-import');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                showAlert('import-result', 'Please select a file to import', 'warning');
+                return;
+            }
+
+            log(`Importing ${file.name}...`, 'info');
+            setButtonLoading('btn-import-data', true);
+            document.getElementById('import-result').innerHTML = '';
+
+            try {
+                const webId = session.info.webId;
+                const profileDataset = await solidClient.getSolidDataset(webId, { fetch: session.fetch });
+                const profileThing = solidClient.getThing(profileDataset, webId);
+                const storage = solidClient.getUrl(profileThing, 'http://www.w3.org/ns/pim/space#storage');
+
+                if (!storage) {
+                    throw new Error('No storage location found in profile');
+                }
+
+                const containerUrl = `${storage}private/location-tracker/`;
+
+                // Ensure container exists
+                try {
+                    await solidClient.createContainerAt(containerUrl, { fetch: session.fetch });
+                } catch (error) {
+                    // Container might already exist
+                }
+
+                // Read file
+                const text = await file.text();
+                let data;
+
+                if (file.name.endsWith('.json')) {
+                    data = JSON.parse(text);
+                    if (!data.locations || !Array.isArray(data.locations)) {
+                        throw new Error('Invalid JSON format: missing locations array');
+                    }
+
+                    // Import each location
+                    let imported = 0;
+                    for (const location of data.locations) {
+                        const timestamp = location.timestamp || new Date().toISOString();
+                        const locationFileName = `imported-location-${Date.now()}-${imported}.ttl`;
+                        const locationUrl = `${containerUrl}${locationFileName}`;
+
+                        const locationData = `@prefix schema: <http://schema.org/> .
+@prefix geo: <http://www.w3.org/2003/01/geo/wgs84_pos#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+<#location> a schema:Place, geo:Point ;
+    geo:lat "${location.latitude}"^^xsd:decimal ;
+    geo:long "${location.longitude}"^^xsd:decimal ;
+    schema:accuracy "${location.accuracy || 0}"^^xsd:decimal ;
+    dcterms:created "${timestamp}"^^xsd:dateTime ;
+    schema:name "${location.name || 'Imported Location'}" ;
+    schema:description "${location.description || 'Imported from file'}" .
+`;
+
+                        await solidClient.overwriteFile(
+                            locationUrl,
+                            new Blob([locationData], { type: 'text/turtle' }),
+                            { fetch: session.fetch, contentType: 'text/turtle' }
+                        );
+
+                        imported++;
+                    }
+
+                    log(`✓ Imported ${imported} location(s)`, 'success');
+                    showAlert('import-result', `Successfully imported ${imported} location(s)`, 'success');
+
+                } else {
+                    throw new Error('Unsupported file format. Please use JSON.');
+                }
+
+            } catch (error) {
+                log(`✗ Import failed: ${error.message}`, 'error');
+                showAlert('import-result', `Import failed: ${error.message}`, 'error');
+            } finally {
+                setButtonLoading('btn-import-data', false);
+                fileInput.value = '';
+            }
+        }
+
+        // Confirm delete all
+        window.confirmDeleteAll = function() {
+            if (confirm('⚠️ Are you sure you want to delete ALL location data from your Pod? This action cannot be undone!')) {
+                deleteAllLocationData();
+            }
+        }
+
+        // Delete all location data
+        async function deleteAllLocationData() {
+            log('Deleting all location data...', 'info');
+            setButtonLoading('btn-delete-all', true);
+            document.getElementById('delete-result').innerHTML = '';
+
+            try {
+                const webId = session.info.webId;
+                const profileDataset = await solidClient.getSolidDataset(webId, { fetch: session.fetch });
+                const profileThing = solidClient.getThing(profileDataset, webId);
+                const storage = solidClient.getUrl(profileThing, 'http://www.w3.org/ns/pim/space#storage');
+
+                if (!storage) {
+                    throw new Error('No storage location found in profile');
+                }
+
+                const containerUrl = `${storage}private/location-tracker/`;
+
+                // Try to get container contents
+                let dataset;
+                try {
+                    dataset = await solidClient.getSolidDataset(containerUrl, { fetch: session.fetch });
+                } catch (error) {
+                    log('✗ No location data found', 'warning');
+                    showAlert('delete-result', 'No location data found to delete', 'warning');
+                    return;
+                }
+
+                // Get all contained resources
+                const resources = solidClient.getContainedResourceUrlAll(dataset);
+                let deleted = 0;
+
+                for (const resourceUrl of resources) {
+                    if (resourceUrl.endsWith('.ttl')) {
+                        try {
+                            await solidClient.deleteFile(resourceUrl, { fetch: session.fetch });
+                            deleted++;
+                            log(`✓ Deleted ${resourceUrl}`, 'success');
+                        } catch (error) {
+                            log(`⚠ Failed to delete ${resourceUrl}: ${error.message}`, 'warning');
+                        }
+                    }
+                }
+
+                log(`✓ Deleted ${deleted} location file(s)`, 'success');
+                showAlert('delete-result', `Successfully deleted ${deleted} location file(s)`, 'success');
+
+            } catch (error) {
+                log(`✗ Delete failed: ${error.message}`, 'error');
+                showAlert('delete-result', `Delete failed: ${error.message}`, 'error');
+            } finally {
+                setButtonLoading('btn-delete-all', false);
+            }
+        }
+
+        // Grant access (placeholder)
+        window.grantAccess = function() {
+            showAlert('grant-result', 'Access control management is a planned feature', 'info');
+            log('Access control management is not yet implemented', 'warning');
+        }
+
+        // Refresh session
+        window.refreshSession = async function() {
+            log('Refreshing session...', 'info');
+            setButtonLoading('btn-refresh-session', true);
+
+            try {
+                // Session refresh is handled automatically by the library
+                // Just update the UI with current info
+                updateSessionSettings();
+                log('✓ Session information refreshed', 'success');
+            } catch (error) {
+                log(`✗ Failed to refresh session: ${error.message}`, 'error');
+            } finally {
+                setButtonLoading('btn-refresh-session', false);
+            }
+        }
+
+        // ========================================
+        // END SETTINGS UI FUNCTIONS
+        // ========================================
 
         // Initialize on load
         init();
