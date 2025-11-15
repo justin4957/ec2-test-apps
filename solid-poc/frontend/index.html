@@ -2803,6 +2803,7 @@
                 }
 
                 let allLocations = [];
+                let accessErrors = [];
 
                 // Fetch locations from each friend's Pod
                 for (const friendWebId of friends) {
@@ -2810,17 +2811,21 @@
                         const profile = await fetchFriendProfile(friendWebId);
 
                         if (!profile.storage) {
-                            console.warn(`No storage found for ${friendWebId}`);
+                            console.warn(`[SocialFeed] No storage found for ${friendWebId}`);
+                            accessErrors.push(`${friendWebId}: No storage location found in profile`);
                             continue;
                         }
 
                         const locationContainerUrl = `${profile.storage}private/location-tracker/`;
+                        console.log(`[SocialFeed] Attempting to fetch locations from ${locationContainerUrl}`);
 
                         // Try to fetch friend's locations
                         try {
                             const locationDataset = await solidClient.getSolidDataset(locationContainerUrl, { fetch: session.fetch });
                             const resources = solidClient.getContainedResourceUrlAll(locationDataset);
+                            console.log(`[SocialFeed] Found ${resources.length} resources in ${friendWebId}'s location container`);
 
+                            let locationCount = 0;
                             for (const resourceUrl of resources) {
                                 if (resourceUrl.endsWith('.ttl')) {
                                     try {
@@ -2842,19 +2847,30 @@
                                                 name: name || 'Location',
                                                 url: resourceUrl
                                             });
+                                            locationCount++;
                                         }
                                     } catch (locationError) {
                                         // Skip locations we can't access
-                                        console.debug(`Cannot access ${resourceUrl}:`, locationError.message);
+                                        console.log(`[SocialFeed] Cannot access ${resourceUrl}:`, locationError.message);
                                     }
                                 }
                             }
+                            console.log(`[SocialFeed] Successfully loaded ${locationCount} locations from ${friendWebId}`);
                         } catch (containerError) {
                             // Friend might not have location-tracker container or it's not shared
-                            console.debug(`Cannot access locations for ${friendWebId}:`, containerError.message);
+                            console.log(`[SocialFeed] Cannot access location container for ${friendWebId}:`, containerError.message);
+
+                            if (containerError.message.includes('401') || containerError.message.includes('403')) {
+                                accessErrors.push(`${profile.name || friendWebId}: Access denied. They need to grant you read access to their location container.`);
+                            } else if (containerError.message.includes('404')) {
+                                accessErrors.push(`${profile.name || friendWebId}: No location data found (container doesn't exist).`);
+                            } else {
+                                accessErrors.push(`${profile.name || friendWebId}: ${containerError.message}`);
+                            }
                         }
                     } catch (profileError) {
-                        console.warn(`Failed to fetch locations for ${friendWebId}:`, profileError);
+                        console.warn(`[SocialFeed] Failed to fetch locations for ${friendWebId}:`, profileError);
+                        accessErrors.push(`${friendWebId}: Failed to fetch profile`);
                     }
                 }
 
@@ -2862,11 +2878,27 @@
                 allLocations.sort((a, b) => b.created - a.created);
 
                 if (allLocations.length === 0) {
+                    let errorDetails = '';
+                    if (accessErrors.length > 0) {
+                        errorDetails = `
+                            <div style="margin-top: 15px; padding: 12px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
+                                <p style="font-weight: 600; margin-bottom: 8px; color: #856404;">Access Issues:</p>
+                                <ul style="margin: 0; padding-left: 20px; color: #856404; font-size: 13px;">
+                                    ${accessErrors.map(err => `<li style="margin-bottom: 4px;">${err}</li>`).join('')}
+                                </ul>
+                                <p style="margin-top: 10px; font-size: 13px; color: #856404;">
+                                    <strong>How to fix:</strong> Your friends need to go to their Privacy tab and grant you (${session.info.webId}) read access to their location container.
+                                </p>
+                            </div>
+                        `;
+                    }
+
                     document.getElementById('social-feed').innerHTML = `
                         <p style="color: #666;">
                             No shared locations found. Your friends may not have shared their location data yet,
                             or you may need them to grant you read access to their location container.
                         </p>
+                        ${errorDetails}
                     `;
                 } else {
                     let feedHtml = '<div style="max-height: 400px; overflow-y: auto;">';
