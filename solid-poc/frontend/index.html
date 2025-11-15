@@ -2145,8 +2145,15 @@
                 throw new Error('Could not find profile thing in WebID document or linked profile');
             }
 
-            const storage = solidClient.getUrl(actualProfileThing, 'http://www.w3.org/ns/pim/space#storage');
-            console.log('[getLocationContainerUrl] Storage URL:', storage);
+            // Try to get storage URL from the profile document thing
+            let storage = solidClient.getUrl(actualProfileThing, 'http://www.w3.org/ns/pim/space#storage');
+            console.log('[getLocationContainerUrl] Storage URL from profile doc thing:', storage);
+
+            // If not found in profile doc, try the original WebID thing
+            if (!storage && profileThing) {
+                storage = solidClient.getUrl(profileThing, 'http://www.w3.org/ns/pim/space#storage');
+                console.log('[getLocationContainerUrl] Storage URL from WebID thing:', storage);
+            }
 
             if (!storage) {
                 throw new Error('No storage location found in profile');
@@ -2554,8 +2561,15 @@
                     throw new Error('Could not find profile thing in WebID document or linked profile');
                 }
 
-                const storage = solidClient.getUrl(actualProfileThing, 'http://www.w3.org/ns/pim/space#storage');
-                console.log('[getFriendsListUrl] Storage URL:', storage);
+                // Try to get storage URL from the profile document thing
+                let storage = solidClient.getUrl(actualProfileThing, 'http://www.w3.org/ns/pim/space#storage');
+                console.log('[getFriendsListUrl] Storage URL from profile doc thing:', storage);
+
+                // If not found in profile doc, try the original WebID thing
+                if (!storage && profileThing) {
+                    storage = solidClient.getUrl(profileThing, 'http://www.w3.org/ns/pim/space#storage');
+                    console.log('[getFriendsListUrl] Storage URL from WebID thing:', storage);
+                }
 
                 if (!storage) {
                     throw new Error('No storage location found in profile');
