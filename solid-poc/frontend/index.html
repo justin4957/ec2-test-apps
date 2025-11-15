@@ -940,6 +940,9 @@
                 <button class="settings-tab" onclick="switchSettingsTab('privacy')">
                     🔒 Privacy
                 </button>
+                <button class="settings-tab" onclick="switchSettingsTab('social')">
+                    👥 Social
+                </button>
                 <button class="settings-tab" onclick="switchSettingsTab('session')">
                     🔑 Session
                 </button>
@@ -1100,6 +1103,56 @@
                         🔗 Generate Share Link
                     </button>
                     <div id="share-link-result"></div>
+                </div>
+            </div>
+
+            <!-- Social Tab -->
+            <div class="settings-tab-content" id="settings-social">
+                <div class="settings-group">
+                    <h3>👥 Friends List</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Manage your friends and social connections via FOAF (Friend of a Friend).
+                    </p>
+                    <div id="friends-list" class="info-message">
+                        <p>Loading friends...</p>
+                    </div>
+                </div>
+
+                <div class="settings-group">
+                    <h3>➕ Add Friend</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Add a friend by their WebID to see their shared location data.
+                    </p>
+                    <input type="text" id="input-friend-webid" placeholder="Enter WebID (e.g., https://friend.solidcommunity.net/profile/card#me)">
+                    <button id="btn-add-friend" onclick="addFriend()" class="secondary">
+                        ➕ Add Friend
+                    </button>
+                    <div id="add-friend-result"></div>
+                </div>
+
+                <div class="settings-group">
+                    <h3>📍 Social Feed</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        View location data shared by your friends.
+                    </p>
+                    <button id="btn-refresh-feed" onclick="refreshSocialFeed()" class="secondary">
+                        🔄 Refresh Feed
+                    </button>
+                    <div id="social-feed" class="info-message" style="margin-top: 15px;">
+                        <p>No activities yet. Add friends to see their shared locations!</p>
+                    </div>
+                </div>
+
+                <div class="settings-group">
+                    <h3>🔍 Discover Friend</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Look up a friend's profile information by WebID.
+                    </p>
+                    <input type="text" id="input-discover-webid" placeholder="Enter WebID to discover">
+                    <button id="btn-discover-friend" onclick="discoverFriend()" class="secondary">
+                        🔍 Discover Profile
+                    </button>
+                    <div id="discover-result"></div>
                 </div>
             </div>
 
@@ -1639,6 +1692,9 @@
 
             // Populate access control info
             await refreshAccessInfo();
+
+            // Initialize social features
+            await initializeSocialFeatures();
         }
 
         // Update profile settings tab
@@ -2035,9 +2091,69 @@
         // Get location-tracker container URL
         async function getLocationContainerUrl() {
             const webId = session.info.webId;
-            const profileDataset = await solidClient.getSolidDataset(webId, { fetch: session.fetch });
-            const profileThing = solidClient.getThing(profileDataset, webId);
-            const storage = solidClient.getUrl(profileThing, 'http://www.w3.org/ns/pim/space#storage');
+            console.log('[getLocationContainerUrl] Fetching own WebID:', webId);
+
+            const webIdDataset = await solidClient.getSolidDataset(webId, { fetch: session.fetch });
+            console.log('[getLocationContainerUrl] Successfully fetched own WebID dataset');
+
+            let profileThing = solidClient.getThing(webIdDataset, webId);
+            console.log('[getLocationContainerUrl] WebID thing:', profileThing);
+
+            // Check if this WebID points to a separate profile document
+            let profileDocUrl = null;
+            if (profileThing) {
+                profileDocUrl = solidClient.getUrl(profileThing, 'http://www.w3.org/2000/01/rdf-schema#seeAlso') ||
+                               solidClient.getUrl(profileThing, 'http://xmlns.com/foaf/0.1/isPrimaryTopicOf');
+                console.log('[getLocationContainerUrl] Profile document URL from WebID:', profileDocUrl);
+            }
+
+            // If not found at exact WebID, try to get all things
+            if (!profileThing) {
+                const allThings = solidClient.getThingAll(webIdDataset);
+                console.log('[getLocationContainerUrl] All things in WebID dataset:', allThings.length);
+                if (allThings.length > 0) {
+                    profileThing = allThings[0];
+                    profileDocUrl = profileDocUrl ||
+                                   solidClient.getUrl(profileThing, 'http://www.w3.org/2000/01/rdf-schema#seeAlso') ||
+                                   solidClient.getUrl(profileThing, 'http://xmlns.com/foaf/0.1/isPrimaryTopicOf');
+                }
+            }
+
+            // If we found a separate profile document, fetch it
+            let actualProfileThing = profileThing;
+            if (profileDocUrl && profileDocUrl !== webId) {
+                console.log('[getLocationContainerUrl] Fetching separate profile document:', profileDocUrl);
+                try {
+                    const profileDataset = await solidClient.getSolidDataset(profileDocUrl, { fetch: session.fetch });
+                    console.log('[getLocationContainerUrl] Profile document fetched successfully');
+
+                    actualProfileThing = solidClient.getThing(profileDataset, webId);
+
+                    if (!actualProfileThing) {
+                        const profileThings = solidClient.getThingAll(profileDataset);
+                        console.log('[getLocationContainerUrl] All things in profile document:', profileThings.length);
+                        if (profileThings.length > 0) {
+                            actualProfileThing = profileThings[0];
+                        }
+                    }
+                } catch (profileError) {
+                    console.warn('[getLocationContainerUrl] Failed to fetch profile document, using WebID thing:', profileError);
+                }
+            }
+
+            if (!actualProfileThing) {
+                throw new Error('Could not find profile thing in WebID document or linked profile');
+            }
+
+            // Try to get storage URL from the profile document thing
+            let storage = solidClient.getUrl(actualProfileThing, 'http://www.w3.org/ns/pim/space#storage');
+            console.log('[getLocationContainerUrl] Storage URL from profile doc thing:', storage);
+
+            // If not found in profile doc, try the original WebID thing
+            if (!storage && profileThing) {
+                storage = solidClient.getUrl(profileThing, 'http://www.w3.org/ns/pim/space#storage');
+                console.log('[getLocationContainerUrl] Storage URL from WebID thing:', storage);
+            }
 
             if (!storage) {
                 throw new Error('No storage location found in profile');
@@ -2230,15 +2346,40 @@
             try {
                 const containerUrl = await getLocationContainerUrl();
 
-                const newAccess = await solidClient.universalAccess.setAgentAccess(
+                // Grant access to the container
+                const containerAccess = await solidClient.universalAccess.setAgentAccess(
                     containerUrl,
                     targetWebId,
                     access,
                     { fetch: session.fetch }
                 );
 
-                if (newAccess === null) {
-                    throw new Error('Failed to grant access');
+                if (containerAccess === null) {
+                    throw new Error('Failed to grant access to container');
+                }
+
+                log(`✓ Container access granted, now granting access to locations file...`, 'info');
+
+                // Also grant access to the locations.ttl file if it exists
+                const locationsFileUrl = `${containerUrl}locations.ttl`;
+                try {
+                    const fileAccess = await solidClient.universalAccess.setAgentAccess(
+                        locationsFileUrl,
+                        targetWebId,
+                        access,
+                        { fetch: session.fetch }
+                    );
+
+                    if (fileAccess !== null) {
+                        log(`✓ Access granted to locations.ttl file`, 'success');
+                    }
+                } catch (fileError) {
+                    // File might not exist yet, which is fine
+                    if (fileError.message.includes('404')) {
+                        log('⚠ locations.ttl file does not exist yet (will be created on first location save)', 'info');
+                    } else {
+                        console.warn('Failed to grant access to locations.ttl:', fileError);
+                    }
                 }
 
                 log(`✓ Access granted to ${targetWebId}`, 'success');
@@ -2352,6 +2493,637 @@
 
         // ========================================
         // END PERMISSIONS & ACCESS CONTROL
+        // ========================================
+
+        // ========================================
+        // SOCIAL FEATURES (FOAF & FRIENDS)
+        // ========================================
+
+        // Get friends list container URL
+        async function getFriendsListUrl() {
+            const webId = session.info.webId;
+            console.log('[getFriendsListUrl] Fetching own WebID:', webId);
+
+            try {
+                const webIdDataset = await solidClient.getSolidDataset(webId, { fetch: session.fetch });
+                console.log('[getFriendsListUrl] Successfully fetched own WebID dataset');
+
+                let profileThing = solidClient.getThing(webIdDataset, webId);
+                console.log('[getFriendsListUrl] WebID thing:', profileThing);
+
+                // Check if this WebID points to a separate profile document
+                let profileDocUrl = null;
+                if (profileThing) {
+                    profileDocUrl = solidClient.getUrl(profileThing, 'http://www.w3.org/2000/01/rdf-schema#seeAlso') ||
+                                   solidClient.getUrl(profileThing, 'http://xmlns.com/foaf/0.1/isPrimaryTopicOf');
+                    console.log('[getFriendsListUrl] Profile document URL from WebID:', profileDocUrl);
+                }
+
+                // If not found at exact WebID, try to get all things
+                if (!profileThing) {
+                    const allThings = solidClient.getThingAll(webIdDataset);
+                    console.log('[getFriendsListUrl] All things in WebID dataset:', allThings.length);
+                    if (allThings.length > 0) {
+                        profileThing = allThings[0];
+                        profileDocUrl = profileDocUrl ||
+                                       solidClient.getUrl(profileThing, 'http://www.w3.org/2000/01/rdf-schema#seeAlso') ||
+                                       solidClient.getUrl(profileThing, 'http://xmlns.com/foaf/0.1/isPrimaryTopicOf');
+                    }
+                }
+
+                // If we found a separate profile document, fetch it
+                let actualProfileThing = profileThing;
+                if (profileDocUrl && profileDocUrl !== webId) {
+                    console.log('[getFriendsListUrl] Fetching separate profile document:', profileDocUrl);
+                    try {
+                        const profileDataset = await solidClient.getSolidDataset(profileDocUrl, { fetch: session.fetch });
+                        console.log('[getFriendsListUrl] Profile document fetched successfully');
+
+                        actualProfileThing = solidClient.getThing(profileDataset, webId);
+
+                        if (!actualProfileThing) {
+                            const profileThings = solidClient.getThingAll(profileDataset);
+                            console.log('[getFriendsListUrl] All things in profile document:', profileThings.length);
+                            if (profileThings.length > 0) {
+                                actualProfileThing = profileThings[0];
+                            }
+                        }
+                    } catch (profileError) {
+                        console.warn('[getFriendsListUrl] Failed to fetch profile document, using WebID thing:', profileError);
+                    }
+                }
+
+                if (!actualProfileThing) {
+                    throw new Error('Could not find profile thing in WebID document or linked profile');
+                }
+
+                // Try to get storage URL from the profile document thing
+                let storage = solidClient.getUrl(actualProfileThing, 'http://www.w3.org/ns/pim/space#storage');
+                console.log('[getFriendsListUrl] Storage URL from profile doc thing:', storage);
+
+                // If not found in profile doc, try the original WebID thing
+                if (!storage && profileThing) {
+                    storage = solidClient.getUrl(profileThing, 'http://www.w3.org/ns/pim/space#storage');
+                    console.log('[getFriendsListUrl] Storage URL from WebID thing:', storage);
+                }
+
+                if (!storage) {
+                    throw new Error('No storage location found in profile');
+                }
+
+                return `${storage}private/friends.ttl`;
+            } catch (error) {
+                console.error('[getFriendsListUrl] Error:', error);
+                throw error;
+            }
+        }
+
+        // Load friends list from Pod
+        async function loadFriendsList() {
+            try {
+                const friendsUrl = await getFriendsListUrl();
+
+                let friendsDataset;
+                try {
+                    friendsDataset = await solidClient.getSolidDataset(friendsUrl, { fetch: session.fetch });
+                } catch (error) {
+                    // If friends list doesn't exist, return empty array
+                    if (error.message.includes('404') || error.message.includes('Not Found')) {
+                        console.log('[Social] No friends list found - will create on first add');
+                        return [];
+                    }
+                    throw error;
+                }
+
+                // Get the main thing (user's profile in friends file)
+                const userThing = solidClient.getThing(friendsDataset, `${friendsUrl}#me`);
+                if (!userThing) {
+                    return [];
+                }
+
+                // Get all foaf:knows relationships
+                const friendWebIds = solidClient.getUrlAll(userThing, 'http://xmlns.com/foaf/0.1/knows');
+
+                return friendWebIds;
+            } catch (error) {
+                console.error('[Social] Failed to load friends list:', error);
+                throw error;
+            }
+        }
+
+        // Display friends list in UI
+        async function displayFriendsList() {
+            const friendsDiv = document.getElementById('friends-list');
+
+            try {
+                const friends = await loadFriendsList();
+
+                if (friends.length === 0) {
+                    friendsDiv.innerHTML = '<p style="color: #666;">No friends added yet. Add friends to see their shared locations!</p>';
+                    return;
+                }
+
+                // Fetch profile info for each friend
+                let html = '<ul style="list-style: none; padding: 0; margin: 0;">';
+
+                for (const friendWebId of friends) {
+                    let friendName = 'Loading...';
+
+                    try {
+                        const profile = await fetchFriendProfile(friendWebId);
+                        friendName = profile.name || friendWebId.split('/').pop();
+                    } catch (error) {
+                        friendName = friendWebId.split('/').pop();
+                        console.warn(`Failed to fetch profile for ${friendWebId}:`, error);
+                    }
+
+                    html += `
+                        <li style="padding: 12px; margin-bottom: 10px; background: #f9f9f9; border-radius: 8px; border-left: 4px solid #667eea; display: flex; justify-content: space-between; align-items: center;">
+                            <div style="flex: 1; min-width: 0;">
+                                <div style="font-weight: 600; color: #333; margin-bottom: 5px;">
+                                    ${friendName}
+                                </div>
+                                <div style="font-size: 12px; color: #666; word-break: break-all;">
+                                    ${friendWebId}
+                                </div>
+                            </div>
+                            <button onclick="removeFriend('${friendWebId}')" class="secondary" style="margin-left: 10px; padding: 5px 10px; font-size: 12px;">
+                                ❌ Remove
+                            </button>
+                        </li>
+                    `;
+                }
+
+                html += '</ul>';
+                friendsDiv.innerHTML = html;
+
+            } catch (error) {
+                friendsDiv.innerHTML = `<p style="color: #f44336;">Failed to load friends: ${error.message}</p>`;
+            }
+        }
+
+        // Fetch friend's profile information
+        async function fetchFriendProfile(webId) {
+            try {
+                console.log('[fetchFriendProfile] Fetching profile:', webId);
+
+                // Try unauthenticated fetch first (WebIDs should be publicly readable)
+                let webIdDataset;
+                try {
+                    console.log('[fetchFriendProfile] Attempting unauthenticated fetch...');
+                    webIdDataset = await solidClient.getSolidDataset(webId);
+                    console.log('[fetchFriendProfile] Unauthenticated fetch successful');
+                } catch (unauthError) {
+                    console.log('[fetchFriendProfile] Unauthenticated fetch failed, trying with authentication:', unauthError.message);
+                    // Fall back to authenticated fetch
+                    webIdDataset = await solidClient.getSolidDataset(webId, { fetch: session.fetch });
+                    console.log('[fetchFriendProfile] Authenticated fetch successful');
+                }
+
+                console.log('[fetchFriendProfile] WebID dataset fetched successfully');
+
+                // Get the thing at the WebID
+                let profileThing = solidClient.getThing(webIdDataset, webId);
+                console.log('[fetchFriendProfile] WebID thing:', profileThing);
+
+                // Check if this WebID points to a separate profile document
+                let profileDocUrl = null;
+                if (profileThing) {
+                    // Look for rdfs:seeAlso or foaf:isPrimaryTopicOf which often point to the profile document
+                    profileDocUrl = solidClient.getUrl(profileThing, 'http://www.w3.org/2000/01/rdf-schema#seeAlso') ||
+                                   solidClient.getUrl(profileThing, 'http://xmlns.com/foaf/0.1/isPrimaryTopicOf');
+                    console.log('[fetchFriendProfile] Profile document URL from WebID:', profileDocUrl);
+                }
+
+                // If no profileThing, try to find any thing in the dataset
+                if (!profileThing) {
+                    console.warn('[fetchFriendProfile] No thing found at WebID, trying to find any thing in dataset');
+                    const allThings = solidClient.getThingAll(webIdDataset);
+                    console.log('[fetchFriendProfile] All things in WebID dataset:', allThings.length);
+
+                    if (allThings.length > 0) {
+                        profileThing = allThings[0];
+                        // Also check for profile document link from this thing
+                        profileDocUrl = profileDocUrl ||
+                                       solidClient.getUrl(profileThing, 'http://www.w3.org/2000/01/rdf-schema#seeAlso') ||
+                                       solidClient.getUrl(profileThing, 'http://xmlns.com/foaf/0.1/isPrimaryTopicOf');
+                    }
+                }
+
+                // If we found a separate profile document, fetch it
+                let actualProfileThing = profileThing;
+                if (profileDocUrl && profileDocUrl !== webId) {
+                    console.log('[fetchFriendProfile] Fetching separate profile document:', profileDocUrl);
+                    try {
+                        // Try unauthenticated fetch first for profile document too
+                        let profileDataset;
+                        try {
+                            console.log('[fetchFriendProfile] Attempting unauthenticated fetch for profile document...');
+                            profileDataset = await solidClient.getSolidDataset(profileDocUrl);
+                            console.log('[fetchFriendProfile] Profile document unauthenticated fetch successful');
+                        } catch (profileUnauthError) {
+                            console.log('[fetchFriendProfile] Profile document unauthenticated fetch failed, trying with authentication');
+                            profileDataset = await solidClient.getSolidDataset(profileDocUrl, { fetch: session.fetch });
+                            console.log('[fetchFriendProfile] Profile document authenticated fetch successful');
+                        }
+                        console.log('[fetchFriendProfile] Profile document fetched successfully');
+
+                        // Try to find the thing that represents the WebID in the profile document
+                        actualProfileThing = solidClient.getThing(profileDataset, webId);
+
+                        if (!actualProfileThing) {
+                            // If not found, try to get all things and use the first one
+                            const profileThings = solidClient.getThingAll(profileDataset);
+                            console.log('[fetchFriendProfile] All things in profile document:', profileThings.length);
+                            if (profileThings.length > 0) {
+                                actualProfileThing = profileThings[0];
+                            }
+                        }
+                    } catch (profileError) {
+                        console.warn('[fetchFriendProfile] Failed to fetch profile document, using WebID thing:', profileError);
+                    }
+                }
+
+                if (!actualProfileThing) {
+                    throw new Error('No profile data found at WebID or linked profile document');
+                }
+
+                // Try multiple name predicates
+                const name = solidClient.getStringNoLocale(actualProfileThing, 'http://xmlns.com/foaf/0.1/name') ||
+                            solidClient.getStringNoLocale(actualProfileThing, 'http://www.w3.org/2006/vcard/ns#fn') ||
+                            solidClient.getStringNoLocale(actualProfileThing, 'http://schema.org/name');
+
+                const storage = solidClient.getUrl(actualProfileThing, 'http://www.w3.org/ns/pim/space#storage');
+
+                console.log('[fetchFriendProfile] Final result - name:', name, 'storage:', storage);
+                return {
+                    webId,
+                    name,
+                    storage
+                };
+            } catch (error) {
+                console.error(`[fetchFriendProfile] Failed to fetch profile for ${webId}:`, error);
+                // Re-throw the error so the UI can show it to the user
+                throw new Error(`Unable to fetch profile: ${error.message}`);
+            }
+        }
+
+        // Add friend to friends list
+        window.addFriend = async function() {
+            if (!session || !session.info.isLoggedIn) {
+                showAlert('add-friend-result', 'Please log in first', 'warning');
+                return;
+            }
+
+            const webIdInput = document.getElementById('input-friend-webid');
+            const friendWebId = webIdInput.value.trim();
+
+            if (!friendWebId) {
+                showAlert('add-friend-result', 'Please enter a WebID', 'warning');
+                return;
+            }
+
+            if (!friendWebId.startsWith('http://') && !friendWebId.startsWith('https://')) {
+                showAlert('add-friend-result', 'WebID must be a valid URL', 'warning');
+                return;
+            }
+
+            log(`Adding friend: ${friendWebId}...`, 'info');
+            setButtonLoading('btn-add-friend', true);
+            document.getElementById('add-friend-result').innerHTML = '';
+
+            try {
+                const friendsUrl = await getFriendsListUrl();
+
+                // Load or create friends dataset
+                let friendsDataset;
+                try {
+                    friendsDataset = await solidClient.getSolidDataset(friendsUrl, { fetch: session.fetch });
+                } catch (error) {
+                    // Create new dataset if it doesn't exist
+                    if (error.message.includes('404') || error.message.includes('Not Found')) {
+                        friendsDataset = solidClient.createSolidDataset();
+                    } else {
+                        throw error;
+                    }
+                }
+
+                // Get or create the user thing
+                let userThing = solidClient.getThing(friendsDataset, `${friendsUrl}#me`);
+                if (!userThing) {
+                    userThing = solidClient.createThing({ url: `${friendsUrl}#me` });
+                    userThing = solidClient.addUrl(userThing, 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type', 'http://xmlns.com/foaf/0.1/Person');
+                }
+
+                // Check if already friends
+                const existingFriends = solidClient.getUrlAll(userThing, 'http://xmlns.com/foaf/0.1/knows');
+                if (existingFriends.includes(friendWebId)) {
+                    showAlert('add-friend-result', 'This person is already in your friends list', 'info');
+                    log('Friend already exists in list', 'info');
+                    setButtonLoading('btn-add-friend', false);
+                    return;
+                }
+
+                // Add friend relationship
+                userThing = solidClient.addUrl(userThing, 'http://xmlns.com/foaf/0.1/knows', friendWebId);
+                friendsDataset = solidClient.setThing(friendsDataset, userThing);
+
+                // Save to Pod
+                await solidClient.saveSolidDatasetAt(friendsUrl, friendsDataset, { fetch: session.fetch });
+
+                log(`✓ Friend added: ${friendWebId}`, 'success');
+                showAlert('add-friend-result', `Successfully added friend!`, 'success');
+
+                // Clear input and refresh display
+                webIdInput.value = '';
+                await displayFriendsList();
+                await refreshSocialFeed();
+
+            } catch (error) {
+                log(`✗ Failed to add friend: ${error.message}`, 'error');
+                showAlert('add-friend-result', `Failed: ${error.message}`, 'error');
+            } finally {
+                setButtonLoading('btn-add-friend', false);
+            }
+        }
+
+        // Remove friend from friends list
+        window.removeFriend = async function(friendWebId) {
+            if (!confirm(`Remove ${friendWebId} from your friends list?`)) {
+                return;
+            }
+
+            log(`Removing friend: ${friendWebId}...`, 'info');
+
+            try {
+                const friendsUrl = await getFriendsListUrl();
+                let friendsDataset = await solidClient.getSolidDataset(friendsUrl, { fetch: session.fetch });
+
+                let userThing = solidClient.getThing(friendsDataset, `${friendsUrl}#me`);
+                if (!userThing) {
+                    throw new Error('Friends list not found');
+                }
+
+                // Remove friend relationship
+                userThing = solidClient.removeUrl(userThing, 'http://xmlns.com/foaf/0.1/knows', friendWebId);
+                friendsDataset = solidClient.setThing(friendsDataset, userThing);
+
+                // Save to Pod
+                await solidClient.saveSolidDatasetAt(friendsUrl, friendsDataset, { fetch: session.fetch });
+
+                log(`✓ Friend removed: ${friendWebId}`, 'success');
+                showAlert('add-friend-result', `Friend removed successfully`, 'success');
+
+                // Refresh display
+                await displayFriendsList();
+                await refreshSocialFeed();
+
+            } catch (error) {
+                log(`✗ Failed to remove friend: ${error.message}`, 'error');
+                showAlert('add-friend-result', `Failed to remove: ${error.message}`, 'error');
+            }
+        }
+
+        // Discover friend profile
+        window.discoverFriend = async function() {
+            if (!session || !session.info.isLoggedIn) {
+                showAlert('discover-result', 'Please log in first', 'warning');
+                return;
+            }
+
+            const webIdInput = document.getElementById('input-discover-webid');
+            const targetWebId = webIdInput.value.trim();
+
+            if (!targetWebId) {
+                showAlert('discover-result', 'Please enter a WebID', 'warning');
+                return;
+            }
+
+            log(`Discovering profile: ${targetWebId}...`, 'info');
+            setButtonLoading('btn-discover-friend', true);
+            document.getElementById('discover-result').innerHTML = '';
+
+            try {
+                const profile = await fetchFriendProfile(targetWebId);
+
+                const profileHtml = `
+                    <div style="margin-top: 15px; padding: 15px; background: #f9f9f9; border-radius: 8px;">
+                        <h4 style="margin-bottom: 10px; color: #667eea;">${profile.name || 'Unknown Name'}</h4>
+                        <p style="font-size: 13px; color: #666; margin-bottom: 5px;">
+                            <strong>WebID:</strong> <span style="word-break: break-all;">${profile.webId}</span>
+                        </p>
+                        ${profile.storage ? `
+                            <p style="font-size: 13px; color: #666; margin-bottom: 10px;">
+                                <strong>Storage:</strong> <span style="word-break: break-all;">${profile.storage}</span>
+                            </p>
+                        ` : ''}
+                        <p style="font-size: 12px; color: #888; margin-top: 10px;">
+                            You can add this person to your friends list to see their shared location data.
+                        </p>
+                    </div>
+                `;
+
+                document.getElementById('discover-result').innerHTML = profileHtml;
+                log(`✓ Profile discovered`, 'success');
+
+            } catch (error) {
+                log(`✗ Failed to discover profile: ${error.message}`, 'error');
+                showAlert('discover-result', `Failed: ${error.message}`, 'error');
+            } finally {
+                setButtonLoading('btn-discover-friend', false);
+            }
+        }
+
+        // Refresh social feed
+        window.refreshSocialFeed = async function() {
+            if (!session || !session.info.isLoggedIn) {
+                return;
+            }
+
+            log('Refreshing social feed...', 'info');
+            setButtonLoading('btn-refresh-feed', true);
+
+            try {
+                const friends = await loadFriendsList();
+
+                if (friends.length === 0) {
+                    document.getElementById('social-feed').innerHTML = '<p style="color: #666;">No friends added yet. Add friends to see their shared locations!</p>';
+                    setButtonLoading('btn-refresh-feed', false);
+                    return;
+                }
+
+                let allLocations = [];
+                let accessErrors = [];
+
+                // Fetch locations from each friend's Pod
+                for (const friendWebId of friends) {
+                    try {
+                        const profile = await fetchFriendProfile(friendWebId);
+
+                        if (!profile.storage) {
+                            console.warn(`[SocialFeed] No storage found for ${friendWebId}`);
+                            accessErrors.push(`${friendWebId}: No storage location found in profile`);
+                            continue;
+                        }
+
+                        const locationsFileUrl = `${profile.storage}private/location-tracker/locations.ttl`;
+                        console.log(`[SocialFeed] Attempting to fetch locations from ${locationsFileUrl}`);
+
+                        // Try to fetch friend's locations file
+                        try {
+                            const locationsDataset = await solidClient.getSolidDataset(locationsFileUrl, { fetch: session.fetch });
+                            console.log(`[SocialFeed] Successfully fetched locations file for ${friendWebId}`);
+
+                            // Get all location things from the file
+                            const locationThings = solidClient.getThingAll(locationsDataset);
+                            console.log(`[SocialFeed] Found ${locationThings.length} location(s) in ${friendWebId}'s locations file`);
+
+                            let locationCount = 0;
+                            for (const locationThing of locationThings) {
+                                try {
+                                    const lat = solidClient.getDecimal(locationThing, 'http://www.w3.org/2003/01/geo/wgs84_pos#lat');
+                                    const long = solidClient.getDecimal(locationThing, 'http://www.w3.org/2003/01/geo/wgs84_pos#long');
+                                    const created = solidClient.getDatetime(locationThing, 'http://purl.org/dc/terms/created');
+                                    const name = solidClient.getStringNoLocale(locationThing, 'http://schema.org/name');
+
+                                    // Only add if it has valid coordinates
+                                    if (lat !== null && long !== null) {
+                                        allLocations.push({
+                                            friendWebId,
+                                            friendName: profile.name || friendWebId.split('/').pop(),
+                                            lat,
+                                            long,
+                                            created: created ? new Date(created) : new Date(),
+                                            name: name || 'Location',
+                                            url: locationThing.url
+                                        });
+                                        locationCount++;
+                                    }
+                                } catch (thingError) {
+                                    console.warn(`[SocialFeed] Error parsing location thing:`, thingError);
+                                }
+                            }
+                            console.log(`[SocialFeed] Successfully loaded ${locationCount} locations from ${friendWebId}`);
+                        } catch (fileError) {
+                            // Friend might not have locations file yet or it's not shared
+                            console.log(`[SocialFeed] Cannot access locations file for ${friendWebId}:`, fileError.message);
+
+                            if (fileError.message.includes('401') || fileError.message.includes('403')) {
+                                accessErrors.push(`${profile.name || friendWebId}: Access denied. They need to grant you read access to their locations file.`);
+                            } else if (fileError.message.includes('404')) {
+                                accessErrors.push(`${profile.name || friendWebId}: No location data found (file doesn't exist yet).`);
+                            } else {
+                                accessErrors.push(`${profile.name || friendWebId}: ${fileError.message}`);
+                            }
+                        }
+                    } catch (profileError) {
+                        console.warn(`[SocialFeed] Failed to fetch locations for ${friendWebId}:`, profileError);
+                        accessErrors.push(`${friendWebId}: Failed to fetch profile`);
+                    }
+                }
+
+                // Sort by date (newest first)
+                allLocations.sort((a, b) => b.created - a.created);
+
+                if (allLocations.length === 0) {
+                    let errorDetails = '';
+                    if (accessErrors.length > 0) {
+                        errorDetails = `
+                            <div style="margin-top: 15px; padding: 12px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
+                                <p style="font-weight: 600; margin-bottom: 8px; color: #856404;">Access Issues:</p>
+                                <ul style="margin: 0; padding-left: 20px; color: #856404; font-size: 13px;">
+                                    ${accessErrors.map(err => `<li style="margin-bottom: 4px;">${err}</li>`).join('')}
+                                </ul>
+                                <p style="margin-top: 10px; font-size: 13px; color: #856404;">
+                                    <strong>How to fix:</strong> Your friends need to go to their Privacy tab and grant you (${session.info.webId}) read access to their location container.
+                                </p>
+                            </div>
+                        `;
+                    }
+
+                    document.getElementById('social-feed').innerHTML = `
+                        <p style="color: #666;">
+                            No shared locations found. Your friends may not have shared their location data yet,
+                            or you may need them to grant you read access to their location container.
+                        </p>
+                        ${errorDetails}
+                    `;
+                } else {
+                    let feedHtml = '<div style="max-height: 400px; overflow-y: auto;">';
+
+                    for (const location of allLocations) {
+                        const timeAgo = getTimeAgo(location.created);
+
+                        feedHtml += `
+                            <div style="padding: 12px; margin-bottom: 10px; background: #f9f9f9; border-radius: 8px; border-left: 4px solid #667eea;">
+                                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
+                                    <div>
+                                        <div style="font-weight: 600; color: #333;">
+                                            📍 ${location.name}
+                                        </div>
+                                        <div style="font-size: 12px; color: #667eea; margin-top: 2px;">
+                                            ${location.friendName}
+                                        </div>
+                                    </div>
+                                    <div style="font-size: 11px; color: #888; text-align: right;">
+                                        ${timeAgo}
+                                    </div>
+                                </div>
+                                <div style="font-size: 12px; color: #666;">
+                                    Coordinates: ${location.lat}, ${location.long}
+                                </div>
+                            </div>
+                        `;
+                    }
+
+                    feedHtml += '</div>';
+                    feedHtml += `<p style="margin-top: 10px; font-size: 12px; color: #888;">Found ${allLocations.length} shared location(s) from ${friends.length} friend(s)</p>`;
+
+                    document.getElementById('social-feed').innerHTML = feedHtml;
+                }
+
+                log(`✓ Social feed refreshed - ${allLocations.length} locations found`, 'success');
+
+            } catch (error) {
+                log(`✗ Failed to refresh feed: ${error.message}`, 'error');
+                document.getElementById('social-feed').innerHTML = `<p style="color: #f44336;">Failed to load feed: ${error.message}</p>`;
+            } finally {
+                setButtonLoading('btn-refresh-feed', false);
+            }
+        }
+
+        // Helper function to get relative time
+        function getTimeAgo(date) {
+            const now = new Date();
+            const diffMs = now - date;
+            const diffSecs = Math.floor(diffMs / 1000);
+            const diffMins = Math.floor(diffSecs / 60);
+            const diffHours = Math.floor(diffMins / 60);
+            const diffDays = Math.floor(diffHours / 24);
+
+            if (diffSecs < 60) return 'Just now';
+            if (diffMins < 60) return `${diffMins}m ago`;
+            if (diffHours < 24) return `${diffHours}h ago`;
+            if (diffDays < 7) return `${diffDays}d ago`;
+            return date.toLocaleDateString();
+        }
+
+        // Initialize social features when settings are populated
+        async function initializeSocialFeatures() {
+            if (!session || !session.info.isLoggedIn) {
+                return;
+            }
+
+            try {
+                await displayFriendsList();
+                await refreshSocialFeed();
+            } catch (error) {
+                console.error('[Social] Failed to initialize:', error);
+            }
+        }
+
+        // ========================================
+        // END SOCIAL FEATURES
         // ========================================
 
         // Refresh session
@@ -2540,16 +3312,8 @@
 
         // Write location to Pod (extracted for reuse)
         async function writeLocationToPod(locationData) {
-            const webId = session.info.webId;
-            const profileDataset = await getSolidDataset(webId, { fetch: session.fetch });
-            const profileThing = getThing(profileDataset, webId);
-            const storage = getUrl(profileThing, 'http://www.w3.org/ns/pim/space#storage');
-
-            if (!storage) {
-                throw new Error('No storage location found in profile');
-            }
-
-            const containerUrl = `${storage}private/location-tracker/`;
+            // Use the centralized function that handles Inrupt WebIDs
+            const containerUrl = await getLocationContainerUrl();
 
             // Ensure container exists
             try {
@@ -2558,33 +3322,44 @@
                 // Container might already exist
             }
 
-            // Generate unique filename
+            // Use a single locations.ttl file for all locations
+            const locationsFileUrl = `${containerUrl}locations.ttl`;
             const timestamp = locationData.timestamp || Date.now();
-            const locationFileName = `location-${timestamp}.ttl`;
-            const locationUrl = `${containerUrl}${locationFileName}`;
 
-            // Create Turtle data
-            const turtleData = `@prefix schema: <http://schema.org/> .
-@prefix geo: <http://www.w3.org/2003/01/geo/wgs84_pos#> .
-@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
-@prefix dcterms: <http://purl.org/dc/terms/> .
+            // Try to fetch existing file, or create new dataset if it doesn't exist
+            let locationsDataset;
+            try {
+                locationsDataset = await solidClient.getSolidDataset(locationsFileUrl, { fetch: session.fetch });
+                console.log('[writeLocationToPod] Loaded existing locations file');
+            } catch (error) {
+                // File doesn't exist yet, create new dataset
+                console.log('[writeLocationToPod] Creating new locations file');
+                locationsDataset = solidClient.createSolidDataset();
+            }
 
-<#location> a schema:Place, geo:Point ;
-    geo:lat "${locationData.latitude}"^^xsd:decimal ;
-    geo:long "${locationData.longitude}"^^xsd:decimal ;
-    schema:accuracy "${locationData.accuracy}"^^xsd:decimal ;
-    dcterms:created "${new Date(timestamp).toISOString()}"^^xsd:dateTime ;
-    schema:identifier "${locationData.deviceId}" .
-`;
+            // Create unique thing URL for this location
+            const locationThingUrl = `${locationsFileUrl}#location-${timestamp}`;
 
-            // Write file to Pod
-            await overwriteFile(
-                locationUrl,
-                new Blob([turtleData], { type: 'text/turtle' }),
-                { fetch: session.fetch, contentType: 'text/turtle' }
-            );
+            // Create location thing
+            let locationThing = solidClient.createThing({ url: locationThingUrl });
 
-            return locationUrl;
+            // Add location data
+            locationThing = solidClient.addUrl(locationThing, 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type', 'http://schema.org/Place');
+            locationThing = solidClient.addUrl(locationThing, 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type', 'http://www.w3.org/2003/01/geo/wgs84_pos#Point');
+            locationThing = solidClient.addDecimal(locationThing, 'http://www.w3.org/2003/01/geo/wgs84_pos#lat', locationData.latitude);
+            locationThing = solidClient.addDecimal(locationThing, 'http://www.w3.org/2003/01/geo/wgs84_pos#long', locationData.longitude);
+            locationThing = solidClient.addDecimal(locationThing, 'http://schema.org/accuracy', locationData.accuracy);
+            locationThing = solidClient.addDatetime(locationThing, 'http://purl.org/dc/terms/created', new Date(timestamp));
+            locationThing = solidClient.addStringNoLocale(locationThing, 'http://schema.org/identifier', locationData.deviceId);
+
+            // Add thing to dataset
+            locationsDataset = solidClient.setThing(locationsDataset, locationThing);
+
+            // Save the updated dataset
+            await solidClient.saveSolidDatasetAt(locationsFileUrl, locationsDataset, { fetch: session.fetch });
+
+            console.log(`[writeLocationToPod] Location appended to ${locationsFileUrl}`);
+            return locationThingUrl;
         }
 
         // View sync queue

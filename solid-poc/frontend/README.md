@@ -20,13 +20,20 @@ This PoC validates the authentication flow and data operations that will be inte
   - Operation queue for offline writes
   - Automatic sync when back online
   - Online/offline status indicators
-- ✅ **Data Sharing & Permissions** (NEW - Issue #57)
+- ✅ **Data Sharing & Permissions** (Issue #57)
   - WAC/ACP universal access control
   - Grant read/write permissions to individuals
   - Public/private access management
   - View current permissions
   - Revoke access from users
   - Generate shareable links
+- ✅ **Social Features** (NEW - Issue #58)
+  - FOAF (Friend of a Friend) integration
+  - Add/remove friends by WebID
+  - Discover friend profiles
+  - Social feed of friends' shared locations
+  - Client-side friend list management
+  - Privacy-aware location sharing
 
 ## Quick Start
 
@@ -590,6 +597,185 @@ The UI simplifies this to:
 - Check they're accessing the correct URL
 - Confirm permissions with "Refresh Access Info"
 
+## Social Features (FOAF)
+
+### Overview
+
+The application implements Solid's social capabilities using FOAF (Friend of a Friend) vocabulary. This enables decentralized friend management and social location sharing without a central server.
+
+### Features
+
+#### 1. Friend Management
+
+**Add Friends:**
+- Navigate to **Settings & Preferences → Social**
+- Enter a friend's WebID
+- Click "Add Friend"
+- Friend is saved to `/private/friends.ttl` in your Pod
+
+**Remove Friends:**
+- View your friends list
+- Click "Remove" next to any friend
+- Confirm the removal
+
+**Friends List Storage:**
+```turtle
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+
+<#me> a foaf:Person ;
+    foaf:knows <https://friend1.solidcommunity.net/profile/card#me> ;
+    foaf:knows <https://friend2.solidcommunity.net/profile/card#me> .
+```
+
+#### 2. Profile Discovery
+
+Discover information about any Solid user:
+
+1. Go to **Settings → Social → Discover Friend**
+2. Enter their WebID
+3. View their profile information:
+   - Name
+   - WebID
+   - Storage location
+
+This helps verify the correct WebID before adding friends.
+
+#### 3. Social Feed
+
+View location data shared by your friends:
+
+**How It Works:**
+1. Application reads your friends list from `/private/friends.ttl`
+2. For each friend, fetches their profile to get storage URL
+3. Attempts to read `/private/location-tracker/` from their Pod
+4. Displays accessible locations in chronological order
+
+**Privacy:**
+- Only shows locations you have permission to view
+- Friends must grant you read access to their location container
+- Uses the permissions system from Issue #57
+
+**Feed Display:**
+- Shows friend's name and location name
+- Displays coordinates
+- Shows relative time (e.g., "2h ago", "3d ago")
+- Sorted by newest first
+
+#### 4. Refresh Feed
+
+Click "Refresh Feed" to manually update the social feed with latest data from friends' Pods.
+
+### Testing Social Features
+
+**Two-User Test Scenario:**
+
+**User A (You):**
+1. Login to your Solid Pod
+2. Write a test location
+3. Go to Settings → Privacy
+4. Grant read access to User B's WebID
+5. Go to Settings → Social
+6. Add User B as a friend
+
+**User B (Friend):**
+1. Login to their Solid Pod
+2. Write a test location
+3. Grant read access to your WebID
+4. Add you as a friend
+5. Click "Refresh Feed"
+6. See your shared location in their feed
+
+**Expected Result:**
+- Both users see each other's shared locations
+- Locations appear in social feed
+- Can add/remove friends
+- Profile discovery works
+
+### Architecture
+
+**Client-Side Only:**
+- All friend management happens in browser
+- Friends list stored in user's Pod (`/private/friends.ttl`)
+- No server-side social graph
+- Uses FOAF vocabulary for interoperability
+
+**Data Flow:**
+```
+1. User adds friend → Save to /private/friends.ttl
+2. Refresh feed clicked → Read friends list
+3. For each friend → Fetch profile
+4. For each friend → Try to read locations
+5. Display accessible locations
+```
+
+**Permission Requirements:**
+- Friend must grant you read access to their `/private/location-tracker/` container
+- You must grant friends read access to see your locations
+- Uses Universal Access API from Issue #57
+
+### FOAF Vocabulary
+
+The application uses these FOAF predicates:
+
+- **`foaf:Person`** - Type of the user entity
+- **`foaf:knows`** - Relationship indicating friendship/connection
+- **`foaf:name`** - Person's name (read from profile)
+
+Compatible with any Solid application using FOAF vocabulary.
+
+### Privacy Considerations
+
+**What Friends Can See:**
+- Only locations you've granted access to
+- Only data in containers with read permissions
+- Your WebID and public profile info
+
+**What Friends Cannot See:**
+- Private data without explicit permissions
+- Location containers you haven't shared
+- Other friends in your list (unless you share friends.ttl)
+
+**Best Practices:**
+1. Only add people you know
+2. Review granted permissions regularly
+3. Use Privacy tab to manage access
+4. Friends list is private by default
+
+### Known Limitations
+
+1. **No mutual friend discovery**: Can't see your friends' friends automatically
+2. **Manual refresh**: Feed doesn't auto-update (click "Refresh Feed")
+3. **No notifications**: No alerts when friends share new locations
+4. **No groups**: Can only add individual WebIDs, not groups
+5. **Permission coordination**: Both users must grant access to see each other's data
+
+### Troubleshooting Social Features
+
+**Problem**: Added friend but see no locations in feed
+
+**Solution:**
+- Friend may not have any location data yet
+- Friend may not have granted you read access
+- Verify friend's WebID is correct
+- Check if friend's Pod is accessible
+- Ask friend to grant you read access via Privacy tab
+
+**Problem**: Can't add friend - "Failed to add"
+
+**Solution:**
+- Verify WebID starts with http:// or https://
+- Check WebID is accessible (try Profile Discovery first)
+- Ensure you're logged in
+- Check browser console for detailed errors
+
+**Problem**: Friend's name shows as WebID
+
+**Solution:**
+- Friend's profile may not have a `foaf:name` predicate
+- This is normal - WebID will be used as display name
+- Name will appear if friend updates their profile
+
 ## Next Steps
 
 After validating this PoC:
@@ -598,8 +784,9 @@ After validating this PoC:
 2. **Issue #50**: Add Solid authentication endpoints to Location Tracker backend
 3. **Issue #51**: Create data storage abstraction layer
 4. **Issue #52**: Implement Pod read/write operations in production code
-5. **Phase 5**: Integrate sharing and permissions patterns into location-tracker main app
-6. **Phase 5**: Integrate offline-first patterns into location-tracker main app
+5. **Phase 5**: Integrate social features into location-tracker main app
+6. **Phase 5**: Integrate sharing and permissions patterns into location-tracker main app
+7. **Phase 5**: Integrate offline-first patterns into location-tracker main app
 
 ## Resources
 
