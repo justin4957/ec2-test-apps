@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Solid Pod Manager</title>
     <style>
-
         * {
             margin: 0;
             padding: 0;
@@ -1050,500 +1049,426 @@
                 border-left: 3px solid #667eea;
             }
         }
-    
-        
-        /* Mobile Responsive Sidebar */
-        @media (max-width: 768px) {
-            .sidebar {
-                transform: translateX(-100%);
-            }
-            
-            .sidebar.mobile-open {
-                transform: translateX(0);
-            }
-            
-            .main-content {
-                margin-left: 0;
-            }
-            
-            .menu-toggle {
-                display: block;
-            }
-            
-            .topbar {
-                padding: 0 16px;
-            }
-            
-            .page-title {
-                font-size: 20px;
-            }
-            
-            .connection-status span {
-                display: none;
-            }
-            
-            .content {
-                padding: 16px;
-            }
-        }
-        
-        /* Overlay for mobile sidebar */
-        .sidebar-overlay {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.5);
-            z-index: 999;
-        }
-        
-        @media (max-width: 768px) {
-            .sidebar-overlay.active {
-                display: block;
-            }
-        }
-
     </style>
 </head>
 <body>
-    <!-- Sidebar Overlay for Mobile -->
-    <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
+    <div class="container">
+        <!-- Header with Connection Status -->
+        <div class="header">
+            <h1>🔐 Solid Authentication</h1>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <div class="connection-status">
+                    <div class="connection-dot" id="connection-dot"></div>
+                    <span id="connection-text">Not Connected</span>
+                </div>
+                <div class="connection-status" id="offline-status">
+                    <div class="connection-dot" id="offline-dot"></div>
+                    <span id="offline-text">Checking...</span>
+                </div>
+            </div>
+        </div>
+        <p class="subtitle">Location Tracker - Solid Pod Integration Proof-of-Concept</p>
 
-    <!-- App Layout with Sidebar -->
-    <div class="app-layout">
-        <!-- Sidebar Navigation -->
-        <aside class="sidebar" id="sidebar">
-            <div class="sidebar-header">
-                <h1>Solid Pod</h1>
-                <p style="font-size: 12px; color: var(--gray-500); margin-top: 4px;">Location Tracker PoC</p>
+        <!-- Session Card (shown when authenticated) -->
+        <div class="session-card" id="session-card">
+            <div class="session-info">
+                <div class="session-details">
+                    <h3>✓ Active Session</h3>
+                    <p id="session-webid">WebID: Not loaded</p>
+                </div>
+                <div class="session-actions">
+                    <button class="danger" onclick="logout()">Logout</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 1: Provider Selection -->
+        <div class="section" id="section-provider">
+            <h2>
+                <span class="step-number" id="step-1">1</span>
+                <span>Choose Solid Provider</span>
+                <span class="status-indicator" id="status-provider"></span>
+            </h2>
+
+            <div class="provider-grid">
+                <div class="provider-card" onclick="selectProvider('https://solidcommunity.net')">
+                    <h4>SolidCommunity.net</h4>
+                    <p>Free public Pod provider</p>
+                    <span class="provider-badge">Recommended</span>
+                </div>
+                <div class="provider-card" onclick="selectProvider('https://login.inrupt.com')">
+                    <h4>Inrupt PodSpaces</h4>
+                    <p>Enterprise-ready Pods</p>
+                    <span class="provider-badge">Developer Preview</span>
+                </div>
+                <div class="provider-card" onclick="selectProvider('https://solidweb.org')">
+                    <h4>SolidWeb.org</h4>
+                    <p>Community provider</p>
+                    <span class="provider-badge">Community</span>
+                </div>
             </div>
 
-            <nav class="sidebar-nav">
-                <div class="nav-section">
-                    <div class="nav-section-title">Main</div>
-                    <div class="nav-item active" onclick="navigateToPage('dashboard')">
-                        <span class="nav-item-icon">🏠</span>
-                        <span>Dashboard</span>
+            <div style="margin-top: 20px;">
+                <input type="text" id="issuer-input" placeholder="Or enter custom provider URL" value="https://solidcommunity.net">
+            </div>
+        </div>
+
+        <!-- Step 2: Authentication -->
+        <div class="section" id="section-auth">
+            <h2>
+                <span class="step-number" id="step-2">2</span>
+                <span>Authenticate with Provider</span>
+                <span class="status-indicator" id="status-auth"></span>
+            </h2>
+            <div id="auth-alert"></div>
+            <button id="btn-login" onclick="login()">Login with Solid</button>
+        </div>
+
+        <!-- Step 3: Read WebID Profile -->
+        <div class="section" id="section-profile">
+            <h2>
+                <span class="step-number" id="step-3">3</span>
+                <span>WebID Profile</span>
+                <span class="status-indicator" id="status-profile"></span>
+            </h2>
+            <div id="profile-data"></div>
+        </div>
+
+        <!-- Step 4: Write Location Data -->
+        <div class="section" id="section-write">
+            <h2>
+                <span class="step-number" id="step-4">4</span>
+                <span>Write Location to Pod</span>
+                <span class="status-indicator" id="status-write"></span>
+            </h2>
+            <button id="btn-write" onclick="writeLocation()" disabled>Write Test Location</button>
+            <div id="write-result"></div>
+        </div>
+
+        <!-- Step 5: Read Location Data -->
+        <div class="section" id="section-read">
+            <h2>
+                <span class="step-number" id="step-5">5</span>
+                <span>Read Location from Pod</span>
+                <span class="status-indicator" id="status-read"></span>
+            </h2>
+            <button id="btn-read" onclick="readLocation()" disabled>Read Location Data</button>
+            <div id="read-result"></div>
+        </div>
+
+        <!-- Step 6: Settings & Preferences -->
+        <div class="section" id="section-settings">
+            <h2>
+                <span class="step-number" id="step-6">⚙️</span>
+                <span>Settings & Preferences</span>
+                <span class="status-indicator" id="status-settings"></span>
+            </h2>
+            <p style="color: #666; margin-bottom: 20px; font-size: 14px;">
+                Manage your Solid Pod connection, data, and privacy preferences
+            </p>
+
+            <!-- Settings Tabs -->
+            <div class="settings-tabs">
+                <button class="settings-tab active" onclick="switchSettingsTab('profile')">
+                    👤 Profile
+                </button>
+                <button class="settings-tab" onclick="switchSettingsTab('storage')">
+                    💾 Storage
+                </button>
+                <button class="settings-tab" onclick="switchSettingsTab('data')">
+                    📦 Data Management
+                </button>
+                <button class="settings-tab" onclick="switchSettingsTab('privacy')">
+                    🔒 Privacy
+                </button>
+                <button class="settings-tab" onclick="switchSettingsTab('social')">
+                    👥 Social
+                </button>
+                <button class="settings-tab" onclick="switchSettingsTab('session')">
+                    🔑 Session
+                </button>
+            </div>
+
+            <!-- Profile Tab -->
+            <div class="settings-tab-content active" id="settings-profile">
+                <div class="settings-group">
+                    <h3>WebID Profile Information</h3>
+                    <div id="settings-profile-info" class="info-message">
+                        <p>Please log in to view your profile information.</p>
                     </div>
-                    <div class="nav-item" onclick="navigateToPage('authentication')">
-                        <span class="nav-item-icon">🔐</span>
-                        <span>Authentication</span>
+                    <button id="btn-refresh-profile" onclick="refreshProfile()" disabled class="secondary">
+                        🔄 Refresh Profile
+                    </button>
+                </div>
+            </div>
+
+            <!-- Storage Tab -->
+            <div class="settings-tab-content" id="settings-storage">
+                <div class="settings-group">
+                    <h3>Pod Storage Location</h3>
+                    <div id="settings-storage-info" class="info-message">
+                        <p>Please log in to view your storage information.</p>
                     </div>
-                    <div class="nav-item" onclick="navigateToPage('profile')">
-                        <span class="nav-item-icon">👤</span>
-                        <span>Profile</span>
-                    </div>
+                    <button id="btn-view-pod" onclick="viewPodInBrowser()" disabled class="secondary">
+                        🌐 Open Pod in Browser
+                    </button>
                 </div>
 
-                <div class="nav-section">
-                    <div class="nav-section-title">Data</div>
-                    <div class="nav-item" onclick="navigateToPage('locations')">
-                        <span class="nav-item-icon">📍</span>
-                        <span>Locations</span>
-                    </div>
-                    <div class="nav-item" onclick="navigateToPage('social')">
-                        <span class="nav-item-icon">👥</span>
-                        <span>Social Feed</span>
+                <div class="settings-group">
+                    <h3>Storage Usage</h3>
+                    <div id="settings-storage-usage" class="info-message">
+                        <p>Storage usage information is not available via the Solid protocol.</p>
+                        <p style="margin-top: 10px; font-size: 13px;">
+                            Visit your Pod provider's dashboard to view storage details.
+                        </p>
                     </div>
                 </div>
+            </div>
 
-                <div class="nav-section">
-                    <div class="nav-section-title">Settings</div>
-                    <div class="nav-item" onclick="navigateToPage('privacy')">
-                        <span class="nav-item-icon">🔒</span>
-                        <span>Privacy</span>
-                    </div>
-                    <div class="nav-item" onclick="navigateToPage('data-management')">
-                        <span class="nav-item-icon">📦</span>
-                        <span>Data</span>
-                    </div>
-                    <div class="nav-item" onclick="navigateToPage('sync')">
-                        <span class="nav-item-icon">🔄</span>
-                        <span>Sync</span>
-                        <span class="nav-item-badge" id="sync-badge" style="display: none;">0</span>
-                    </div>
-                    <div class="nav-item" onclick="navigateToPage('activity')">
-                        <span class="nav-item-icon">📋</span>
-                        <span>Activity</span>
-                    </div>
-                </div>
-            </nav>
-        </aside>
-
-        <!-- Main Content Area -->
-        <main class="main-content">
-            <!-- Top Bar -->
-            <header class="topbar">
-                <div class="topbar-left">
-                    <button class="menu-toggle" id="menu-toggle" onclick="toggleSidebar()">☰</button>
-                    <h1 class="page-title" id="page-title">Dashboard</h1>
-                </div>
-                <div class="topbar-right">
-                    <div class="connection-status">
-                        <div class="connection-dot" id="connection-dot"></div>
-                        <span id="connection-text">Not Connected</span>
-                    </div>
-                    <div class="connection-status" id="offline-status">
-                        <div class="connection-dot" id="offline-dot"></div>
-                        <span id="offline-text">Checking...</span>
-                    </div>
-                    <div class="user-menu" onclick="navigateToPage('profile')">
-                        <div class="user-avatar" id="user-avatar">?</div>
-                    </div>
-                </div>
-            </header>
-
-            <!-- Content Area with Page Views -->
-            <div class="content">
-                <!-- Dashboard Page -->
-                <div class="page-view active" id="page-dashboard">
-                    <div class="container">
-                        <h2 style="margin-bottom: 16px;">Welcome to Solid Pod Manager</h2>
-                        <p style="color: var(--gray-600); margin-bottom: 24px;">
-                            Manage your Solid Pod, track locations, and control your data privacy.
-                        </p>
-
-                        <!-- Session Card -->
-                        <div class="session-card" id="session-card">
-                            <div class="session-info">
-                                <div class="session-details">
-                                    <h3>Active Session</h3>
-                                    <p id="session-webid">WebID: Not loaded</p>
-                                </div>
-                                <div class="session-actions">
-                                    <button class="danger" onclick="logout()">Logout</button>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Quick Actions -->
-                        <h3 style="margin-bottom: 16px; color: var(--gray-900);">Quick Actions</h3>
-                        <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-                            <button onclick="navigateToPage('authentication')">Login to Solid Pod</button>
-                            <button onclick="navigateToPage('locations')" class="secondary">Add Location</button>
-                            <button onclick="navigateToPage('social')" class="secondary">View Social Feed</button>
-                        </div>
-                    </div>
+            <!-- Data Management Tab -->
+            <div class="settings-tab-content" id="settings-data">
+                <div class="settings-group">
+                    <h3>Export Location Data</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Download all your location data from the Pod in JSON format.
+                    </p>
+                    <button id="btn-export-data" onclick="exportLocationData()" disabled class="secondary">
+                        📥 Export All Locations
+                    </button>
+                    <div id="export-result"></div>
                 </div>
 
-                <!-- Authentication Page -->
-                <div class="page-view" id="page-authentication">
-                    <div class="container">
-                        <h2 style="margin-bottom: 16px;">Choose Solid Provider</h2>
-                        <p style="color: var(--gray-600); margin-bottom: 24px;">
-                            Select your Solid Pod provider to get started.
-                        </p>
-
-                        <div class="provider-grid">
-                            <div class="provider-card" onclick="selectProvider('https://solidcommunity.net')">
-                                <h4>SolidCommunity.net</h4>
-                                <p>Free public Pod provider</p>
-                                <span class="provider-badge">Recommended</span>
-                            </div>
-                            <div class="provider-card" onclick="selectProvider('https://login.inrupt.com')">
-                                <h4>Inrupt PodSpaces</h4>
-                                <p>Enterprise-ready Pods</p>
-                                <span class="provider-badge">Developer Preview</span>
-                            </div>
-                            <div class="provider-card" onclick="selectProvider('https://solidweb.org')">
-                                <h4>SolidWeb.org</h4>
-                                <p>Community provider</p>
-                                <span class="provider-badge">Community</span>
-                            </div>
-                        </div>
-
-                        <div style="margin-top: 20px;">
-                            <input type="text" id="issuer-input" placeholder="Or enter custom provider URL" value="https://solidcommunity.net">
-                        </div>
-                    </div>
-
-                    <div class="container">
-                        <h2 style="margin-bottom: 16px;">Authenticate</h2>
-                        <div id="auth-alert"></div>
-                        <button id="btn-login" onclick="login()">Login with Solid</button>
-                    </div>
+                <div class="settings-group">
+                    <h3>Import Location Data</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Upload location data to your Pod (JSON or Turtle format).
+                    </p>
+                    <input type="file" id="file-import" accept=".json,.ttl,.turtle" style="margin-bottom: 10px;" disabled>
+                    <button id="btn-import-data" onclick="importLocationData()" disabled class="secondary">
+                        📤 Import Locations
+                    </button>
+                    <div id="import-result"></div>
                 </div>
 
-                <!-- Profile Page -->
-                <div class="page-view" id="page-profile">
-                    <div class="container">
-                        <h2 style="margin-bottom: 16px;">WebID Profile</h2>
-                        <div id="profile-data"></div>
+                <div class="settings-group danger-zone">
+                    <h3>⚠️ Danger Zone</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Delete all location data from your Pod. This action cannot be undone.
+                    </p>
+                    <button id="btn-delete-all" onclick="confirmDeleteAll()" disabled class="danger">
+                        🗑️ Delete All Location Data
+                    </button>
+                    <div id="delete-result"></div>
+                </div>
+            </div>
 
-                        <div style="margin-top: 24px;">
-                            <h3 style="margin-bottom: 16px;">Profile Settings</h3>
-                            <div id="settings-profile-info" class="info-message">
-                                <p>Please log in to view your profile information.</p>
-                            </div>
-                            <button id="btn-refresh-profile" onclick="refreshProfile()" disabled class="secondary">
-                                Refresh Profile
-                            </button>
-                        </div>
+            <!-- Privacy Tab -->
+            <div class="settings-tab-content" id="settings-privacy">
+                <div class="settings-group">
+                    <h3>Container Access Overview</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Your location data is stored in <code>/private/location-tracker/</code>
+                    </p>
+                    <div id="settings-privacy-info" class="info-message">
+                        <p>Loading access information...</p>
                     </div>
-
-                    <div class="container">
-                        <h3 style="margin-bottom: 16px;">Pod Storage</h3>
-                        <div id="settings-storage-info" class="info-message">
-                            <p>Please log in to view your storage information.</p>
-                        </div>
-                        <button id="btn-view-pod" onclick="viewPodInBrowser()" disabled class="secondary">
-                            Open Pod in Browser
-                        </button>
-
-                        <div style="margin-top: 24px;">
-                            <h4 style="margin-bottom: 12px;">Storage Usage</h4>
-                            <div id="settings-storage-usage" class="info-message">
-                                <p>Storage usage information is not available via the Solid protocol.</p>
-                                <p style="margin-top: 10px; font-size: 13px;">
-                                    Visit your Pod provider's dashboard to view storage details.
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="container">
-                        <h3 style="margin-bottom: 16px;">Session Management</h3>
-                        <div id="settings-session-info" class="info-message">
-                            <p>No active session.</p>
-                        </div>
-                        <div style="margin-top: 16px;">
-                            <button id="btn-refresh-session" onclick="refreshSession()" disabled class="secondary">
-                                Refresh Session
-                            </button>
-                            <button id="btn-logout-settings" onclick="logout()" disabled class="danger">
-                                Logout
-                            </button>
-                        </div>
-                    </div>
+                    <button id="btn-refresh-access" onclick="refreshAccessInfo()" class="secondary" style="margin-top: 15px;">
+                        🔄 Refresh Access Info
+                    </button>
                 </div>
 
-                <!-- Locations Page -->
-                <div class="page-view" id="page-locations">
-                    <div class="container">
-                        <h2 style="margin-bottom: 16px;">Write Location to Pod</h2>
-                        <p style="color: var(--gray-600); margin-bottom: 24px;">
-                            Store a test location in your Solid Pod.
-                        </p>
-                        <button id="btn-write" onclick="writeLocation()" disabled>Write Test Location</button>
-                        <div id="write-result"></div>
-                    </div>
+                <div class="settings-group">
+                    <h3>Grant Access to Others</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Share your location data with specific people or make it public.
+                    </p>
 
-                    <div class="container">
-                        <h2 style="margin-bottom: 16px;">Read Location from Pod</h2>
-                        <p style="color: var(--gray-600); margin-bottom: 24px;">
-                            Retrieve location data from your Solid Pod.
-                        </p>
-                        <button id="btn-read" onclick="readLocation()" disabled>Read Location Data</button>
-                        <div id="read-result"></div>
-                    </div>
-                </div>
-
-                <!-- Social Feed Page -->
-                <div class="page-view" id="page-social">
-                    <div class="container">
-                        <h2 style="margin-bottom: 16px;">Friends List</h2>
-                        <p style="color: var(--gray-600); margin-bottom: 24px;">
-                            Manage your friends and social connections via FOAF (Friend of a Friend).
-                        </p>
-                        <div id="friends-list" class="info-message">
-                            <p>Loading friends...</p>
-                        </div>
-                    </div>
-
-                    <div class="container">
-                        <h3 style="margin-bottom: 16px;">Add Friend</h3>
-                        <p style="color: var(--gray-600); margin-bottom: 16px; font-size: 14px;">
-                            Add a friend by their WebID to see their shared location data.
-                        </p>
-                        <input type="text" id="input-friend-webid" placeholder="Enter WebID (e.g., https://friend.solidcommunity.net/profile/card#me)">
-                        <button id="btn-add-friend" onclick="addFriend()" class="secondary">
-                            Add Friend
-                        </button>
-                        <div id="add-friend-result"></div>
-                    </div>
-
-                    <div class="container">
-                        <h3 style="margin-bottom: 16px;">Social Feed</h3>
-                        <p style="color: var(--gray-600); margin-bottom: 16px; font-size: 14px;">
-                            View location data shared by your friends.
-                        </p>
-                        <button id="btn-refresh-feed" onclick="refreshSocialFeed()" class="secondary">
-                            Refresh Feed
-                        </button>
-                        <div id="social-feed" class="info-message" style="margin-top: 15px;">
-                            <p>No activities yet. Add friends to see their shared locations!</p>
-                        </div>
-                    </div>
-
-                    <div class="container">
-                        <h3 style="margin-bottom: 16px;">Discover Friend</h3>
-                        <p style="color: var(--gray-600); margin-bottom: 16px; font-size: 14px;">
-                            Look up a friend's profile information by WebID.
-                        </p>
-                        <input type="text" id="input-discover-webid" placeholder="Enter WebID to discover">
-                        <button id="btn-discover-friend" onclick="discoverFriend()" class="secondary">
-                            Discover Profile
-                        </button>
-                        <div id="discover-result"></div>
-                    </div>
-                </div>
-
-                <!-- Privacy Settings Page -->
-                <div class="page-view" id="page-privacy">
-                    <div class="container">
-                        <h2 style="margin-bottom: 16px;">Container Access Overview</h2>
-                        <p style="color: var(--gray-600); margin-bottom: 16px; font-size: 14px;">
-                            Your location data is stored in <code>/private/location-tracker/</code>
-                        </p>
-                        <div id="settings-privacy-info" class="info-message">
-                            <p>Loading access information...</p>
-                        </div>
-                        <button id="btn-refresh-access" onclick="refreshAccessInfo()" class="secondary" style="margin-top: 15px;">
-                            Refresh Access Info
-                        </button>
-                    </div>
-
-                    <div class="container">
-                        <h3 style="margin-bottom: 16px;">Grant Access to Others</h3>
-                        <p style="color: var(--gray-600); margin-bottom: 16px; font-size: 14px;">
-                            Share your location data with specific people or make it public.
-                        </p>
-
-                        <div style="margin-bottom: 24px;">
-                            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: var(--gray-900);">Grant Public Access:</label>
-                            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                                <button onclick="setPublicAccess('read')" class="secondary">
-                                    Make Public (Read-Only)
-                                </button>
-                                <button onclick="setPublicAccess('write')" class="secondary">
-                                    Make Public (Read-Write)
-                                </button>
-                                <button onclick="setPublicAccess('none')" class="secondary">
-                                    Make Private
-                                </button>
-                            </div>
-                        </div>
-
-                        <div style="margin-top: 24px;">
-                            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: var(--gray-900);">Grant Access to Specific Person:</label>
-                            <input type="text" id="input-grant-webid" placeholder="Enter WebID (e.g., https://example.solidcommunity.net/profile/card#me)">
-                            <div style="display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap;">
-                                <button id="btn-grant-read" onclick="grantAgentAccess('read')" class="secondary">
-                                    Grant Read Access
-                                </button>
-                                <button id="btn-grant-write" onclick="grantAgentAccess('write')" class="secondary">
-                                    Grant Write Access
-                                </button>
-                            </div>
-                        </div>
-                        <div id="grant-result"></div>
-                    </div>
-
-                    <div class="container">
-                        <h3 style="margin-bottom: 16px;">Current Access Permissions</h3>
-                        <p style="color: var(--gray-600); margin-bottom: 16px; font-size: 14px;">
-                            People who currently have access to your location data.
-                        </p>
-                        <div id="current-permissions-list" class="info-message">
-                            <p>Loading permissions...</p>
-                        </div>
-                    </div>
-
-                    <div class="container">
-                        <h3 style="margin-bottom: 16px;">Revoke Access</h3>
-                        <p style="color: var(--gray-600); margin-bottom: 16px; font-size: 14px;">
-                            Remove access from a specific person.
-                        </p>
-                        <input type="text" id="input-revoke-webid" placeholder="Enter WebID to revoke access">
-                        <button id="btn-revoke-access" onclick="revokeAgentAccess()" class="secondary">
-                            Revoke All Access
-                        </button>
-                        <div id="revoke-result"></div>
-                    </div>
-
-                    <div class="container">
-                        <h3 style="margin-bottom: 16px;">Share Link</h3>
-                        <p style="color: var(--gray-600); margin-bottom: 16px; font-size: 14px;">
-                            Generate a link to share your location data container.
-                        </p>
-                        <button onclick="generateShareLink()" class="secondary">
-                            Generate Share Link
-                        </button>
-                        <div id="share-link-result"></div>
-                    </div>
-                </div>
-
-                <!-- Data Management Page -->
-                <div class="page-view" id="page-data-management">
-                    <div class="container">
-                        <h2 style="margin-bottom: 16px;">Export Location Data</h2>
-                        <p style="color: var(--gray-600); margin-bottom: 16px; font-size: 14px;">
-                            Download all your location data from the Pod in JSON format.
-                        </p>
-                        <button id="btn-export-data" onclick="exportLocationData()" disabled class="secondary">
-                            Export All Locations
-                        </button>
-                        <div id="export-result"></div>
-                    </div>
-
-                    <div class="container">
-                        <h3 style="margin-bottom: 16px;">Import Location Data</h3>
-                        <p style="color: var(--gray-600); margin-bottom: 16px; font-size: 14px;">
-                            Upload location data to your Pod (JSON or Turtle format).
-                        </p>
-                        <input type="file" id="file-import" accept=".json,.ttl,.turtle" style="margin-bottom: 10px;" disabled>
-                        <button id="btn-import-data" onclick="importLocationData()" disabled class="secondary">
-                            Import Locations
-                        </button>
-                        <div id="import-result"></div>
-                    </div>
-
-                    <div class="container" style="background: #fff5f5; border: 2px solid #ffebee;">
-                        <h3 style="margin-bottom: 16px; color: var(--danger);">Danger Zone</h3>
-                        <p style="color: var(--gray-600); margin-bottom: 16px; font-size: 14px;">
-                            Delete all location data from your Pod. This action cannot be undone.
-                        </p>
-                        <button id="btn-delete-all" onclick="confirmDeleteAll()" disabled class="danger">
-                            Delete All Location Data
-                        </button>
-                        <div id="delete-result"></div>
-                    </div>
-                </div>
-
-                <!-- Sync Page -->
-                <div class="page-view" id="page-sync">
-                    <div class="container">
-                        <h2 style="margin-bottom: 16px;">Offline Sync Status</h2>
-                        <div id="sync-stats" class="info-message" style="margin-bottom: 15px;">
-                            <p><strong>Sync Statistics:</strong></p>
-                            <p id="sync-stats-content">Initializing...</p>
-                        </div>
+                    <div style="margin-bottom: 15px;">
+                        <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #444;">Grant Public Access:</label>
                         <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                            <button id="btn-sync" onclick="manualSync()" style="flex: 1; min-width: 150px;">
-                                Sync Now
+                            <button onclick="setPublicAccess('read')" class="secondary">
+                                👁️ Make Public (Read-Only)
                             </button>
-                            <button id="btn-view-queue" onclick="viewSyncQueue()" style="flex: 1; min-width: 150px;">
-                                View Queue
+                            <button onclick="setPublicAccess('write')" class="secondary">
+                                ✏️ Make Public (Read-Write)
                             </button>
-                            <button id="btn-clear-cache" onclick="clearOfflineCache()" class="danger" style="flex: 1; min-width: 150px;">
-                                Clear Cache
+                            <button onclick="setPublicAccess('none')" class="secondary">
+                                🔒 Make Private
                             </button>
                         </div>
-                        <div id="sync-result" style="margin-top: 15px;"></div>
+                    </div>
+
+                    <div style="margin-top: 20px;">
+                        <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #444;">Grant Access to Specific Person:</label>
+                        <input type="text" id="input-grant-webid" placeholder="Enter WebID (e.g., https://example.solidcommunity.net/profile/card#me)">
+                        <div style="display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap;">
+                            <button id="btn-grant-read" onclick="grantAgentAccess('read')" class="secondary">
+                                ➕ Grant Read Access
+                            </button>
+                            <button id="btn-grant-write" onclick="grantAgentAccess('write')" class="secondary">
+                                ➕ Grant Write Access
+                            </button>
+                        </div>
+                    </div>
+                    <div id="grant-result"></div>
+                </div>
+
+                <div class="settings-group">
+                    <h3>Current Access Permissions</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        People who currently have access to your location data.
+                    </p>
+                    <div id="current-permissions-list" class="info-message">
+                        <p>Loading permissions...</p>
                     </div>
                 </div>
 
-                <!-- Activity Log Page -->
-                <div class="page-view" id="page-activity">
-                    <div class="container">
-                        <h2 style="margin-bottom: 16px;">Activity Log</h2>
-                        <div class="log" id="activity-log"></div>
+                <div class="settings-group">
+                    <h3>Revoke Access</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Remove access from a specific person.
+                    </p>
+                    <input type="text" id="input-revoke-webid" placeholder="Enter WebID to revoke access">
+                    <button id="btn-revoke-access" onclick="revokeAgentAccess()" class="secondary">
+                        ❌ Revoke All Access
+                    </button>
+                    <div id="revoke-result"></div>
+                </div>
+
+                <div class="settings-group">
+                    <h3>Share Link</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Generate a link to share your location data container.
+                    </p>
+                    <button onclick="generateShareLink()" class="secondary">
+                        🔗 Generate Share Link
+                    </button>
+                    <div id="share-link-result"></div>
+                </div>
+            </div>
+
+            <!-- Social Tab -->
+            <div class="settings-tab-content" id="settings-social">
+                <div class="settings-group">
+                    <h3>👥 Friends List</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Manage your friends and social connections via FOAF (Friend of a Friend).
+                    </p>
+                    <div id="friends-list" class="info-message">
+                        <p>Loading friends...</p>
+                    </div>
+                </div>
+
+                <div class="settings-group">
+                    <h3>➕ Add Friend</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Add a friend by their WebID to see their shared location data.
+                    </p>
+                    <input type="text" id="input-friend-webid" placeholder="Enter WebID (e.g., https://friend.solidcommunity.net/profile/card#me)">
+                    <button id="btn-add-friend" onclick="addFriend()" class="secondary">
+                        ➕ Add Friend
+                    </button>
+                    <div id="add-friend-result"></div>
+                </div>
+
+                <div class="settings-group">
+                    <h3>📍 Social Feed</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        View location data shared by your friends.
+                    </p>
+                    <button id="btn-refresh-feed" onclick="refreshSocialFeed()" class="secondary">
+                        🔄 Refresh Feed
+                    </button>
+                    <div id="social-feed" class="info-message" style="margin-top: 15px;">
+                        <p>No activities yet. Add friends to see their shared locations!</p>
+                    </div>
+                </div>
+
+                <div class="settings-group">
+                    <h3>🔍 Discover Friend</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Look up a friend's profile information by WebID.
+                    </p>
+                    <input type="text" id="input-discover-webid" placeholder="Enter WebID to discover">
+                    <button id="btn-discover-friend" onclick="discoverFriend()" class="secondary">
+                        🔍 Discover Profile
+                    </button>
+                    <div id="discover-result"></div>
+                </div>
+            </div>
+
+            <!-- Session Tab -->
+            <div class="settings-tab-content" id="settings-session">
+                <div class="settings-group">
+                    <h3>Active Session</h3>
+                    <div id="settings-session-info" class="info-message">
+                        <p>No active session.</p>
+                    </div>
+                </div>
+
+                <div class="settings-group">
+                    <h3>Session Management</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Manage your current authentication session.
+                    </p>
+                    <button id="btn-refresh-session" onclick="refreshSession()" disabled class="secondary">
+                        🔄 Refresh Session
+                    </button>
+                    <button id="btn-logout-settings" onclick="logout()" disabled class="danger" style="margin-left: 10px;">
+                        🚪 Logout
+                    </button>
+                </div>
+
+                <div class="settings-group">
+                    <h3>Connected Applications</h3>
+                    <div class="info-message">
+                        <p><strong>Currently Connected:</strong></p>
+                        <ul style="margin-top: 10px; padding-left: 20px;">
+                            <li>Location Tracker PoC</li>
+                        </ul>
+                        <p style="margin-top: 15px; font-size: 13px; color: #666;">
+                            To revoke access to this application, use your Pod provider's
+                            authorization management interface.
+                        </p>
                     </div>
                 </div>
             </div>
-        </main>
+        </div>
+
+        <!-- Offline Sync Status -->
+        <div class="section" id="section-sync">
+            <h2>
+                <span class="step-number">🔄</span>
+                <span>Offline Sync Status</span>
+                <span class="status-indicator" id="status-sync"></span>
+            </h2>
+            <div id="sync-stats" class="info-message" style="margin-bottom: 15px;">
+                <p><strong>Sync Statistics:</strong></p>
+                <p id="sync-stats-content">Initializing...</p>
+            </div>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <button id="btn-sync" onclick="manualSync()" style="flex: 1; min-width: 150px;">
+                    🔄 Sync Now
+                </button>
+                <button id="btn-view-queue" onclick="viewSyncQueue()" style="flex: 1; min-width: 150px;">
+                    📋 View Queue
+                </button>
+                <button id="btn-clear-cache" onclick="clearOfflineCache()" class="danger" style="flex: 1; min-width: 150px;">
+                    🗑️ Clear Cache
+                </button>
+            </div>
+            <div id="sync-result" style="margin-top: 15px;"></div>
+        </div>
+
+        <!-- Activity Log -->
+        <div class="section">
+            <h2 class="collapsible-header" onclick="toggleLog()">
+                <span>📋 Activity Log</span>
+            </h2>
+            <div class="collapsible-content" id="log-content">
+                <div class="log" id="activity-log"></div>
+            </div>
+        </div>
     </div>
 
     <!-- Load Solid Client Libraries -->
@@ -3750,109 +3675,6 @@
 
         // Initialize on load
         init();
-    </script>
-
-    <script>
-        // Navigation functionality
-        let currentPage = 'dashboard';
-
-        function navigateToPage(pageId) {
-            // Hide all pages
-            document.querySelectorAll('.page-view').forEach(page => {
-                page.classList.remove('active');
-            });
-
-            // Remove active class from all nav items
-            document.querySelectorAll('.nav-item').forEach(item => {
-                item.classList.remove('active');
-            });
-
-            // Show selected page
-            const pageElement = document.getElementById(`page-${pageId}`);
-            if (pageElement) {
-                pageElement.classList.add('active');
-                currentPage = pageId;
-            }
-
-            // Set active nav item - find the nav item that triggered this
-            document.querySelectorAll('.nav-item').forEach(item => {
-                if (item.getAttribute('onclick') && item.getAttribute('onclick').includes(pageId)) {
-                    item.classList.add('active');
-                }
-            });
-
-            // Update page title
-            updatePageTitle(pageId);
-
-            // Close sidebar on mobile
-            closeSidebar();
-        }
-
-        function updatePageTitle(pageId) {
-            const titles = {
-                'dashboard': 'Dashboard',
-                'authentication': 'Authentication',
-                'profile': 'Profile',
-                'locations': 'Locations',
-                'social': 'Social Feed',
-                'privacy': 'Privacy Settings',
-                'data-management': 'Data Management',
-                'sync': 'Offline Sync',
-                'activity': 'Activity Log'
-            };
-            document.getElementById('page-title').textContent = titles[pageId] || 'Dashboard';
-        }
-
-        // Mobile menu toggle
-        function toggleSidebar() {
-            const sidebar = document.getElementById('sidebar');
-            const overlay = document.getElementById('sidebar-overlay');
-            sidebar.classList.toggle('mobile-open');
-            overlay.classList.toggle('active');
-        }
-
-        function closeSidebar() {
-            if (window.innerWidth <= 768) {
-                const sidebar = document.getElementById('sidebar');
-                const overlay = document.getElementById('sidebar-overlay');
-                sidebar.classList.remove('mobile-open');
-                overlay.classList.remove('active');
-            }
-        }
-
-        // Update user avatar
-        function updateUserAvatar() {
-            const session = window.session;
-            if (session && session.info && session.info.webId) {
-                const webId = session.info.webId;
-                const initial = webId.match(/\/([^/]+)\/profile/)?.[1]?.[0]?.toUpperCase() || '?';
-                document.getElementById('user-avatar').textContent = initial;
-            } else {
-                document.getElementById('user-avatar').textContent = '?';
-            }
-        }
-
-        // Hook into existing login/logout functions to update avatar
-        const originalLogin = window.login;
-        if (originalLogin) {
-            window.login = async function() {
-                await originalLogin();
-                setTimeout(updateUserAvatar, 500);
-            };
-        }
-
-        const originalLogout = window.logout;
-        if (originalLogout) {
-            window.logout = async function() {
-                await originalLogout();
-                updateUserAvatar();
-            };
-        }
-
-        // Initialize
-        setTimeout(() => {
-            updateUserAvatar();
-        }, 100);
     </script>
 </body>
 </html>
