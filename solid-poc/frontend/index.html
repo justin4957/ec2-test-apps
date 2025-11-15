@@ -2824,13 +2824,18 @@
                             const locationDataset = await solidClient.getSolidDataset(locationContainerUrl, { fetch: session.fetch });
                             const resources = solidClient.getContainedResourceUrlAll(locationDataset);
                             console.log(`[SocialFeed] Found ${resources.length} resources in ${friendWebId}'s location container`);
+                            console.log(`[SocialFeed] Resource URLs:`, resources);
 
                             let locationCount = 0;
                             for (const resourceUrl of resources) {
+                                console.log(`[SocialFeed] Checking resource: ${resourceUrl}`);
                                 if (resourceUrl.endsWith('.ttl')) {
+                                    console.log(`[SocialFeed] Resource is a .ttl file, attempting to fetch...`);
                                     try {
                                         const locationFile = await solidClient.getSolidDataset(resourceUrl, { fetch: session.fetch });
+                                        console.log(`[SocialFeed] Successfully fetched ${resourceUrl}`);
                                         const locationThing = solidClient.getThing(locationFile, `${resourceUrl}#location`);
+                                        console.log(`[SocialFeed] Location thing:`, locationThing);
 
                                         if (locationThing) {
                                             const lat = solidClient.getDecimal(locationThing, 'http://www.w3.org/2003/01/geo/wgs84_pos#lat');
