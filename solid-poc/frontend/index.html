@@ -2446,15 +2446,73 @@
         // Get friends list container URL
         async function getFriendsListUrl() {
             const webId = session.info.webId;
-            const profileDataset = await solidClient.getSolidDataset(webId, { fetch: session.fetch });
-            const profileThing = solidClient.getThing(profileDataset, webId);
-            const storage = solidClient.getUrl(profileThing, 'http://www.w3.org/ns/pim/space#storage');
+            console.log('[getFriendsListUrl] Fetching own WebID:', webId);
 
-            if (!storage) {
-                throw new Error('No storage location found in profile');
+            try {
+                const webIdDataset = await solidClient.getSolidDataset(webId, { fetch: session.fetch });
+                console.log('[getFriendsListUrl] Successfully fetched own WebID dataset');
+
+                let profileThing = solidClient.getThing(webIdDataset, webId);
+                console.log('[getFriendsListUrl] WebID thing:', profileThing);
+
+                // Check if this WebID points to a separate profile document
+                let profileDocUrl = null;
+                if (profileThing) {
+                    profileDocUrl = solidClient.getUrl(profileThing, 'http://www.w3.org/2000/01/rdf-schema#seeAlso') ||
+                                   solidClient.getUrl(profileThing, 'http://xmlns.com/foaf/0.1/isPrimaryTopicOf');
+                    console.log('[getFriendsListUrl] Profile document URL from WebID:', profileDocUrl);
+                }
+
+                // If not found at exact WebID, try to get all things
+                if (!profileThing) {
+                    const allThings = solidClient.getThingAll(webIdDataset);
+                    console.log('[getFriendsListUrl] All things in WebID dataset:', allThings.length);
+                    if (allThings.length > 0) {
+                        profileThing = allThings[0];
+                        profileDocUrl = profileDocUrl ||
+                                       solidClient.getUrl(profileThing, 'http://www.w3.org/2000/01/rdf-schema#seeAlso') ||
+                                       solidClient.getUrl(profileThing, 'http://xmlns.com/foaf/0.1/isPrimaryTopicOf');
+                    }
+                }
+
+                // If we found a separate profile document, fetch it
+                let actualProfileThing = profileThing;
+                if (profileDocUrl && profileDocUrl !== webId) {
+                    console.log('[getFriendsListUrl] Fetching separate profile document:', profileDocUrl);
+                    try {
+                        const profileDataset = await solidClient.getSolidDataset(profileDocUrl, { fetch: session.fetch });
+                        console.log('[getFriendsListUrl] Profile document fetched successfully');
+
+                        actualProfileThing = solidClient.getThing(profileDataset, webId);
+
+                        if (!actualProfileThing) {
+                            const profileThings = solidClient.getThingAll(profileDataset);
+                            console.log('[getFriendsListUrl] All things in profile document:', profileThings.length);
+                            if (profileThings.length > 0) {
+                                actualProfileThing = profileThings[0];
+                            }
+                        }
+                    } catch (profileError) {
+                        console.warn('[getFriendsListUrl] Failed to fetch profile document, using WebID thing:', profileError);
+                    }
+                }
+
+                if (!actualProfileThing) {
+                    throw new Error('Could not find profile thing in WebID document or linked profile');
+                }
+
+                const storage = solidClient.getUrl(actualProfileThing, 'http://www.w3.org/ns/pim/space#storage');
+                console.log('[getFriendsListUrl] Storage URL:', storage);
+
+                if (!storage) {
+                    throw new Error('No storage location found in profile');
+                }
+
+                return `${storage}private/friends.ttl`;
+            } catch (error) {
+                console.error('[getFriendsListUrl] Error:', error);
+                throw error;
             }
-
-            return `${storage}private/friends.ttl`;
         }
 
         // Load friends list from Pod
