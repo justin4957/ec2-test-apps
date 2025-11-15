@@ -2516,7 +2516,20 @@
         async function fetchFriendProfile(webId) {
             try {
                 console.log('[fetchFriendProfile] Fetching profile:', webId);
-                const webIdDataset = await solidClient.getSolidDataset(webId, { fetch: session.fetch });
+
+                // Try unauthenticated fetch first (WebIDs should be publicly readable)
+                let webIdDataset;
+                try {
+                    console.log('[fetchFriendProfile] Attempting unauthenticated fetch...');
+                    webIdDataset = await solidClient.getSolidDataset(webId);
+                    console.log('[fetchFriendProfile] Unauthenticated fetch successful');
+                } catch (unauthError) {
+                    console.log('[fetchFriendProfile] Unauthenticated fetch failed, trying with authentication:', unauthError.message);
+                    // Fall back to authenticated fetch
+                    webIdDataset = await solidClient.getSolidDataset(webId, { fetch: session.fetch });
+                    console.log('[fetchFriendProfile] Authenticated fetch successful');
+                }
+
                 console.log('[fetchFriendProfile] WebID dataset fetched successfully');
 
                 // Get the thing at the WebID
@@ -2552,7 +2565,17 @@
                 if (profileDocUrl && profileDocUrl !== webId) {
                     console.log('[fetchFriendProfile] Fetching separate profile document:', profileDocUrl);
                     try {
-                        const profileDataset = await solidClient.getSolidDataset(profileDocUrl, { fetch: session.fetch });
+                        // Try unauthenticated fetch first for profile document too
+                        let profileDataset;
+                        try {
+                            console.log('[fetchFriendProfile] Attempting unauthenticated fetch for profile document...');
+                            profileDataset = await solidClient.getSolidDataset(profileDocUrl);
+                            console.log('[fetchFriendProfile] Profile document unauthenticated fetch successful');
+                        } catch (profileUnauthError) {
+                            console.log('[fetchFriendProfile] Profile document unauthenticated fetch failed, trying with authentication');
+                            profileDataset = await solidClient.getSolidDataset(profileDocUrl, { fetch: session.fetch });
+                            console.log('[fetchFriendProfile] Profile document authenticated fetch successful');
+                        }
                         console.log('[fetchFriendProfile] Profile document fetched successfully');
 
                         // Try to find the thing that represents the WebID in the profile document
