@@ -2286,6 +2286,7 @@
             try {
                 const containerUrl = await getLocationContainerUrl();
 
+                // Grant access to the container
                 const newAccess = await solidClient.universalAccess.setAgentAccess(
                     containerUrl,
                     targetWebId,
@@ -2294,11 +2295,39 @@
                 );
 
                 if (newAccess === null) {
-                    throw new Error('Failed to grant access');
+                    throw new Error('Failed to grant access to container');
+                }
+
+                log(`✓ Container access granted, now granting access to existing files...`, 'info');
+
+                // Also grant access to all existing files in the container
+                try {
+                    const containerDataset = await solidClient.getSolidDataset(containerUrl, { fetch: session.fetch });
+                    const resources = solidClient.getContainedResourceUrlAll(containerDataset);
+
+                    let filesGranted = 0;
+                    for (const resourceUrl of resources) {
+                        if (resourceUrl.endsWith('.ttl')) {
+                            try {
+                                await solidClient.universalAccess.setAgentAccess(
+                                    resourceUrl,
+                                    targetWebId,
+                                    access,
+                                    { fetch: session.fetch }
+                                );
+                                filesGranted++;
+                            } catch (fileError) {
+                                console.warn(`Failed to grant access to ${resourceUrl}:`, fileError);
+                            }
+                        }
+                    }
+                    log(`✓ Access granted to ${filesGranted} existing location files`, 'success');
+                } catch (filesError) {
+                    console.warn('Failed to grant access to existing files:', filesError);
                 }
 
                 log(`✓ Access granted to ${targetWebId}`, 'success');
-                showAlert('grant-result', `Successfully granted ${accessType} access to ${targetWebId}`, 'success');
+                showAlert('grant-result', `Successfully granted ${accessType} access to ${targetWebId} for container and all existing files`, 'success');
 
                 // Clear input and refresh
                 webIdInput.value = '';
