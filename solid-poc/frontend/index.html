@@ -2834,8 +2834,20 @@
                                     try {
                                         const locationFile = await solidClient.getSolidDataset(resourceUrl, { fetch: session.fetch });
                                         console.log(`[SocialFeed] Successfully fetched ${resourceUrl}`);
-                                        const locationThing = solidClient.getThing(locationFile, `${resourceUrl}#location`);
-                                        console.log(`[SocialFeed] Location thing:`, locationThing);
+
+                                        // Try to get the location thing
+                                        let locationThing = solidClient.getThing(locationFile, `${resourceUrl}#location`);
+                                        console.log(`[SocialFeed] Location thing with #location:`, locationThing);
+
+                                        // If not found, try to get all things and use the first one
+                                        if (!locationThing) {
+                                            const allThings = solidClient.getThingAll(locationFile);
+                                            console.log(`[SocialFeed] All things in file:`, allThings.length, allThings);
+                                            if (allThings.length > 0) {
+                                                locationThing = allThings[0];
+                                                console.log(`[SocialFeed] Using first thing:`, locationThing);
+                                            }
+                                        }
 
                                         if (locationThing) {
                                             const lat = solidClient.getDecimal(locationThing, 'http://www.w3.org/2003/01/geo/wgs84_pos#lat');
