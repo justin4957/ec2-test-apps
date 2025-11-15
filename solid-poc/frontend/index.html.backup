@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Solid Pod Manager</title>
     <style>
-
         * {
             margin: 0;
             padding: 0;
@@ -34,7 +33,7 @@
         }
 
         body {
-            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
             background: var(--gray-50);
             min-height: 100vh;
             color: var(--gray-900);
@@ -56,7 +55,7 @@
             position: fixed;
             height: 100vh;
             overflow-y: auto;
-            transition: transform 0.15s ease;
+            transition: transform 0.3s ease;
             z-index: 1000;
         }
 
@@ -99,7 +98,7 @@
             color: var(--gray-700);
             text-decoration: none;
             cursor: pointer;
-            transition: all 0.15s ease;
+            transition: all 0.2s ease;
             border-left: 3px solid transparent;
             gap: 12px;
             font-size: 14px;
@@ -108,7 +107,6 @@
 
         .nav-item:hover {
             background: var(--gray-50);
-            border-left-color: var(--primary);
             color: var(--primary);
         }
 
@@ -130,7 +128,7 @@
             color: white;
             font-size: 11px;
             padding: 2px 6px;
-            border-radius: 0;
+            border-radius: 10px;
             font-weight: 600;
         }
 
@@ -189,7 +187,7 @@
             align-items: center;
             gap: 8px;
             padding: 8px 16px;
-            border-radius: 2px;
+            border-radius: 20px;
             background: var(--gray-100);
             font-size: 13px;
             font-weight: 600;
@@ -200,7 +198,7 @@
             height: 8px;
             border-radius: 50%;
             background: var(--gray-400);
-            transition: all 0.15s ease;
+            transition: all 0.3s ease;
         }
 
         .connection-dot.connected {
@@ -219,9 +217,9 @@
             align-items: center;
             gap: 12px;
             padding: 8px 12px;
-            border-radius: 0;
+            border-radius: 12px;
             cursor: pointer;
-            transition: background 0.15s;
+            transition: background 0.2s;
         }
 
         .user-menu:hover {
@@ -257,7 +255,7 @@
 
         .page-view.active {
             display: block;
-            animation: fadeIn 0.15s ease;
+            animation: fadeIn 0.3s ease;
         }
 
         @keyframes fadeIn {
@@ -267,7 +265,7 @@
 
         .container {
             background: white;
-            border-radius: 0;
+            border-radius: 12px;
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
             padding: 24px;
             margin-bottom: 24px;
@@ -295,7 +293,7 @@
             align-items: center;
             gap: 10px;
             padding: 10px 20px;
-            border-radius: 2px;
+            border-radius: 25px;
             background: #f0f0f0;
             font-size: 14px;
             font-weight: 600;
@@ -306,7 +304,7 @@
             height: 12px;
             border-radius: 50%;
             background: #ccc;
-            transition: all 0.15s ease;
+            transition: all 0.3s ease;
         }
 
         .connection-dot.connected {
@@ -344,7 +342,7 @@
         .session-card {
             background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
             border: 2px solid #667eea;
-            border-radius: 0;
+            border-radius: 15px;
             padding: 20px;
             margin-bottom: 30px;
             display: none;
@@ -389,9 +387,9 @@
             margin-bottom: 30px;
             padding: 25px;
             border: 2px solid #e0e0e0;
-            border-radius: 0;
+            border-radius: 15px;
             background: #f9f9f9;
-            transition: all 0.15s ease;
+            transition: all 0.3s ease;
         }
 
         .section:hover {
@@ -435,7 +433,7 @@
             height: 12px;
             border-radius: 50%;
             background: #ccc;
-            transition: all 0.15s ease;
+            transition: all 0.3s ease;
         }
 
         .status-indicator.active {
@@ -459,11 +457,11 @@
             color: white;
             border: none;
             padding: 14px 32px;
-            border-radius: 0;
+            border-radius: 10px;
             font-size: 16px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.15s ease;
+            transition: all 0.3s ease;
             margin-right: 10px;
             margin-bottom: 10px;
             position: relative;
@@ -486,8 +484,8 @@
         }
 
         button:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
         }
 
         button:active {
@@ -557,20 +555,16 @@
             width: 100%;
             padding: 14px;
             border: 2px solid #ddd;
-            border-radius: 0;
+            border-radius: 10px;
             font-size: 15px;
             margin-bottom: 15px;
-            transition: all 0.15s ease;
+            transition: all 0.3s ease;
         }
 
         input:focus {
             outline: none;
             border-color: #667eea;
             box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-        }
-
-        input:hover {
-            border-color: var(--gray-400);
         }
 
         /* Provider Selection */
@@ -584,17 +578,17 @@
         .provider-card {
             background: white;
             border: 2px solid #e0e0e0;
-            border-radius: 0;
+            border-radius: 12px;
             padding: 20px;
             cursor: pointer;
-            transition: all 0.15s ease;
+            transition: all 0.3s ease;
             text-align: center;
         }
 
         .provider-card:hover {
             border-color: #667eea;
-            transform: translateY(-1px);
-            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
+            transform: translateY(-3px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.2);
         }
 
         .provider-card.selected {
@@ -619,7 +613,7 @@
             background: #667eea20;
             color: #667eea;
             padding: 4px 12px;
-            border-radius: 0;
+            border-radius: 12px;
             font-size: 11px;
             font-weight: 600;
         }
@@ -631,7 +625,7 @@
             gap: 20px;
             padding: 25px;
             background: white;
-            border-radius: 0;
+            border-radius: 12px;
             margin-top: 15px;
             border: 2px solid #e0e0e0;
         }
@@ -688,12 +682,12 @@
         /* Alert Messages */
         .alert {
             padding: 15px 20px;
-            border-radius: 0;
+            border-radius: 10px;
             margin-bottom: 15px;
             display: flex;
             align-items: center;
             gap: 12px;
-            animation: slideIn 0.15s ease;
+            animation: slideIn 0.3s ease;
         }
 
         @keyframes slideIn {
@@ -740,7 +734,7 @@
             background: #1e1e1e;
             color: #00ff00;
             padding: 20px;
-            border-radius: 0;
+            border-radius: 10px;
             font-family: 'Courier New', monospace;
             font-size: 13px;
             max-height: 350px;
@@ -758,7 +752,7 @@
 
         .log::-webkit-scrollbar-thumb {
             background: #667eea;
-            border-radius: 0;
+            border-radius: 4px;
         }
 
         .log-entry {
@@ -791,15 +785,11 @@
         .data-display {
             background: white;
             padding: 20px;
-            border-radius: 0;
+            border-radius: 10px;
             margin-top: 15px;
             max-height: 250px;
             overflow-y: auto;
             border: 2px solid #e0e0e0;
-        }
-
-        .data-display:hover {
-            border-color: var(--primary);
         }
 
         .data-display pre {
@@ -870,7 +860,7 @@
 
             .container {
                 padding: 20px;
-                border-radius: 0;
+                border-radius: 15px;
             }
 
             .section {
@@ -892,7 +882,7 @@
             content: '▼';
             float: right;
             font-size: 12px;
-            transition: transform 0.15s ease;
+            transition: transform 0.3s ease;
         }
 
         .collapsible-header.collapsed::after {
@@ -924,11 +914,11 @@
             color: #666;
             border: none;
             padding: 10px 20px;
-            border-radius: 0 8px 0 0;
+            border-radius: 8px 8px 0 0;
             font-size: 14px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.15s ease;
+            transition: all 0.3s ease;
             border-bottom: 3px solid transparent;
         }
 
@@ -947,7 +937,7 @@
 
         .settings-tab-content {
             display: none;
-            animation: fadeIn 0.15s ease;
+            animation: fadeIn 0.3s ease;
         }
 
         .settings-tab-content.active {
@@ -962,7 +952,7 @@
         .settings-group {
             background: #f9f9f9;
             border: 1px solid #e0e0e0;
-            border-radius: 0;
+            border-radius: 10px;
             padding: 20px;
             margin-bottom: 20px;
         }
@@ -987,7 +977,7 @@
             border: 1px solid #e3f2fd;
             border-left: 4px solid #2196f3;
             padding: 15px;
-            border-radius: 0;
+            border-radius: 8px;
             margin-bottom: 15px;
         }
 
@@ -1005,7 +995,7 @@
         .info-message code {
             background: #f5f5f5;
             padding: 2px 6px;
-            border-radius: 0;
+            border-radius: 4px;
             font-family: 'Courier New', monospace;
             font-size: 13px;
             color: #d32f2f;
@@ -1049,7 +1039,7 @@
 
             .settings-tab {
                 width: 100%;
-                border-radius: 0;
+                border-radius: 8px;
                 border-bottom: none;
                 border-left: 3px solid transparent;
             }
@@ -1059,500 +1049,426 @@
                 border-left: 3px solid #667eea;
             }
         }
-    
-        
-        /* Mobile Responsive Sidebar */
-        @media (max-width: 768px) {
-            .sidebar {
-                transform: translateX(-100%);
-            }
-            
-            .sidebar.mobile-open {
-                transform: translateX(0);
-            }
-            
-            .main-content {
-                margin-left: 0;
-            }
-            
-            .menu-toggle {
-                display: block;
-            }
-            
-            .topbar {
-                padding: 0 16px;
-            }
-            
-            .page-title {
-                font-size: 20px;
-            }
-            
-            .connection-status span {
-                display: none;
-            }
-            
-            .content {
-                padding: 16px;
-            }
-        }
-        
-        /* Overlay for mobile sidebar */
-        .sidebar-overlay {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.5);
-            z-index: 999;
-        }
-        
-        @media (max-width: 768px) {
-            .sidebar-overlay.active {
-                display: block;
-            }
-        }
-
     </style>
 </head>
 <body>
-    <!-- Sidebar Overlay for Mobile -->
-    <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
+    <div class="container">
+        <!-- Header with Connection Status -->
+        <div class="header">
+            <h1>🔐 Solid Authentication</h1>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <div class="connection-status">
+                    <div class="connection-dot" id="connection-dot"></div>
+                    <span id="connection-text">Not Connected</span>
+                </div>
+                <div class="connection-status" id="offline-status">
+                    <div class="connection-dot" id="offline-dot"></div>
+                    <span id="offline-text">Checking...</span>
+                </div>
+            </div>
+        </div>
+        <p class="subtitle">Location Tracker - Solid Pod Integration Proof-of-Concept</p>
 
-    <!-- App Layout with Sidebar -->
-    <div class="app-layout">
-        <!-- Sidebar Navigation -->
-        <aside class="sidebar" id="sidebar">
-            <div class="sidebar-header">
-                <h1>Solid Pod</h1>
-                <p style="font-size: 12px; color: var(--gray-500); margin-top: 4px;">Location Tracker PoC</p>
+        <!-- Session Card (shown when authenticated) -->
+        <div class="session-card" id="session-card">
+            <div class="session-info">
+                <div class="session-details">
+                    <h3>✓ Active Session</h3>
+                    <p id="session-webid">WebID: Not loaded</p>
+                </div>
+                <div class="session-actions">
+                    <button class="danger" onclick="logout()">Logout</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 1: Provider Selection -->
+        <div class="section" id="section-provider">
+            <h2>
+                <span class="step-number" id="step-1">1</span>
+                <span>Choose Solid Provider</span>
+                <span class="status-indicator" id="status-provider"></span>
+            </h2>
+
+            <div class="provider-grid">
+                <div class="provider-card" onclick="selectProvider('https://solidcommunity.net')">
+                    <h4>SolidCommunity.net</h4>
+                    <p>Free public Pod provider</p>
+                    <span class="provider-badge">Recommended</span>
+                </div>
+                <div class="provider-card" onclick="selectProvider('https://login.inrupt.com')">
+                    <h4>Inrupt PodSpaces</h4>
+                    <p>Enterprise-ready Pods</p>
+                    <span class="provider-badge">Developer Preview</span>
+                </div>
+                <div class="provider-card" onclick="selectProvider('https://solidweb.org')">
+                    <h4>SolidWeb.org</h4>
+                    <p>Community provider</p>
+                    <span class="provider-badge">Community</span>
+                </div>
             </div>
 
-            <nav class="sidebar-nav">
-                <div class="nav-section">
-                    <div class="nav-section-title">Main</div>
-                    <div class="nav-item active" onclick="navigateToPage('dashboard')">
-                        <span class="nav-item-icon"></span>
-                        <span>Dashboard</span>
+            <div style="margin-top: 20px;">
+                <input type="text" id="issuer-input" placeholder="Or enter custom provider URL" value="https://solidcommunity.net">
+            </div>
+        </div>
+
+        <!-- Step 2: Authentication -->
+        <div class="section" id="section-auth">
+            <h2>
+                <span class="step-number" id="step-2">2</span>
+                <span>Authenticate with Provider</span>
+                <span class="status-indicator" id="status-auth"></span>
+            </h2>
+            <div id="auth-alert"></div>
+            <button id="btn-login" onclick="login()">Login with Solid</button>
+        </div>
+
+        <!-- Step 3: Read WebID Profile -->
+        <div class="section" id="section-profile">
+            <h2>
+                <span class="step-number" id="step-3">3</span>
+                <span>WebID Profile</span>
+                <span class="status-indicator" id="status-profile"></span>
+            </h2>
+            <div id="profile-data"></div>
+        </div>
+
+        <!-- Step 4: Write Location Data -->
+        <div class="section" id="section-write">
+            <h2>
+                <span class="step-number" id="step-4">4</span>
+                <span>Write Location to Pod</span>
+                <span class="status-indicator" id="status-write"></span>
+            </h2>
+            <button id="btn-write" onclick="writeLocation()" disabled>Write Test Location</button>
+            <div id="write-result"></div>
+        </div>
+
+        <!-- Step 5: Read Location Data -->
+        <div class="section" id="section-read">
+            <h2>
+                <span class="step-number" id="step-5">5</span>
+                <span>Read Location from Pod</span>
+                <span class="status-indicator" id="status-read"></span>
+            </h2>
+            <button id="btn-read" onclick="readLocation()" disabled>Read Location Data</button>
+            <div id="read-result"></div>
+        </div>
+
+        <!-- Step 6: Settings & Preferences -->
+        <div class="section" id="section-settings">
+            <h2>
+                <span class="step-number" id="step-6">⚙️</span>
+                <span>Settings & Preferences</span>
+                <span class="status-indicator" id="status-settings"></span>
+            </h2>
+            <p style="color: #666; margin-bottom: 20px; font-size: 14px;">
+                Manage your Solid Pod connection, data, and privacy preferences
+            </p>
+
+            <!-- Settings Tabs -->
+            <div class="settings-tabs">
+                <button class="settings-tab active" onclick="switchSettingsTab('profile')">
+                    👤 Profile
+                </button>
+                <button class="settings-tab" onclick="switchSettingsTab('storage')">
+                    💾 Storage
+                </button>
+                <button class="settings-tab" onclick="switchSettingsTab('data')">
+                    📦 Data Management
+                </button>
+                <button class="settings-tab" onclick="switchSettingsTab('privacy')">
+                    🔒 Privacy
+                </button>
+                <button class="settings-tab" onclick="switchSettingsTab('social')">
+                    👥 Social
+                </button>
+                <button class="settings-tab" onclick="switchSettingsTab('session')">
+                    🔑 Session
+                </button>
+            </div>
+
+            <!-- Profile Tab -->
+            <div class="settings-tab-content active" id="settings-profile">
+                <div class="settings-group">
+                    <h3>WebID Profile Information</h3>
+                    <div id="settings-profile-info" class="info-message">
+                        <p>Please log in to view your profile information.</p>
                     </div>
-                    <div class="nav-item" onclick="navigateToPage('authentication')">
-                        <span class="nav-item-icon"></span>
-                        <span>Authentication</span>
+                    <button id="btn-refresh-profile" onclick="refreshProfile()" disabled class="secondary">
+                        🔄 Refresh Profile
+                    </button>
+                </div>
+            </div>
+
+            <!-- Storage Tab -->
+            <div class="settings-tab-content" id="settings-storage">
+                <div class="settings-group">
+                    <h3>Pod Storage Location</h3>
+                    <div id="settings-storage-info" class="info-message">
+                        <p>Please log in to view your storage information.</p>
                     </div>
-                    <div class="nav-item" onclick="navigateToPage('profile')">
-                        <span class="nav-item-icon"></span>
-                        <span>Profile</span>
-                    </div>
+                    <button id="btn-view-pod" onclick="viewPodInBrowser()" disabled class="secondary">
+                        🌐 Open Pod in Browser
+                    </button>
                 </div>
 
-                <div class="nav-section">
-                    <div class="nav-section-title">Data</div>
-                    <div class="nav-item" onclick="navigateToPage('locations')">
-                        <span class="nav-item-icon"></span>
-                        <span>Locations</span>
-                    </div>
-                    <div class="nav-item" onclick="navigateToPage('social')">
-                        <span class="nav-item-icon"></span>
-                        <span>Social Feed</span>
+                <div class="settings-group">
+                    <h3>Storage Usage</h3>
+                    <div id="settings-storage-usage" class="info-message">
+                        <p>Storage usage information is not available via the Solid protocol.</p>
+                        <p style="margin-top: 10px; font-size: 13px;">
+                            Visit your Pod provider's dashboard to view storage details.
+                        </p>
                     </div>
                 </div>
+            </div>
 
-                <div class="nav-section">
-                    <div class="nav-section-title">Settings</div>
-                    <div class="nav-item" onclick="navigateToPage('privacy')">
-                        <span class="nav-item-icon"></span>
-                        <span>Privacy</span>
-                    </div>
-                    <div class="nav-item" onclick="navigateToPage('data-management')">
-                        <span class="nav-item-icon"></span>
-                        <span>Data</span>
-                    </div>
-                    <div class="nav-item" onclick="navigateToPage('sync')">
-                        <span class="nav-item-icon"></span>
-                        <span>Sync</span>
-                        <span class="nav-item-badge" id="sync-badge" style="display: none;">0</span>
-                    </div>
-                    <div class="nav-item" onclick="navigateToPage('activity')">
-                        <span class="nav-item-icon"></span>
-                        <span>Activity</span>
-                    </div>
-                </div>
-            </nav>
-        </aside>
-
-        <!-- Main Content Area -->
-        <main class="main-content">
-            <!-- Top Bar -->
-            <header class="topbar">
-                <div class="topbar-left">
-                    <button class="menu-toggle" id="menu-toggle" onclick="toggleSidebar()">Menu</button>
-                    <h1 class="page-title" id="page-title">Dashboard</h1>
-                </div>
-                <div class="topbar-right">
-                    <div class="connection-status">
-                        <div class="connection-dot" id="connection-dot"></div>
-                        <span id="connection-text">Not Connected</span>
-                    </div>
-                    <div class="connection-status" id="offline-status">
-                        <div class="connection-dot" id="offline-dot"></div>
-                        <span id="offline-text">Checking...</span>
-                    </div>
-                    <div class="user-menu" onclick="navigateToPage('profile')">
-                        <div class="user-avatar" id="user-avatar">?</div>
-                    </div>
-                </div>
-            </header>
-
-            <!-- Content Area with Page Views -->
-            <div class="content">
-                <!-- Dashboard Page -->
-                <div class="page-view active" id="page-dashboard">
-                    <div class="container">
-                        <h2 style="margin-bottom: 16px;">Welcome to Solid Pod Manager</h2>
-                        <p style="color: var(--gray-600); margin-bottom: 24px;">
-                            Manage your Solid Pod, track locations, and control your data privacy.
-                        </p>
-
-                        <!-- Session Card -->
-                        <div class="session-card" id="session-card">
-                            <div class="session-info">
-                                <div class="session-details">
-                                    <h3>Active Session</h3>
-                                    <p id="session-webid">WebID: Not loaded</p>
-                                </div>
-                                <div class="session-actions">
-                                    <button class="danger" onclick="logout()">Logout</button>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Quick Actions -->
-                        <h3 style="margin-bottom: 16px; color: var(--gray-900);">Quick Actions</h3>
-                        <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-                            <button onclick="navigateToPage('authentication')">Login to Solid Pod</button>
-                            <button onclick="navigateToPage('locations')" class="secondary">Add Location</button>
-                            <button onclick="navigateToPage('social')" class="secondary">View Social Feed</button>
-                        </div>
-                    </div>
+            <!-- Data Management Tab -->
+            <div class="settings-tab-content" id="settings-data">
+                <div class="settings-group">
+                    <h3>Export Location Data</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Download all your location data from the Pod in JSON format.
+                    </p>
+                    <button id="btn-export-data" onclick="exportLocationData()" disabled class="secondary">
+                        📥 Export All Locations
+                    </button>
+                    <div id="export-result"></div>
                 </div>
 
-                <!-- Authentication Page -->
-                <div class="page-view" id="page-authentication">
-                    <div class="container">
-                        <h2 style="margin-bottom: 16px;">Choose Solid Provider</h2>
-                        <p style="color: var(--gray-600); margin-bottom: 24px;">
-                            Select your Solid Pod provider to get started.
-                        </p>
-
-                        <div class="provider-grid">
-                            <div class="provider-card" onclick="selectProvider('https://solidcommunity.net')">
-                                <h4>SolidCommunity.net</h4>
-                                <p>Free public Pod provider</p>
-                                <span class="provider-badge">Recommended</span>
-                            </div>
-                            <div class="provider-card" onclick="selectProvider('https://login.inrupt.com')">
-                                <h4>Inrupt PodSpaces</h4>
-                                <p>Enterprise-ready Pods</p>
-                                <span class="provider-badge">Developer Preview</span>
-                            </div>
-                            <div class="provider-card" onclick="selectProvider('https://solidweb.org')">
-                                <h4>SolidWeb.org</h4>
-                                <p>Community provider</p>
-                                <span class="provider-badge">Community</span>
-                            </div>
-                        </div>
-
-                        <div style="margin-top: 20px;">
-                            <input type="text" id="issuer-input" placeholder="Or enter custom provider URL" value="https://solidcommunity.net">
-                        </div>
-                    </div>
-
-                    <div class="container">
-                        <h2 style="margin-bottom: 16px;">Authenticate</h2>
-                        <div id="auth-alert"></div>
-                        <button id="btn-login" onclick="login()">Login with Solid</button>
-                    </div>
+                <div class="settings-group">
+                    <h3>Import Location Data</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Upload location data to your Pod (JSON or Turtle format).
+                    </p>
+                    <input type="file" id="file-import" accept=".json,.ttl,.turtle" style="margin-bottom: 10px;" disabled>
+                    <button id="btn-import-data" onclick="importLocationData()" disabled class="secondary">
+                        📤 Import Locations
+                    </button>
+                    <div id="import-result"></div>
                 </div>
 
-                <!-- Profile Page -->
-                <div class="page-view" id="page-profile">
-                    <div class="container">
-                        <h2 style="margin-bottom: 16px;">WebID Profile</h2>
-                        <div id="profile-data"></div>
+                <div class="settings-group danger-zone">
+                    <h3>⚠️ Danger Zone</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Delete all location data from your Pod. This action cannot be undone.
+                    </p>
+                    <button id="btn-delete-all" onclick="confirmDeleteAll()" disabled class="danger">
+                        🗑️ Delete All Location Data
+                    </button>
+                    <div id="delete-result"></div>
+                </div>
+            </div>
 
-                        <div style="margin-top: 24px;">
-                            <h3 style="margin-bottom: 16px;">Profile Settings</h3>
-                            <div id="settings-profile-info" class="info-message">
-                                <p>Please log in to view your profile information.</p>
-                            </div>
-                            <button id="btn-refresh-profile" onclick="refreshProfile()" disabled class="secondary">
-                                Refresh Profile
-                            </button>
-                        </div>
+            <!-- Privacy Tab -->
+            <div class="settings-tab-content" id="settings-privacy">
+                <div class="settings-group">
+                    <h3>Container Access Overview</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Your location data is stored in <code>/private/location-tracker/</code>
+                    </p>
+                    <div id="settings-privacy-info" class="info-message">
+                        <p>Loading access information...</p>
                     </div>
-
-                    <div class="container">
-                        <h3 style="margin-bottom: 16px;">Pod Storage</h3>
-                        <div id="settings-storage-info" class="info-message">
-                            <p>Please log in to view your storage information.</p>
-                        </div>
-                        <button id="btn-view-pod" onclick="viewPodInBrowser()" disabled class="secondary">
-                            Open Pod in Browser
-                        </button>
-
-                        <div style="margin-top: 24px;">
-                            <h4 style="margin-bottom: 12px;">Storage Usage</h4>
-                            <div id="settings-storage-usage" class="info-message">
-                                <p>Storage usage information is not available via the Solid protocol.</p>
-                                <p style="margin-top: 10px; font-size: 13px;">
-                                    Visit your Pod provider's dashboard to view storage details.
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="container">
-                        <h3 style="margin-bottom: 16px;">Session Management</h3>
-                        <div id="settings-session-info" class="info-message">
-                            <p>No active session.</p>
-                        </div>
-                        <div style="margin-top: 16px;">
-                            <button id="btn-refresh-session" onclick="refreshSession()" disabled class="secondary">
-                                Refresh Session
-                            </button>
-                            <button id="btn-logout-settings" onclick="logout()" disabled class="danger">
-                                Logout
-                            </button>
-                        </div>
-                    </div>
+                    <button id="btn-refresh-access" onclick="refreshAccessInfo()" class="secondary" style="margin-top: 15px;">
+                        🔄 Refresh Access Info
+                    </button>
                 </div>
 
-                <!-- Locations Page -->
-                <div class="page-view" id="page-locations">
-                    <div class="container">
-                        <h2 style="margin-bottom: 16px;">Write Location to Pod</h2>
-                        <p style="color: var(--gray-600); margin-bottom: 24px;">
-                            Store a test location in your Solid Pod.
-                        </p>
-                        <button id="btn-write" onclick="writeLocation()" disabled>Write Test Location</button>
-                        <div id="write-result"></div>
-                    </div>
+                <div class="settings-group">
+                    <h3>Grant Access to Others</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Share your location data with specific people or make it public.
+                    </p>
 
-                    <div class="container">
-                        <h2 style="margin-bottom: 16px;">Read Location from Pod</h2>
-                        <p style="color: var(--gray-600); margin-bottom: 24px;">
-                            Retrieve location data from your Solid Pod.
-                        </p>
-                        <button id="btn-read" onclick="readLocation()" disabled>Read Location Data</button>
-                        <div id="read-result"></div>
-                    </div>
-                </div>
-
-                <!-- Social Feed Page -->
-                <div class="page-view" id="page-social">
-                    <div class="container">
-                        <h2 style="margin-bottom: 16px;">Friends List</h2>
-                        <p style="color: var(--gray-600); margin-bottom: 24px;">
-                            Manage your friends and social connections via FOAF (Friend of a Friend).
-                        </p>
-                        <div id="friends-list" class="info-message">
-                            <p>Loading friends...</p>
-                        </div>
-                    </div>
-
-                    <div class="container">
-                        <h3 style="margin-bottom: 16px;">Add Friend</h3>
-                        <p style="color: var(--gray-600); margin-bottom: 16px; font-size: 14px;">
-                            Add a friend by their WebID to see their shared location data.
-                        </p>
-                        <input type="text" id="input-friend-webid" placeholder="Enter WebID (e.g., https://friend.solidcommunity.net/profile/card#me)">
-                        <button id="btn-add-friend" onclick="addFriend()" class="secondary">
-                            Add Friend
-                        </button>
-                        <div id="add-friend-result"></div>
-                    </div>
-
-                    <div class="container">
-                        <h3 style="margin-bottom: 16px;">Social Feed</h3>
-                        <p style="color: var(--gray-600); margin-bottom: 16px; font-size: 14px;">
-                            View location data shared by your friends.
-                        </p>
-                        <button id="btn-refresh-feed" onclick="refreshSocialFeed()" class="secondary">
-                            Refresh Feed
-                        </button>
-                        <div id="social-feed" class="info-message" style="margin-top: 15px;">
-                            <p>No activities yet. Add friends to see their shared locations!</p>
-                        </div>
-                    </div>
-
-                    <div class="container">
-                        <h3 style="margin-bottom: 16px;">Discover Friend</h3>
-                        <p style="color: var(--gray-600); margin-bottom: 16px; font-size: 14px;">
-                            Look up a friend's profile information by WebID.
-                        </p>
-                        <input type="text" id="input-discover-webid" placeholder="Enter WebID to discover">
-                        <button id="btn-discover-friend" onclick="discoverFriend()" class="secondary">
-                            Discover Profile
-                        </button>
-                        <div id="discover-result"></div>
-                    </div>
-                </div>
-
-                <!-- Privacy Settings Page -->
-                <div class="page-view" id="page-privacy">
-                    <div class="container">
-                        <h2 style="margin-bottom: 16px;">Container Access Overview</h2>
-                        <p style="color: var(--gray-600); margin-bottom: 16px; font-size: 14px;">
-                            Your location data is stored in <code>/private/location-tracker/</code>
-                        </p>
-                        <div id="settings-privacy-info" class="info-message">
-                            <p>Loading access information...</p>
-                        </div>
-                        <button id="btn-refresh-access" onclick="refreshAccessInfo()" class="secondary" style="margin-top: 15px;">
-                            Refresh Access Info
-                        </button>
-                    </div>
-
-                    <div class="container">
-                        <h3 style="margin-bottom: 16px;">Grant Access to Others</h3>
-                        <p style="color: var(--gray-600); margin-bottom: 16px; font-size: 14px;">
-                            Share your location data with specific people or make it public.
-                        </p>
-
-                        <div style="margin-bottom: 24px;">
-                            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: var(--gray-900);">Grant Public Access:</label>
-                            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                                <button onclick="setPublicAccess('read')" class="secondary">
-                                    Make Public (Read-Only)
-                                </button>
-                                <button onclick="setPublicAccess('write')" class="secondary">
-                                    Make Public (Read-Write)
-                                </button>
-                                <button onclick="setPublicAccess('none')" class="secondary">
-                                    Make Private
-                                </button>
-                            </div>
-                        </div>
-
-                        <div style="margin-top: 24px;">
-                            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: var(--gray-900);">Grant Access to Specific Person:</label>
-                            <input type="text" id="input-grant-webid" placeholder="Enter WebID (e.g., https://example.solidcommunity.net/profile/card#me)">
-                            <div style="display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap;">
-                                <button id="btn-grant-read" onclick="grantAgentAccess('read')" class="secondary">
-                                    Grant Read Access
-                                </button>
-                                <button id="btn-grant-write" onclick="grantAgentAccess('write')" class="secondary">
-                                    Grant Write Access
-                                </button>
-                            </div>
-                        </div>
-                        <div id="grant-result"></div>
-                    </div>
-
-                    <div class="container">
-                        <h3 style="margin-bottom: 16px;">Current Access Permissions</h3>
-                        <p style="color: var(--gray-600); margin-bottom: 16px; font-size: 14px;">
-                            People who currently have access to your location data.
-                        </p>
-                        <div id="current-permissions-list" class="info-message">
-                            <p>Loading permissions...</p>
-                        </div>
-                    </div>
-
-                    <div class="container">
-                        <h3 style="margin-bottom: 16px;">Revoke Access</h3>
-                        <p style="color: var(--gray-600); margin-bottom: 16px; font-size: 14px;">
-                            Remove access from a specific person.
-                        </p>
-                        <input type="text" id="input-revoke-webid" placeholder="Enter WebID to revoke access">
-                        <button id="btn-revoke-access" onclick="revokeAgentAccess()" class="secondary">
-                            Revoke All Access
-                        </button>
-                        <div id="revoke-result"></div>
-                    </div>
-
-                    <div class="container">
-                        <h3 style="margin-bottom: 16px;">Share Link</h3>
-                        <p style="color: var(--gray-600); margin-bottom: 16px; font-size: 14px;">
-                            Generate a link to share your location data container.
-                        </p>
-                        <button onclick="generateShareLink()" class="secondary">
-                            Generate Share Link
-                        </button>
-                        <div id="share-link-result"></div>
-                    </div>
-                </div>
-
-                <!-- Data Management Page -->
-                <div class="page-view" id="page-data-management">
-                    <div class="container">
-                        <h2 style="margin-bottom: 16px;">Export Location Data</h2>
-                        <p style="color: var(--gray-600); margin-bottom: 16px; font-size: 14px;">
-                            Download all your location data from the Pod in JSON format.
-                        </p>
-                        <button id="btn-export-data" onclick="exportLocationData()" disabled class="secondary">
-                            Export All Locations
-                        </button>
-                        <div id="export-result"></div>
-                    </div>
-
-                    <div class="container">
-                        <h3 style="margin-bottom: 16px;">Import Location Data</h3>
-                        <p style="color: var(--gray-600); margin-bottom: 16px; font-size: 14px;">
-                            Upload location data to your Pod (JSON or Turtle format).
-                        </p>
-                        <input type="file" id="file-import" accept=".json,.ttl,.turtle" style="margin-bottom: 10px;" disabled>
-                        <button id="btn-import-data" onclick="importLocationData()" disabled class="secondary">
-                            Import Locations
-                        </button>
-                        <div id="import-result"></div>
-                    </div>
-
-                    <div class="container" style="background: #fff5f5; border: 2px solid #ffebee;">
-                        <h3 style="margin-bottom: 16px; color: var(--danger);">Danger Zone</h3>
-                        <p style="color: var(--gray-600); margin-bottom: 16px; font-size: 14px;">
-                            Delete all location data from your Pod. This action cannot be undone.
-                        </p>
-                        <button id="btn-delete-all" onclick="confirmDeleteAll()" disabled class="danger">
-                            Delete All Location Data
-                        </button>
-                        <div id="delete-result"></div>
-                    </div>
-                </div>
-
-                <!-- Sync Page -->
-                <div class="page-view" id="page-sync">
-                    <div class="container">
-                        <h2 style="margin-bottom: 16px;">Offline Sync Status</h2>
-                        <div id="sync-stats" class="info-message" style="margin-bottom: 15px;">
-                            <p><strong>Sync Statistics:</strong></p>
-                            <p id="sync-stats-content">Initializing...</p>
-                        </div>
+                    <div style="margin-bottom: 15px;">
+                        <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #444;">Grant Public Access:</label>
                         <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                            <button id="btn-sync" onclick="manualSync()" style="flex: 1; min-width: 150px;">
-                                Sync Now
+                            <button onclick="setPublicAccess('read')" class="secondary">
+                                👁️ Make Public (Read-Only)
                             </button>
-                            <button id="btn-view-queue" onclick="viewSyncQueue()" style="flex: 1; min-width: 150px;">
-                                View Queue
+                            <button onclick="setPublicAccess('write')" class="secondary">
+                                ✏️ Make Public (Read-Write)
                             </button>
-                            <button id="btn-clear-cache" onclick="clearOfflineCache()" class="danger" style="flex: 1; min-width: 150px;">
-                                Clear Cache
+                            <button onclick="setPublicAccess('none')" class="secondary">
+                                🔒 Make Private
                             </button>
                         </div>
-                        <div id="sync-result" style="margin-top: 15px;"></div>
+                    </div>
+
+                    <div style="margin-top: 20px;">
+                        <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #444;">Grant Access to Specific Person:</label>
+                        <input type="text" id="input-grant-webid" placeholder="Enter WebID (e.g., https://example.solidcommunity.net/profile/card#me)">
+                        <div style="display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap;">
+                            <button id="btn-grant-read" onclick="grantAgentAccess('read')" class="secondary">
+                                ➕ Grant Read Access
+                            </button>
+                            <button id="btn-grant-write" onclick="grantAgentAccess('write')" class="secondary">
+                                ➕ Grant Write Access
+                            </button>
+                        </div>
+                    </div>
+                    <div id="grant-result"></div>
+                </div>
+
+                <div class="settings-group">
+                    <h3>Current Access Permissions</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        People who currently have access to your location data.
+                    </p>
+                    <div id="current-permissions-list" class="info-message">
+                        <p>Loading permissions...</p>
                     </div>
                 </div>
 
-                <!-- Activity Log Page -->
-                <div class="page-view" id="page-activity">
-                    <div class="container">
-                        <h2 style="margin-bottom: 16px;">Activity Log</h2>
-                        <div class="log" id="activity-log"></div>
+                <div class="settings-group">
+                    <h3>Revoke Access</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Remove access from a specific person.
+                    </p>
+                    <input type="text" id="input-revoke-webid" placeholder="Enter WebID to revoke access">
+                    <button id="btn-revoke-access" onclick="revokeAgentAccess()" class="secondary">
+                        ❌ Revoke All Access
+                    </button>
+                    <div id="revoke-result"></div>
+                </div>
+
+                <div class="settings-group">
+                    <h3>Share Link</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Generate a link to share your location data container.
+                    </p>
+                    <button onclick="generateShareLink()" class="secondary">
+                        🔗 Generate Share Link
+                    </button>
+                    <div id="share-link-result"></div>
+                </div>
+            </div>
+
+            <!-- Social Tab -->
+            <div class="settings-tab-content" id="settings-social">
+                <div class="settings-group">
+                    <h3>👥 Friends List</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Manage your friends and social connections via FOAF (Friend of a Friend).
+                    </p>
+                    <div id="friends-list" class="info-message">
+                        <p>Loading friends...</p>
+                    </div>
+                </div>
+
+                <div class="settings-group">
+                    <h3>➕ Add Friend</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Add a friend by their WebID to see their shared location data.
+                    </p>
+                    <input type="text" id="input-friend-webid" placeholder="Enter WebID (e.g., https://friend.solidcommunity.net/profile/card#me)">
+                    <button id="btn-add-friend" onclick="addFriend()" class="secondary">
+                        ➕ Add Friend
+                    </button>
+                    <div id="add-friend-result"></div>
+                </div>
+
+                <div class="settings-group">
+                    <h3>📍 Social Feed</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        View location data shared by your friends.
+                    </p>
+                    <button id="btn-refresh-feed" onclick="refreshSocialFeed()" class="secondary">
+                        🔄 Refresh Feed
+                    </button>
+                    <div id="social-feed" class="info-message" style="margin-top: 15px;">
+                        <p>No activities yet. Add friends to see their shared locations!</p>
+                    </div>
+                </div>
+
+                <div class="settings-group">
+                    <h3>🔍 Discover Friend</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Look up a friend's profile information by WebID.
+                    </p>
+                    <input type="text" id="input-discover-webid" placeholder="Enter WebID to discover">
+                    <button id="btn-discover-friend" onclick="discoverFriend()" class="secondary">
+                        🔍 Discover Profile
+                    </button>
+                    <div id="discover-result"></div>
+                </div>
+            </div>
+
+            <!-- Session Tab -->
+            <div class="settings-tab-content" id="settings-session">
+                <div class="settings-group">
+                    <h3>Active Session</h3>
+                    <div id="settings-session-info" class="info-message">
+                        <p>No active session.</p>
+                    </div>
+                </div>
+
+                <div class="settings-group">
+                    <h3>Session Management</h3>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Manage your current authentication session.
+                    </p>
+                    <button id="btn-refresh-session" onclick="refreshSession()" disabled class="secondary">
+                        🔄 Refresh Session
+                    </button>
+                    <button id="btn-logout-settings" onclick="logout()" disabled class="danger" style="margin-left: 10px;">
+                        🚪 Logout
+                    </button>
+                </div>
+
+                <div class="settings-group">
+                    <h3>Connected Applications</h3>
+                    <div class="info-message">
+                        <p><strong>Currently Connected:</strong></p>
+                        <ul style="margin-top: 10px; padding-left: 20px;">
+                            <li>Location Tracker PoC</li>
+                        </ul>
+                        <p style="margin-top: 15px; font-size: 13px; color: #666;">
+                            To revoke access to this application, use your Pod provider's
+                            authorization management interface.
+                        </p>
                     </div>
                 </div>
             </div>
-        </main>
+        </div>
+
+        <!-- Offline Sync Status -->
+        <div class="section" id="section-sync">
+            <h2>
+                <span class="step-number">🔄</span>
+                <span>Offline Sync Status</span>
+                <span class="status-indicator" id="status-sync"></span>
+            </h2>
+            <div id="sync-stats" class="info-message" style="margin-bottom: 15px;">
+                <p><strong>Sync Statistics:</strong></p>
+                <p id="sync-stats-content">Initializing...</p>
+            </div>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <button id="btn-sync" onclick="manualSync()" style="flex: 1; min-width: 150px;">
+                    🔄 Sync Now
+                </button>
+                <button id="btn-view-queue" onclick="viewSyncQueue()" style="flex: 1; min-width: 150px;">
+                    📋 View Queue
+                </button>
+                <button id="btn-clear-cache" onclick="clearOfflineCache()" class="danger" style="flex: 1; min-width: 150px;">
+                    🗑️ Clear Cache
+                </button>
+            </div>
+            <div id="sync-result" style="margin-top: 15px;"></div>
+        </div>
+
+        <!-- Activity Log -->
+        <div class="section">
+            <h2 class="collapsible-header" onclick="toggleLog()">
+                <span>📋 Activity Log</span>
+            </h2>
+            <div class="collapsible-content" id="log-content">
+                <div class="log" id="activity-log"></div>
+            </div>
+        </div>
     </div>
 
     <!-- Load Solid Client Libraries -->
@@ -1693,7 +1609,7 @@
             document.getElementById('session-card').classList.add('active');
             document.getElementById('session-webid').textContent = `WebID: ${session.info.webId}`;
 
-            log(` Authenticated as ${session.info.webId}`, 'success');
+            log(`✓ Authenticated as ${session.info.webId}`, 'success');
             showAlert('auth-alert', 'Successfully authenticated!', 'success');
 
             // Auto-fetch profile
@@ -1731,7 +1647,7 @@
 
                 updateStatus('status-profile', 'active');
                 document.getElementById('step-3').classList.add('completed');
-                log(` Profile loaded: ${name}`, 'success');
+                log(`✓ Profile loaded: ${name}`, 'success');
 
                 // Display profile
                 const profileHtml = `
@@ -1778,11 +1694,11 @@
 
                         updateStatus('status-write', 'active');
                         document.getElementById('step-4').classList.add('completed');
-                        log(` Location written to ${locationUrl}`, 'success');
+                        log(`✓ Location written to ${locationUrl}`, 'success');
 
                         const resultHtml = `
                             <div class="alert success">
-                                <span class="alert-icon"></span>
+                                <span class="alert-icon">✓</span>
                                 <div>
                                     <strong>Location saved successfully!</strong><br>
                                     <a href="${locationUrl}" target="_blank" style="color: inherit;">${locationUrl}</a>
@@ -1810,7 +1726,7 @@
                         data: locationData
                     });
 
-                    log(` Offline - location queued for sync`, 'warning');
+                    log(`⚠ Offline - location queued for sync`, 'warning');
                     updateStatus('status-write', 'loading');
 
                     document.getElementById('write-result').innerHTML = `
@@ -1829,7 +1745,7 @@
                     updateStatus('status-write', 'error');
                     document.getElementById('write-result').innerHTML = `
                         <div class="alert error">
-                            <span class="alert-icon"></span>
+                            <span class="alert-icon">✗</span>
                             <div><strong>Error:</strong> ${queueError.message}</div>
                         </div>
                     `;
@@ -1860,11 +1776,11 @@
 
                 updateStatus('status-read', 'active');
                 document.getElementById('step-5').classList.add('completed');
-                log(` Location read successfully`, 'success');
+                log(`✓ Location read successfully`, 'success');
 
                 const resultHtml = `
                     <div class="alert success">
-                        <span class="alert-icon"></span>
+                        <span class="alert-icon">✓</span>
                         <div>
                             <strong>Location loaded!</strong><br>
                             Latitude: ${lat}<br>
@@ -1884,7 +1800,7 @@
                 updateStatus('status-read', 'error');
                 document.getElementById('read-result').innerHTML = `
                     <div class="alert error">
-                        <span class="alert-icon"></span>
+                        <span class="alert-icon">✗</span>
                         <div><strong>Error:</strong> ${error.message}</div>
                     </div>
                 `;
@@ -1938,9 +1854,9 @@
         function showAlert(containerId, message, type) {
             const container = document.getElementById(containerId);
             const icons = {
-                success: '',
-                error: '',
-                warning: '',
+                success: '✓',
+                error: '✗',
+                warning: '⚠',
                 info: 'ℹ'
             };
             container.innerHTML = `
@@ -2053,12 +1969,12 @@
                     </div>
                 `;
 
-                log(' Profile settings updated', 'success');
+                log('✓ Profile settings updated', 'success');
             } catch (error) {
-                log(` Failed to update profile settings: ${error.message}`, 'error');
+                log(`✗ Failed to update profile settings: ${error.message}`, 'error');
                 document.getElementById('settings-profile-info').innerHTML = `
                     <div class="alert error">
-                        <span class="alert-icon"></span>
+                        <span class="alert-icon">✗</span>
                         <div>Failed to load profile: ${error.message}</div>
                     </div>
                 `;
@@ -2088,18 +2004,18 @@
                 } else {
                     document.getElementById('settings-storage-info').innerHTML = `
                         <div class="alert warning">
-                            <span class="alert-icon"></span>
+                            <span class="alert-icon">⚠</span>
                             <div>No storage location found in profile</div>
                         </div>
                     `;
                 }
 
-                log(' Storage settings updated', 'success');
+                log('✓ Storage settings updated', 'success');
             } catch (error) {
-                log(` Failed to update storage settings: ${error.message}`, 'error');
+                log(`✗ Failed to update storage settings: ${error.message}`, 'error');
                 document.getElementById('settings-storage-info').innerHTML = `
                     <div class="alert error">
-                        <span class="alert-icon"></span>
+                        <span class="alert-icon">✗</span>
                         <div>Failed to load storage info: ${error.message}</div>
                     </div>
                 `;
@@ -2121,7 +2037,7 @@
                 <p style="margin-top: 10px;"><strong>Client ID:</strong> ${session.info.clientAppId || 'Location Tracker PoC'}</p>
             `;
 
-            log(' Session settings updated', 'success');
+            log('✓ Session settings updated', 'success');
         }
 
         // Refresh profile
@@ -2150,12 +2066,12 @@
                 if (storage) {
                     const containerUrl = `${storage}private/location-tracker/`;
                     window.open(containerUrl, '_blank');
-                    log(` Opening Pod in browser: ${containerUrl}`, 'success');
+                    log(`✓ Opening Pod in browser: ${containerUrl}`, 'success');
                 } else {
-                    log(' No storage location found', 'error');
+                    log('✗ No storage location found', 'error');
                 }
             } catch (error) {
-                log(` Failed to open Pod: ${error.message}`, 'error');
+                log(`✗ Failed to open Pod: ${error.message}`, 'error');
             }
         }
 
@@ -2183,7 +2099,7 @@
                     dataset = await solidClient.getSolidDataset(containerUrl, { fetch: session.fetch });
                 } catch (error) {
                     // Container might not exist yet
-                    log(' No location data found in Pod', 'warning');
+                    log('✗ No location data found in Pod', 'warning');
                     showAlert('export-result', 'No location data found. Write a location first!', 'warning');
                     return;
                 }
@@ -2217,13 +2133,13 @@
                                 });
                             }
                         } catch (error) {
-                            log(` Skipped ${resourceUrl}: ${error.message}`, 'warning');
+                            log(`⚠ Skipped ${resourceUrl}: ${error.message}`, 'warning');
                         }
                     }
                 }
 
                 if (locations.length === 0) {
-                    log(' No location data found', 'warning');
+                    log('✗ No location data found', 'warning');
                     showAlert('export-result', 'No location data found in your Pod', 'warning');
                     return;
                 }
@@ -2247,11 +2163,11 @@
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
 
-                log(` Exported ${locations.length} location(s)`, 'success');
+                log(`✓ Exported ${locations.length} location(s)`, 'success');
                 showAlert('export-result', `Successfully exported ${locations.length} location(s)`, 'success');
 
             } catch (error) {
-                log(` Export failed: ${error.message}`, 'error');
+                log(`✗ Export failed: ${error.message}`, 'error');
                 showAlert('export-result', `Export failed: ${error.message}`, 'error');
             } finally {
                 setButtonLoading('btn-export-data', false);
@@ -2331,7 +2247,7 @@
                         imported++;
                     }
 
-                    log(` Imported ${imported} location(s)`, 'success');
+                    log(`✓ Imported ${imported} location(s)`, 'success');
                     showAlert('import-result', `Successfully imported ${imported} location(s)`, 'success');
 
                 } else {
@@ -2339,7 +2255,7 @@
                 }
 
             } catch (error) {
-                log(` Import failed: ${error.message}`, 'error');
+                log(`✗ Import failed: ${error.message}`, 'error');
                 showAlert('import-result', `Import failed: ${error.message}`, 'error');
             } finally {
                 setButtonLoading('btn-import-data', false);
@@ -2349,7 +2265,7 @@
 
         // Confirm delete all
         window.confirmDeleteAll = function() {
-            if (confirm('Are you sure you want to delete ALL location data from your Pod? This action cannot be undone!')) {
+            if (confirm('⚠️ Are you sure you want to delete ALL location data from your Pod? This action cannot be undone!')) {
                 deleteAllLocationData();
             }
         }
@@ -2377,7 +2293,7 @@
                 try {
                     dataset = await solidClient.getSolidDataset(containerUrl, { fetch: session.fetch });
                 } catch (error) {
-                    log(' No location data found', 'warning');
+                    log('✗ No location data found', 'warning');
                     showAlert('delete-result', 'No location data found to delete', 'warning');
                     return;
                 }
@@ -2391,18 +2307,18 @@
                         try {
                             await solidClient.deleteFile(resourceUrl, { fetch: session.fetch });
                             deleted++;
-                            log(` Deleted ${resourceUrl}`, 'success');
+                            log(`✓ Deleted ${resourceUrl}`, 'success');
                         } catch (error) {
-                            log(` Failed to delete ${resourceUrl}: ${error.message}`, 'warning');
+                            log(`⚠ Failed to delete ${resourceUrl}: ${error.message}`, 'warning');
                         }
                     }
                 }
 
-                log(` Deleted ${deleted} location file(s)`, 'success');
+                log(`✓ Deleted ${deleted} location file(s)`, 'success');
                 showAlert('delete-result', `Successfully deleted ${deleted} location file(s)`, 'success');
 
             } catch (error) {
-                log(` Delete failed: ${error.message}`, 'error');
+                log(`✗ Delete failed: ${error.message}`, 'error');
                 showAlert('delete-result', `Delete failed: ${error.message}`, 'error');
             } finally {
                 setButtonLoading('btn-delete-all', false);
@@ -2531,12 +2447,12 @@
                 }
 
                 // Display public access
-                let publicStatus = ' Private';
+                let publicStatus = '🔒 Private';
                 if (publicAccess) {
                     if (publicAccess.read && publicAccess.write) {
-                        publicStatus = ' Public (Read-Write)';
+                        publicStatus = '🌐 Public (Read-Write)';
                     } else if (publicAccess.read) {
-                        publicStatus = 'Public (Read-Only)';
+                        publicStatus = '👁️ Public (Read-Only)';
                     }
                 }
 
@@ -2552,9 +2468,9 @@
                 // Display agent permissions
                 await displayCurrentPermissions(agentAccessAll);
 
-                log(' Access information refreshed', 'success');
+                log('✓ Access information refreshed', 'success');
             } catch (error) {
-                log(` Failed to load access info: ${error.message}`, 'error');
+                log(`✗ Failed to load access info: ${error.message}`, 'error');
                 document.getElementById('settings-privacy-info').innerHTML = `
                     <p style="color: #f44336;">Failed to load access information: ${error.message}</p>
                 `;
@@ -2582,7 +2498,7 @@
                 const permStr = permissions.length > 0 ? permissions.join(', ') : 'None';
 
                 html += `
-                    <li style="padding: 10px; margin-bottom: 10px; background: #f9f9f9; border-radius: 0; border-left: 4px solid #667eea;">
+                    <li style="padding: 10px; margin-bottom: 10px; background: #f9f9f9; border-radius: 8px; border-left: 4px solid #667eea;">
                         <div style="font-weight: 600; color: #333; margin-bottom: 5px; word-break: break-all;">
                             ${agent}
                         </div>
@@ -2629,13 +2545,13 @@
                     throw new Error('Failed to update public access');
                 }
 
-                log(` Public access updated`, 'success');
+                log(`✓ Public access updated`, 'success');
                 showAlert('grant-result', `Successfully updated public access`, 'success');
 
                 // Refresh access info
                 await refreshAccessInfo();
             } catch (error) {
-                log(` Failed to update public access: ${error.message}`, 'error');
+                log(`✗ Failed to update public access: ${error.message}`, 'error');
                 showAlert('grant-result', `Failed: ${error.message}`, 'error');
             }
         }
@@ -2683,7 +2599,7 @@
                     throw new Error('Failed to grant access to container');
                 }
 
-                log(` Container access granted, now granting access to locations file...`, 'info');
+                log(`✓ Container access granted, now granting access to locations file...`, 'info');
 
                 // Also grant access to the locations.ttl file if it exists
                 const locationsFileUrl = `${containerUrl}locations.ttl`;
@@ -2696,25 +2612,25 @@
                     );
 
                     if (fileAccess !== null) {
-                        log(` Access granted to locations.ttl file`, 'success');
+                        log(`✓ Access granted to locations.ttl file`, 'success');
                     }
                 } catch (fileError) {
                     // File might not exist yet, which is fine
                     if (fileError.message.includes('404')) {
-                        log(' locations.ttl file does not exist yet (will be created on first location save)', 'info');
+                        log('⚠ locations.ttl file does not exist yet (will be created on first location save)', 'info');
                     } else {
                         console.warn('Failed to grant access to locations.ttl:', fileError);
                     }
                 }
 
-                log(` Access granted to ${targetWebId}`, 'success');
+                log(`✓ Access granted to ${targetWebId}`, 'success');
                 showAlert('grant-result', `Successfully granted ${accessType} access to ${targetWebId}`, 'success');
 
                 // Clear input and refresh
                 webIdInput.value = '';
                 await refreshAccessInfo();
             } catch (error) {
-                log(` Failed to grant access: ${error.message}`, 'error');
+                log(`✗ Failed to grant access: ${error.message}`, 'error');
                 showAlert('grant-result', `Failed: ${error.message}`, 'error');
             } finally {
                 setButtonLoading(`btn-grant-${accessType}`, false);
@@ -2754,14 +2670,14 @@
                     throw new Error('Failed to revoke access');
                 }
 
-                log(` Access revoked from ${targetWebId}`, 'success');
+                log(`✓ Access revoked from ${targetWebId}`, 'success');
                 showAlert('revoke-result', `Successfully revoked access from ${targetWebId}`, 'success');
 
                 // Clear input and refresh
                 webIdInput.value = '';
                 await refreshAccessInfo();
             } catch (error) {
-                log(` Failed to revoke access: ${error.message}`, 'error');
+                log(`✗ Failed to revoke access: ${error.message}`, 'error');
                 showAlert('revoke-result', `Failed: ${error.message}`, 'error');
             } finally {
                 setButtonLoading('btn-revoke-access', false);
@@ -2782,25 +2698,25 @@
                 const containerUrl = await getLocationContainerUrl();
 
                 const linkHtml = `
-                    <div style="margin-top: 15px; padding: 15px; background: #f0f7ff; border-radius: 0; border: 2px solid #667eea;">
+                    <div style="margin-top: 15px; padding: 15px; background: #f0f7ff; border-radius: 8px; border: 2px solid #667eea;">
                         <p style="margin-bottom: 10px; font-weight: 600; color: #333;">Share this link:</p>
                         <input type="text" value="${containerUrl}" readonly
                             style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px; font-family: monospace; font-size: 13px;"
                             onclick="this.select()">
                         <p style="margin-top: 10px; font-size: 13px; color: #666;">
-                            Note: Recipients will need appropriate permissions to access this container.
+                            ⚠️ Note: Recipients will need appropriate permissions to access this container.
                             Grant them access using the "Grant Access to Others" section above.
                         </p>
                         <button onclick="copyShareLink('${containerUrl}')" class="secondary" style="margin-top: 10px;">
-                             Copy Link
+                            📋 Copy Link
                         </button>
                     </div>
                 `;
 
                 document.getElementById('share-link-result').innerHTML = linkHtml;
-                log(' Share link generated', 'success');
+                log('✓ Share link generated', 'success');
             } catch (error) {
-                log(` Failed to generate share link: ${error.message}`, 'error');
+                log(`✗ Failed to generate share link: ${error.message}`, 'error');
                 showAlert('share-link-result', `Failed: ${error.message}`, 'error');
             }
         }
@@ -2810,7 +2726,7 @@
             try {
                 await navigator.clipboard.writeText(url);
                 showAlert('share-link-result', 'Link copied to clipboard!', 'success');
-                log(' Link copied to clipboard', 'success');
+                log('✓ Link copied to clipboard', 'success');
             } catch (error) {
                 showAlert('share-link-result', 'Failed to copy link', 'error');
             }
@@ -2963,7 +2879,7 @@
                     }
 
                     html += `
-                        <li style="padding: 12px; margin-bottom: 10px; background: #f9f9f9; border-radius: 0; border-left: 4px solid #667eea; display: flex; justify-content: space-between; align-items: center;">
+                        <li style="padding: 12px; margin-bottom: 10px; background: #f9f9f9; border-radius: 8px; border-left: 4px solid #667eea; display: flex; justify-content: space-between; align-items: center;">
                             <div style="flex: 1; min-width: 0;">
                                 <div style="font-weight: 600; color: #333; margin-bottom: 5px;">
                                     ${friendName}
@@ -2973,7 +2889,7 @@
                                 </div>
                             </div>
                             <button onclick="removeFriend('${friendWebId}')" class="secondary" style="margin-left: 10px; padding: 5px 10px; font-size: 12px;">
-                                 Remove
+                                ❌ Remove
                             </button>
                         </li>
                     `;
@@ -3156,7 +3072,7 @@
                 // Save to Pod
                 await solidClient.saveSolidDatasetAt(friendsUrl, friendsDataset, { fetch: session.fetch });
 
-                log(` Friend added: ${friendWebId}`, 'success');
+                log(`✓ Friend added: ${friendWebId}`, 'success');
                 showAlert('add-friend-result', `Successfully added friend!`, 'success');
 
                 // Clear input and refresh display
@@ -3165,7 +3081,7 @@
                 await refreshSocialFeed();
 
             } catch (error) {
-                log(` Failed to add friend: ${error.message}`, 'error');
+                log(`✗ Failed to add friend: ${error.message}`, 'error');
                 showAlert('add-friend-result', `Failed: ${error.message}`, 'error');
             } finally {
                 setButtonLoading('btn-add-friend', false);
@@ -3196,7 +3112,7 @@
                 // Save to Pod
                 await solidClient.saveSolidDatasetAt(friendsUrl, friendsDataset, { fetch: session.fetch });
 
-                log(` Friend removed: ${friendWebId}`, 'success');
+                log(`✓ Friend removed: ${friendWebId}`, 'success');
                 showAlert('add-friend-result', `Friend removed successfully`, 'success');
 
                 // Refresh display
@@ -3204,7 +3120,7 @@
                 await refreshSocialFeed();
 
             } catch (error) {
-                log(` Failed to remove friend: ${error.message}`, 'error');
+                log(`✗ Failed to remove friend: ${error.message}`, 'error');
                 showAlert('add-friend-result', `Failed to remove: ${error.message}`, 'error');
             }
         }
@@ -3232,7 +3148,7 @@
                 const profile = await fetchFriendProfile(targetWebId);
 
                 const profileHtml = `
-                    <div style="margin-top: 15px; padding: 15px; background: #f9f9f9; border-radius: 0;">
+                    <div style="margin-top: 15px; padding: 15px; background: #f9f9f9; border-radius: 8px;">
                         <h4 style="margin-bottom: 10px; color: #667eea;">${profile.name || 'Unknown Name'}</h4>
                         <p style="font-size: 13px; color: #666; margin-bottom: 5px;">
                             <strong>WebID:</strong> <span style="word-break: break-all;">${profile.webId}</span>
@@ -3249,10 +3165,10 @@
                 `;
 
                 document.getElementById('discover-result').innerHTML = profileHtml;
-                log(` Profile discovered`, 'success');
+                log(`✓ Profile discovered`, 'success');
 
             } catch (error) {
-                log(` Failed to discover profile: ${error.message}`, 'error');
+                log(`✗ Failed to discover profile: ${error.message}`, 'error');
                 showAlert('discover-result', `Failed: ${error.message}`, 'error');
             } finally {
                 setButtonLoading('btn-discover-friend', false);
@@ -3354,7 +3270,7 @@
                     let errorDetails = '';
                     if (accessErrors.length > 0) {
                         errorDetails = `
-                            <div style="margin-top: 15px; padding: 12px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 0;">
+                            <div style="margin-top: 15px; padding: 12px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
                                 <p style="font-weight: 600; margin-bottom: 8px; color: #856404;">Access Issues:</p>
                                 <ul style="margin: 0; padding-left: 20px; color: #856404; font-size: 13px;">
                                     ${accessErrors.map(err => `<li style="margin-bottom: 4px;">${err}</li>`).join('')}
@@ -3380,11 +3296,11 @@
                         const timeAgo = getTimeAgo(location.created);
 
                         feedHtml += `
-                            <div style="padding: 12px; margin-bottom: 10px; background: #f9f9f9; border-radius: 0; border-left: 4px solid #667eea;">
+                            <div style="padding: 12px; margin-bottom: 10px; background: #f9f9f9; border-radius: 8px; border-left: 4px solid #667eea;">
                                 <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
                                     <div>
                                         <div style="font-weight: 600; color: #333;">
-                                             ${location.name}
+                                            📍 ${location.name}
                                         </div>
                                         <div style="font-size: 12px; color: #667eea; margin-top: 2px;">
                                             ${location.friendName}
@@ -3407,10 +3323,10 @@
                     document.getElementById('social-feed').innerHTML = feedHtml;
                 }
 
-                log(` Social feed refreshed - ${allLocations.length} locations found`, 'success');
+                log(`✓ Social feed refreshed - ${allLocations.length} locations found`, 'success');
 
             } catch (error) {
-                log(` Failed to refresh feed: ${error.message}`, 'error');
+                log(`✗ Failed to refresh feed: ${error.message}`, 'error');
                 document.getElementById('social-feed').innerHTML = `<p style="color: #f44336;">Failed to load feed: ${error.message}</p>`;
             } finally {
                 setButtonLoading('btn-refresh-feed', false);
@@ -3460,9 +3376,9 @@
                 // Session refresh is handled automatically by the library
                 // Just update the UI with current info
                 updateSessionSettings();
-                log(' Session information refreshed', 'success');
+                log('✓ Session information refreshed', 'success');
             } catch (error) {
-                log(` Failed to refresh session: ${error.message}`, 'error');
+                log(`✗ Failed to refresh session: ${error.message}`, 'error');
             } finally {
                 setButtonLoading('btn-refresh-session', false);
             }
@@ -3549,11 +3465,11 @@
 
                 document.getElementById('sync-stats-content').innerHTML = `
                     <ul style="list-style: none; padding: 0; margin: 10px 0 0 0;">
-                        <li> Pending Operations: <strong>${stats.pendingOperations}</strong></li>
-                        <li> Failed Operations: <strong>${stats.failedOperations}</strong></li>
-                        <li> Cached Locations: <strong>${stats.cachedLocations}</strong></li>
-                        <li> Synced Locations: <strong>${stats.syncedLocations}</strong></li>
-                        <li>Last Sync: <strong>${lastSyncDisplay}</strong></li>
+                        <li>📋 Pending Operations: <strong>${stats.pendingOperations}</strong></li>
+                        <li>❌ Failed Operations: <strong>${stats.failedOperations}</strong></li>
+                        <li>💾 Cached Locations: <strong>${stats.cachedLocations}</strong></li>
+                        <li>✅ Synced Locations: <strong>${stats.syncedLocations}</strong></li>
+                        <li>⏱️ Last Sync: <strong>${lastSyncDisplay}</strong></li>
                     </ul>
                 `;
 
@@ -3587,12 +3503,12 @@
 
                 const result = await offlineStorage.syncPendingOperations(executeQueuedOperation);
 
-                log(` Sync complete - ${result.succeeded} succeeded, ${result.failed} failed`, 'success');
+                log(`✓ Sync complete - ${result.succeeded} succeeded, ${result.failed} failed`, 'success');
                 showAlert('sync-result', `Sync complete: ${result.succeeded} succeeded, ${result.failed} failed`, result.failed > 0 ? 'warning' : 'success');
 
                 await updateSyncStats();
             } catch (error) {
-                log(` Sync failed: ${error.message}`, 'error');
+                log(`✗ Sync failed: ${error.message}`, 'error');
                 showAlert('sync-result', `Sync failed: ${error.message}`, 'error');
             } finally {
                 setButtonLoading('btn-sync', false);
@@ -3616,7 +3532,7 @@
                 const result = await offlineStorage.syncPendingOperations(executeQueuedOperation);
 
                 if (result.succeeded > 0) {
-                    log(` Auto-sync complete - ${result.succeeded} operations synced`, 'success');
+                    log(`✓ Auto-sync complete - ${result.succeeded} operations synced`, 'success');
                 }
 
                 await updateSyncStats();
@@ -3719,14 +3635,14 @@
                 document.getElementById('sync-result').innerHTML = queueHtml;
                 log(`Showing ${pendingOps.length} pending operation(s)`, 'info');
             } catch (error) {
-                log(` Failed to load queue: ${error.message}`, 'error');
+                log(`✗ Failed to load queue: ${error.message}`, 'error');
                 showAlert('sync-result', `Failed to load queue: ${error.message}`, 'error');
             }
         }
 
         // Clear offline cache
         window.clearOfflineCache = async function() {
-            if (!confirm('This will clear all offline cached data and pending operations. Continue?')) {
+            if (!confirm('⚠️ This will clear all offline cached data and pending operations. Continue?')) {
                 return;
             }
 
@@ -3735,7 +3651,7 @@
 
             try {
                 await offlineStorage.clearAll();
-                log(' Offline cache cleared', 'success');
+                log('✓ Offline cache cleared', 'success');
                 showAlert('sync-result', 'Offline cache cleared successfully', 'success');
 
                 // Clear Service Worker cache
@@ -3746,7 +3662,7 @@
 
                 await updateSyncStats();
             } catch (error) {
-                log(` Failed to clear cache: ${error.message}`, 'error');
+                log(`✗ Failed to clear cache: ${error.message}`, 'error');
                 showAlert('sync-result', `Failed to clear cache: ${error.message}`, 'error');
             } finally {
                 setButtonLoading('btn-clear-cache', false);
@@ -3759,109 +3675,6 @@
 
         // Initialize on load
         init();
-    </script>
-
-    <script>
-        // Navigation functionality
-        let currentPage = 'dashboard';
-
-        function navigateToPage(pageId) {
-            // Hide all pages
-            document.querySelectorAll('.page-view').forEach(page => {
-                page.classList.remove('active');
-            });
-
-            // Remove active class from all nav items
-            document.querySelectorAll('.nav-item').forEach(item => {
-                item.classList.remove('active');
-            });
-
-            // Show selected page
-            const pageElement = document.getElementById(`page-${pageId}`);
-            if (pageElement) {
-                pageElement.classList.add('active');
-                currentPage = pageId;
-            }
-
-            // Set active nav item - find the nav item that triggered this
-            document.querySelectorAll('.nav-item').forEach(item => {
-                if (item.getAttribute('onclick') && item.getAttribute('onclick').includes(pageId)) {
-                    item.classList.add('active');
-                }
-            });
-
-            // Update page title
-            updatePageTitle(pageId);
-
-            // Close sidebar on mobile
-            closeSidebar();
-        }
-
-        function updatePageTitle(pageId) {
-            const titles = {
-                'dashboard': 'Dashboard',
-                'authentication': 'Authentication',
-                'profile': 'Profile',
-                'locations': 'Locations',
-                'social': 'Social Feed',
-                'privacy': 'Privacy Settings',
-                'data-management': 'Data Management',
-                'sync': 'Offline Sync',
-                'activity': 'Activity Log'
-            };
-            document.getElementById('page-title').textContent = titles[pageId] || 'Dashboard';
-        }
-
-        // Mobile menu toggle
-        function toggleSidebar() {
-            const sidebar = document.getElementById('sidebar');
-            const overlay = document.getElementById('sidebar-overlay');
-            sidebar.classList.toggle('mobile-open');
-            overlay.classList.toggle('active');
-        }
-
-        function closeSidebar() {
-            if (window.innerWidth <= 768) {
-                const sidebar = document.getElementById('sidebar');
-                const overlay = document.getElementById('sidebar-overlay');
-                sidebar.classList.remove('mobile-open');
-                overlay.classList.remove('active');
-            }
-        }
-
-        // Update user avatar
-        function updateUserAvatar() {
-            const session = window.session;
-            if (session && session.info && session.info.webId) {
-                const webId = session.info.webId;
-                const initial = webId.match(/\/([^/]+)\/profile/)?.[1]?.[0]?.toUpperCase() || '?';
-                document.getElementById('user-avatar').textContent = initial;
-            } else {
-                document.getElementById('user-avatar').textContent = '?';
-            }
-        }
-
-        // Hook into existing login/logout functions to update avatar
-        const originalLogin = window.login;
-        if (originalLogin) {
-            window.login = async function() {
-                await originalLogin();
-                setTimeout(updateUserAvatar, 500);
-            };
-        }
-
-        const originalLogout = window.logout;
-        if (originalLogout) {
-            window.logout = async function() {
-                await originalLogout();
-                updateUserAvatar();
-            };
-        }
-
-        // Initialize
-        setTimeout(() => {
-            updateUserAvatar();
-        }, 100);
     </script>
 </body>
 </html>
