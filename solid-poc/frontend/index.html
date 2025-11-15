@@ -2515,8 +2515,31 @@
         // Fetch friend's profile information
         async function fetchFriendProfile(webId) {
             try {
+                console.log('[fetchFriendProfile] Fetching profile:', webId);
                 const profileDataset = await solidClient.getSolidDataset(webId, { fetch: session.fetch });
+                console.log('[fetchFriendProfile] Dataset fetched successfully');
+
                 const profileThing = solidClient.getThing(profileDataset, webId);
+                console.log('[fetchFriendProfile] Profile thing:', profileThing);
+
+                if (!profileThing) {
+                    console.warn('[fetchFriendProfile] No thing found at WebID, trying to find profile document');
+                    // Sometimes the profile is the document itself, not a specific thing
+                    const allThings = solidClient.getThingAll(profileDataset);
+                    console.log('[fetchFriendProfile] All things in dataset:', allThings);
+
+                    if (allThings.length > 0) {
+                        // Use the first thing found (usually the profile card)
+                        const firstThing = allThings[0];
+                        const name = solidClient.getStringNoLocale(firstThing, 'http://xmlns.com/foaf/0.1/name') ||
+                                    solidClient.getStringNoLocale(firstThing, 'http://www.w3.org/2006/vcard/ns#fn') ||
+                                    solidClient.getStringNoLocale(firstThing, 'http://schema.org/name');
+                        const storage = solidClient.getUrl(firstThing, 'http://www.w3.org/ns/pim/space#storage');
+
+                        console.log('[fetchFriendProfile] Found name:', name, 'storage:', storage);
+                        return { webId, name, storage };
+                    }
+                }
 
                 // Try multiple name predicates
                 const name = solidClient.getStringNoLocale(profileThing, 'http://xmlns.com/foaf/0.1/name') ||
@@ -2525,14 +2548,16 @@
 
                 const storage = solidClient.getUrl(profileThing, 'http://www.w3.org/ns/pim/space#storage');
 
+                console.log('[fetchFriendProfile] Found name:', name, 'storage:', storage);
                 return {
                     webId,
                     name,
                     storage
                 };
             } catch (error) {
-                console.error(`Failed to fetch profile for ${webId}:`, error);
-                return { webId, name: null, storage: null };
+                console.error(`[fetchFriendProfile] Failed to fetch profile for ${webId}:`, error);
+                // Re-throw the error so the UI can show it to the user
+                throw new Error(`Unable to fetch profile: ${error.message}`);
             }
         }
 
