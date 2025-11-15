@@ -2446,7 +2446,7 @@
                 }
 
                 // Get the main thing (user's profile in friends file)
-                const userThing = solidClient.getThing(friendsDataset, '#me');
+                const userThing = solidClient.getThing(friendsDataset, `${friendsUrl}#me`);
                 if (!userThing) {
                     return [];
                 }
@@ -2577,9 +2577,9 @@
                 }
 
                 // Get or create the user thing
-                let userThing = solidClient.getThing(friendsDataset, '#me');
+                let userThing = solidClient.getThing(friendsDataset, `${friendsUrl}#me`);
                 if (!userThing) {
-                    userThing = solidClient.createThing({ name: 'me' });
+                    userThing = solidClient.createThing({ url: `${friendsUrl}#me` });
                     userThing = solidClient.addUrl(userThing, 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type', 'http://xmlns.com/foaf/0.1/Person');
                 }
 
@@ -2627,7 +2627,7 @@
                 const friendsUrl = await getFriendsListUrl();
                 let friendsDataset = await solidClient.getSolidDataset(friendsUrl, { fetch: session.fetch });
 
-                let userThing = solidClient.getThing(friendsDataset, '#me');
+                let userThing = solidClient.getThing(friendsDataset, `${friendsUrl}#me`);
                 if (!userThing) {
                     throw new Error('Friends list not found');
                 }
