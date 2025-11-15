@@ -2516,39 +2516,73 @@
         async function fetchFriendProfile(webId) {
             try {
                 console.log('[fetchFriendProfile] Fetching profile:', webId);
-                const profileDataset = await solidClient.getSolidDataset(webId, { fetch: session.fetch });
-                console.log('[fetchFriendProfile] Dataset fetched successfully');
+                const webIdDataset = await solidClient.getSolidDataset(webId, { fetch: session.fetch });
+                console.log('[fetchFriendProfile] WebID dataset fetched successfully');
 
-                const profileThing = solidClient.getThing(profileDataset, webId);
-                console.log('[fetchFriendProfile] Profile thing:', profileThing);
+                // Get the thing at the WebID
+                let profileThing = solidClient.getThing(webIdDataset, webId);
+                console.log('[fetchFriendProfile] WebID thing:', profileThing);
 
+                // Check if this WebID points to a separate profile document
+                let profileDocUrl = null;
+                if (profileThing) {
+                    // Look for rdfs:seeAlso or foaf:isPrimaryTopicOf which often point to the profile document
+                    profileDocUrl = solidClient.getUrl(profileThing, 'http://www.w3.org/2000/01/rdf-schema#seeAlso') ||
+                                   solidClient.getUrl(profileThing, 'http://xmlns.com/foaf/0.1/isPrimaryTopicOf');
+                    console.log('[fetchFriendProfile] Profile document URL from WebID:', profileDocUrl);
+                }
+
+                // If no profileThing, try to find any thing in the dataset
                 if (!profileThing) {
-                    console.warn('[fetchFriendProfile] No thing found at WebID, trying to find profile document');
-                    // Sometimes the profile is the document itself, not a specific thing
-                    const allThings = solidClient.getThingAll(profileDataset);
-                    console.log('[fetchFriendProfile] All things in dataset:', allThings);
+                    console.warn('[fetchFriendProfile] No thing found at WebID, trying to find any thing in dataset');
+                    const allThings = solidClient.getThingAll(webIdDataset);
+                    console.log('[fetchFriendProfile] All things in WebID dataset:', allThings.length);
 
                     if (allThings.length > 0) {
-                        // Use the first thing found (usually the profile card)
-                        const firstThing = allThings[0];
-                        const name = solidClient.getStringNoLocale(firstThing, 'http://xmlns.com/foaf/0.1/name') ||
-                                    solidClient.getStringNoLocale(firstThing, 'http://www.w3.org/2006/vcard/ns#fn') ||
-                                    solidClient.getStringNoLocale(firstThing, 'http://schema.org/name');
-                        const storage = solidClient.getUrl(firstThing, 'http://www.w3.org/ns/pim/space#storage');
-
-                        console.log('[fetchFriendProfile] Found name:', name, 'storage:', storage);
-                        return { webId, name, storage };
+                        profileThing = allThings[0];
+                        // Also check for profile document link from this thing
+                        profileDocUrl = profileDocUrl ||
+                                       solidClient.getUrl(profileThing, 'http://www.w3.org/2000/01/rdf-schema#seeAlso') ||
+                                       solidClient.getUrl(profileThing, 'http://xmlns.com/foaf/0.1/isPrimaryTopicOf');
                     }
                 }
 
+                // If we found a separate profile document, fetch it
+                let actualProfileThing = profileThing;
+                if (profileDocUrl && profileDocUrl !== webId) {
+                    console.log('[fetchFriendProfile] Fetching separate profile document:', profileDocUrl);
+                    try {
+                        const profileDataset = await solidClient.getSolidDataset(profileDocUrl, { fetch: session.fetch });
+                        console.log('[fetchFriendProfile] Profile document fetched successfully');
+
+                        // Try to find the thing that represents the WebID in the profile document
+                        actualProfileThing = solidClient.getThing(profileDataset, webId);
+
+                        if (!actualProfileThing) {
+                            // If not found, try to get all things and use the first one
+                            const profileThings = solidClient.getThingAll(profileDataset);
+                            console.log('[fetchFriendProfile] All things in profile document:', profileThings.length);
+                            if (profileThings.length > 0) {
+                                actualProfileThing = profileThings[0];
+                            }
+                        }
+                    } catch (profileError) {
+                        console.warn('[fetchFriendProfile] Failed to fetch profile document, using WebID thing:', profileError);
+                    }
+                }
+
+                if (!actualProfileThing) {
+                    throw new Error('No profile data found at WebID or linked profile document');
+                }
+
                 // Try multiple name predicates
-                const name = solidClient.getStringNoLocale(profileThing, 'http://xmlns.com/foaf/0.1/name') ||
-                            solidClient.getStringNoLocale(profileThing, 'http://www.w3.org/2006/vcard/ns#fn') ||
-                            solidClient.getStringNoLocale(profileThing, 'http://schema.org/name');
+                const name = solidClient.getStringNoLocale(actualProfileThing, 'http://xmlns.com/foaf/0.1/name') ||
+                            solidClient.getStringNoLocale(actualProfileThing, 'http://www.w3.org/2006/vcard/ns#fn') ||
+                            solidClient.getStringNoLocale(actualProfileThing, 'http://schema.org/name');
 
-                const storage = solidClient.getUrl(profileThing, 'http://www.w3.org/ns/pim/space#storage');
+                const storage = solidClient.getUrl(actualProfileThing, 'http://www.w3.org/ns/pim/space#storage');
 
-                console.log('[fetchFriendProfile] Found name:', name, 'storage:', storage);
+                console.log('[fetchFriendProfile] Final result - name:', name, 'storage:', storage);
                 return {
                     webId,
                     name,
