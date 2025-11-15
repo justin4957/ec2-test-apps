@@ -2347,47 +2347,43 @@
                 const containerUrl = await getLocationContainerUrl();
 
                 // Grant access to the container
-                const newAccess = await solidClient.universalAccess.setAgentAccess(
+                const containerAccess = await solidClient.universalAccess.setAgentAccess(
                     containerUrl,
                     targetWebId,
                     access,
                     { fetch: session.fetch }
                 );
 
-                if (newAccess === null) {
+                if (containerAccess === null) {
                     throw new Error('Failed to grant access to container');
                 }
 
-                log(`✓ Container access granted, now granting access to existing files...`, 'info');
+                log(`✓ Container access granted, now granting access to locations file...`, 'info');
 
-                // Also grant access to all existing files in the container
+                // Also grant access to the locations.ttl file if it exists
+                const locationsFileUrl = `${containerUrl}locations.ttl`;
                 try {
-                    const containerDataset = await solidClient.getSolidDataset(containerUrl, { fetch: session.fetch });
-                    const resources = solidClient.getContainedResourceUrlAll(containerDataset);
+                    const fileAccess = await solidClient.universalAccess.setAgentAccess(
+                        locationsFileUrl,
+                        targetWebId,
+                        access,
+                        { fetch: session.fetch }
+                    );
 
-                    let filesGranted = 0;
-                    for (const resourceUrl of resources) {
-                        if (resourceUrl.endsWith('.ttl')) {
-                            try {
-                                await solidClient.universalAccess.setAgentAccess(
-                                    resourceUrl,
-                                    targetWebId,
-                                    access,
-                                    { fetch: session.fetch }
-                                );
-                                filesGranted++;
-                            } catch (fileError) {
-                                console.warn(`Failed to grant access to ${resourceUrl}:`, fileError);
-                            }
-                        }
+                    if (fileAccess !== null) {
+                        log(`✓ Access granted to locations.ttl file`, 'success');
                     }
-                    log(`✓ Access granted to ${filesGranted} existing location files`, 'success');
-                } catch (filesError) {
-                    console.warn('Failed to grant access to existing files:', filesError);
+                } catch (fileError) {
+                    // File might not exist yet, which is fine
+                    if (fileError.message.includes('404')) {
+                        log('⚠ locations.ttl file does not exist yet (will be created on first location save)', 'info');
+                    } else {
+                        console.warn('Failed to grant access to locations.ttl:', fileError);
+                    }
                 }
 
                 log(`✓ Access granted to ${targetWebId}`, 'success');
-                showAlert('grant-result', `Successfully granted ${accessType} access to ${targetWebId} for container and all existing files`, 'success');
+                showAlert('grant-result', `Successfully granted ${accessType} access to ${targetWebId}`, 'success');
 
                 // Clear input and refresh
                 webIdInput.value = '';
@@ -2970,73 +2966,54 @@
                             continue;
                         }
 
-                        const locationContainerUrl = `${profile.storage}private/location-tracker/`;
-                        console.log(`[SocialFeed] Attempting to fetch locations from ${locationContainerUrl}`);
+                        const locationsFileUrl = `${profile.storage}private/location-tracker/locations.ttl`;
+                        console.log(`[SocialFeed] Attempting to fetch locations from ${locationsFileUrl}`);
 
-                        // Try to fetch friend's locations
+                        // Try to fetch friend's locations file
                         try {
-                            const locationDataset = await solidClient.getSolidDataset(locationContainerUrl, { fetch: session.fetch });
-                            const resources = solidClient.getContainedResourceUrlAll(locationDataset);
-                            console.log(`[SocialFeed] Found ${resources.length} resources in ${friendWebId}'s location container`);
-                            console.log(`[SocialFeed] Resource URLs:`, resources);
+                            const locationsDataset = await solidClient.getSolidDataset(locationsFileUrl, { fetch: session.fetch });
+                            console.log(`[SocialFeed] Successfully fetched locations file for ${friendWebId}`);
+
+                            // Get all location things from the file
+                            const locationThings = solidClient.getThingAll(locationsDataset);
+                            console.log(`[SocialFeed] Found ${locationThings.length} location(s) in ${friendWebId}'s locations file`);
 
                             let locationCount = 0;
-                            for (const resourceUrl of resources) {
-                                console.log(`[SocialFeed] Checking resource: ${resourceUrl}`);
-                                if (resourceUrl.endsWith('.ttl')) {
-                                    console.log(`[SocialFeed] Resource is a .ttl file, attempting to fetch...`);
-                                    try {
-                                        const locationFile = await solidClient.getSolidDataset(resourceUrl, { fetch: session.fetch });
-                                        console.log(`[SocialFeed] Successfully fetched ${resourceUrl}`);
+                            for (const locationThing of locationThings) {
+                                try {
+                                    const lat = solidClient.getDecimal(locationThing, 'http://www.w3.org/2003/01/geo/wgs84_pos#lat');
+                                    const long = solidClient.getDecimal(locationThing, 'http://www.w3.org/2003/01/geo/wgs84_pos#long');
+                                    const created = solidClient.getDatetime(locationThing, 'http://purl.org/dc/terms/created');
+                                    const name = solidClient.getStringNoLocale(locationThing, 'http://schema.org/name');
 
-                                        // Try to get the location thing
-                                        let locationThing = solidClient.getThing(locationFile, `${resourceUrl}#location`);
-                                        console.log(`[SocialFeed] Location thing with #location:`, locationThing);
-
-                                        // If not found, try to get all things and use the first one
-                                        if (!locationThing) {
-                                            const allThings = solidClient.getThingAll(locationFile);
-                                            console.log(`[SocialFeed] All things in file:`, allThings.length, allThings);
-                                            if (allThings.length > 0) {
-                                                locationThing = allThings[0];
-                                                console.log(`[SocialFeed] Using first thing:`, locationThing);
-                                            }
-                                        }
-
-                                        if (locationThing) {
-                                            const lat = solidClient.getDecimal(locationThing, 'http://www.w3.org/2003/01/geo/wgs84_pos#lat');
-                                            const long = solidClient.getDecimal(locationThing, 'http://www.w3.org/2003/01/geo/wgs84_pos#long');
-                                            const created = solidClient.getDatetime(locationThing, 'http://purl.org/dc/terms/created');
-                                            const name = solidClient.getStringNoLocale(locationThing, 'http://schema.org/name');
-
-                                            allLocations.push({
-                                                friendWebId,
-                                                friendName: profile.name || friendWebId.split('/').pop(),
-                                                lat,
-                                                long,
-                                                created: created ? new Date(created) : new Date(),
-                                                name: name || 'Location',
-                                                url: resourceUrl
-                                            });
-                                            locationCount++;
-                                        }
-                                    } catch (locationError) {
-                                        // Skip locations we can't access
-                                        console.log(`[SocialFeed] Cannot access ${resourceUrl}:`, locationError.message);
+                                    // Only add if it has valid coordinates
+                                    if (lat !== null && long !== null) {
+                                        allLocations.push({
+                                            friendWebId,
+                                            friendName: profile.name || friendWebId.split('/').pop(),
+                                            lat,
+                                            long,
+                                            created: created ? new Date(created) : new Date(),
+                                            name: name || 'Location',
+                                            url: locationThing.url
+                                        });
+                                        locationCount++;
                                     }
+                                } catch (thingError) {
+                                    console.warn(`[SocialFeed] Error parsing location thing:`, thingError);
                                 }
                             }
                             console.log(`[SocialFeed] Successfully loaded ${locationCount} locations from ${friendWebId}`);
-                        } catch (containerError) {
-                            // Friend might not have location-tracker container or it's not shared
-                            console.log(`[SocialFeed] Cannot access location container for ${friendWebId}:`, containerError.message);
+                        } catch (fileError) {
+                            // Friend might not have locations file yet or it's not shared
+                            console.log(`[SocialFeed] Cannot access locations file for ${friendWebId}:`, fileError.message);
 
-                            if (containerError.message.includes('401') || containerError.message.includes('403')) {
-                                accessErrors.push(`${profile.name || friendWebId}: Access denied. They need to grant you read access to their location container.`);
-                            } else if (containerError.message.includes('404')) {
-                                accessErrors.push(`${profile.name || friendWebId}: No location data found (container doesn't exist).`);
+                            if (fileError.message.includes('401') || fileError.message.includes('403')) {
+                                accessErrors.push(`${profile.name || friendWebId}: Access denied. They need to grant you read access to their locations file.`);
+                            } else if (fileError.message.includes('404')) {
+                                accessErrors.push(`${profile.name || friendWebId}: No location data found (file doesn't exist yet).`);
                             } else {
-                                accessErrors.push(`${profile.name || friendWebId}: ${containerError.message}`);
+                                accessErrors.push(`${profile.name || friendWebId}: ${fileError.message}`);
                             }
                         }
                     } catch (profileError) {
@@ -3345,33 +3322,44 @@
                 // Container might already exist
             }
 
-            // Generate unique filename
+            // Use a single locations.ttl file for all locations
+            const locationsFileUrl = `${containerUrl}locations.ttl`;
             const timestamp = locationData.timestamp || Date.now();
-            const locationFileName = `location-${timestamp}.ttl`;
-            const locationUrl = `${containerUrl}${locationFileName}`;
 
-            // Create Turtle data
-            const turtleData = `@prefix schema: <http://schema.org/> .
-@prefix geo: <http://www.w3.org/2003/01/geo/wgs84_pos#> .
-@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
-@prefix dcterms: <http://purl.org/dc/terms/> .
+            // Try to fetch existing file, or create new dataset if it doesn't exist
+            let locationsDataset;
+            try {
+                locationsDataset = await solidClient.getSolidDataset(locationsFileUrl, { fetch: session.fetch });
+                console.log('[writeLocationToPod] Loaded existing locations file');
+            } catch (error) {
+                // File doesn't exist yet, create new dataset
+                console.log('[writeLocationToPod] Creating new locations file');
+                locationsDataset = solidClient.createSolidDataset();
+            }
 
-<#location> a schema:Place, geo:Point ;
-    geo:lat "${locationData.latitude}"^^xsd:decimal ;
-    geo:long "${locationData.longitude}"^^xsd:decimal ;
-    schema:accuracy "${locationData.accuracy}"^^xsd:decimal ;
-    dcterms:created "${new Date(timestamp).toISOString()}"^^xsd:dateTime ;
-    schema:identifier "${locationData.deviceId}" .
-`;
+            // Create unique thing URL for this location
+            const locationThingUrl = `${locationsFileUrl}#location-${timestamp}`;
 
-            // Write file to Pod
-            await overwriteFile(
-                locationUrl,
-                new Blob([turtleData], { type: 'text/turtle' }),
-                { fetch: session.fetch, contentType: 'text/turtle' }
-            );
+            // Create location thing
+            let locationThing = solidClient.createThing({ url: locationThingUrl });
 
-            return locationUrl;
+            // Add location data
+            locationThing = solidClient.addUrl(locationThing, 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type', 'http://schema.org/Place');
+            locationThing = solidClient.addUrl(locationThing, 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type', 'http://www.w3.org/2003/01/geo/wgs84_pos#Point');
+            locationThing = solidClient.addDecimal(locationThing, 'http://www.w3.org/2003/01/geo/wgs84_pos#lat', locationData.latitude);
+            locationThing = solidClient.addDecimal(locationThing, 'http://www.w3.org/2003/01/geo/wgs84_pos#long', locationData.longitude);
+            locationThing = solidClient.addDecimal(locationThing, 'http://schema.org/accuracy', locationData.accuracy);
+            locationThing = solidClient.addDatetime(locationThing, 'http://purl.org/dc/terms/created', new Date(timestamp));
+            locationThing = solidClient.addStringNoLocale(locationThing, 'http://schema.org/identifier', locationData.deviceId);
+
+            // Add thing to dataset
+            locationsDataset = solidClient.setThing(locationsDataset, locationThing);
+
+            // Save the updated dataset
+            await solidClient.saveSolidDatasetAt(locationsFileUrl, locationsDataset, { fetch: session.fetch });
+
+            console.log(`[writeLocationToPod] Location appended to ${locationsFileUrl}`);
+            return locationThingUrl;
         }
 
         // View sync queue
